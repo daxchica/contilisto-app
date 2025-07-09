@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env
+backend/.env
+openai_key.rtf
+goggle_cloud_code.rtf
