@@ -7,9 +7,20 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
+# Build outputs
 dist
 dist-ssr
+
+# Dependency directories
+node_modules
+
+# Local environment files
+.env
+backend/.env
+openai_key.rtf
+goggle_cloud_code.rtf
+
+# Local-only config
 *.local
 
 # Editor directories and files
@@ -22,15 +33,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-backend/.env
-openai_key.rtf
-goggle_cloud_code.rtf
-.env
-backend/.env
-openai_key.rtf
-goggle_cloud_code.rtf
-.env
-backend/.env
-openai_key.rtf
-goggle_cloud_code.rtf
