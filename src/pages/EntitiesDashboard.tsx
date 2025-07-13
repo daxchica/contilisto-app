@@ -74,7 +74,7 @@ export default function EntitiesDashboard() {
   return (
     <div className="p-4 max-w-screen-xl mx-auto">
       <h1 className="text-2xl font-bold text-blue-900 flex items-center mb-4">
-        <span className="mr-2 text-3xl">📊</span> Contalisto Tablero de Entidades
+        <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -146,6 +146,7 @@ export default function EntitiesDashboard() {
       />
       {journal.length > 0 && <PnLSummary entries={journal} />}
       {journal.length > 0 && <BalanceSheetDisplay entries={journal}/>}
+      {journal.length > 0 && <AccountsReport journal={journal} />}
     </div>
   );
 }

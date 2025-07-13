@@ -1,77 +1,122 @@
-# Contalisto.io – AI-Powered Accounting SaaS
+# 📊 Contilisto.io – AI-Powered Accounting SaaS
 
-Contalisto is a Software-as-a-Service (SaaS) platform designed for accountants and small to mid-sized entities. It combines PDF parsing, AI (OpenAI), and structured financial logic to simplify bookkeeping and generate financial statements in compliance with Ecuadorian practices.
+**Contilisto** is a modern SaaS platform designed to simplify accounting workflows for accountants, SMEs, and bookkeepers in Ecuador and Latin America. It integrates AI-powered PDF invoice parsing (via OpenAI), structured ledger logic based on Ecuadorian accounting standards (PUC), and real-time financial reporting.
+
+---
+
+## 🧠 Key Features
+
+- 📎 Smart PDF invoice parsing (OCR + GPT-based logic)
+- 🧾 Automated journal entry generation
+- 📂 Multi-entity support per user
+- 📊 Real-time P&L and Balance Sheet
+- 🔐 Firebase authentication (email/password)
+- 🌎 Bilingual support (Spanish & English)
+- ⚙️ Modular backend/frontend architecture for scalability
 
 ---
 
 ## 🧱 Project Structure
 
-```
-contalisto-app/
-├── backend/              ← FastAPI backend for PDF parsing and AI logic
-├── src/                  ← React + Vite frontend
-├── uploaded_pdfs/        ← Folder for uploaded files
-├── .env                  ← Environment variables (ignored in Git)
-├── run.sh                ← Shell script for launching services
-├── package.json          ← Frontend dependencies
-├── requirements.txt      ← Python backend dependencies
-```
+contilisto-app/
+├── backend/              ← FastAPI backend for PDF parsing, GPT calls, and business logic
+│   ├── models/           ← Ledger and entry schemas
+│   ├── services/         ← GPT and PDF utilities
+│   └── main.py           ← Entry point for backend
+├── src/                  ← React + Vite frontend (TypeScript + Tailwind CSS)
+│   ├── components/       ← Reusable UI components
+│   ├── pages/            ← Route-level React components
+│   └── utils/            ← Helpers: mapping, Firestore, invoice logic
+├── public/               ← Static assets
+├── .env.example          ← Sample environment configuration
+├── run.sh                ← Helper script for running both backend/frontend
+├── package.json          ← Frontend dependencies and scripts
+├── requirements.txt      ← Backend dependencies (Python)
 
 ---
 
-## 🚀 Development Phases & Checkpoints
+## 🧪 Development Roadmap
 
-### ✅ Phase 1: Auth + Entity System
-- [x] Firebase login + registration (email/password)
-- [x] Create/manage multiple entities per user (in-memory or Firestore)
-- [ ] Connect entity to upload + AI workflow
+### ✅ Phase 1: User & Entity System
+- [x] Firebase email/password login
+- [x] Multi-entity support
+- [x] Entity selection and context
 
-### ⬜ Phase 2: PDF Upload + Text Parsing
-- [ ] Drag & drop PDF upload
-- [ ] Extract text with PyMuPDF
-- [ ] Preview text + metadata
+### 🔄 Phase 2: PDF Upload & Parsing
+- [x] Drag-and-drop file upload
+- [x] Extract text via PyMuPDF
+- [x] Preview and summary display
+- [x] Duplicate prevention (Firestore + LocalStorage)
 
-### ⬜ Phase 3: OpenAI Integration
-- [x] GPT prompt generation with ledger schema
-- [ ] Return structured entries (date, account, debit, credit, etc.)
-- [ ] Connect entries to selected entity
+### 🔄 Phase 3: OpenAI Integration
+- [x] Optimized GPT prompts for accounting
+- [x] Extract RUC, subtotal, VAT, total
+- [x] Automatic classification (income vs. expenses)
+- [x] Ledger logic based on Ecuador's PUC
 
-### ⬜ Phase 4: Ledger Entry Management
-- [ ] List & edit AI-generated ledger entries
-- [ ] Connect with account code registry
-- [ ] Save to backend DB
+### 🔄 Phase 4: Journal Entries
+- [x] Journal preview and editing
+- [x] Save entries to Firestore
+- [x] Initial balance panel (manual & PDF)
 
-### ⬜ Phase 5: Financial Reports
-- [ ] Balance Sheet, P&L
-- [ ] Date range filtering
-- [ ] Export to PDF
+### 🔄 Phase 5: Financial Reporting
+- [x] Profit & Loss (P&L)
+- [x] Balance Sheet
+- [ ] Accounts Payable / Receivable Report
+- [ ] Bank reconciliation
 
-### ⬜ Phase 6: Deployment
-- [ ] Deploy frontend (e.g. Vercel)
-- [ ] Deploy backend (e.g. Fly.io, Render)
-- [ ] PostgreSQL for production DB
+### ⬜ Phase 6: Production Readiness
+- [ ] Deploy frontend (Netlify or Vercel)
+- [ ] Deploy backend (Render or Fly.io)
+- [ ] PostgreSQL integration for structured data
+- [ ] Backup and recovery strategies
 
 ---
 
-## 📦 Environment Setup
+## ⚙️ Local Setup
 
-### 🔧 Backend
+### 🔧 Backend (FastAPI)
 ```bash
 cd backend
-source .venv/bin/activate  # or: source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload
-```
 
-### 🌐 Frontend
-```bash
-cd contalisto-app
+### 🌐 Frontend (React + Vite + Tailwind)
+cd contilisto-app
 npm install
 npm run dev
-```
 
 ---
 
-## 📬 Contact
-Built by Dax Chica – For finance professionals, by a finance professional.
-# contalisto-app
+###🔐 Environment Variables
+cp .env.example .env
+
+You’ll need to add:
+	•	VITE_FIREBASE_API_KEY
+	•	OPENAI_API_KEY
+	•	FIREBASE_PROJECT_ID
+	•	FIRESTORE_COLLECTIONS
+	•	Any other Firebase or backend-specific config
+
+Note: .env files should never be committed to Git.
+
+### 🛡️ Security & Secrets
+
+⚠️ All sensitive files (API keys, credentials) are excluded via .gitignore.
+⚠️ If a secret is accidentally committed, use git filter-repo to permanently remove it before pushing.
+
+
+### 👤 Author
+Built by Dax Chica
+📧 info@newurix.com
+🌐 https://newurix.com
+
+Accounting made smart — For finance professionals, by a finance professional.
+
+### 📄 License
+
+This project is currently private and under development.
+For licensing inquiries, please contact the author directly.
+

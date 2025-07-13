@@ -23,7 +23,7 @@ export default function App() {
   return (
     <div className="min-h-screen p-8 bg-blue-50">
       <h1 className="text-3xl font-bold mb-6 text-center text-blue-800">
-        📊 Contalisto Ledger Parser
+        📊 Contilisto Ledger Parser
       </h1>
 
       {/* Grid layout for uploader and ledger */}

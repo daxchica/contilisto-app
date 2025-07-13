@@ -10,7 +10,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-800 via-blue-700 to-blue-900 text-white flex flex-col items-center justify-center px-6">
       <h1 className="text-4xl md:text-5xl font-bold mb-4 text-center">
-        Bienvenido a Contalisto
+        Bienvenido a Contilisto
       </h1>
       <p className="text-lg md:text-xl max-w-xl text-center mb-8">
         Plataforma inteligente para análisis contable automatizado. Sube tus documentos PDF, genera libros contables automáticamente y gestiona tus entidades con facilidad.
