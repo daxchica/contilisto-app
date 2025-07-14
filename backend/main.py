@@ -14,7 +14,7 @@ env_loaded = load_dotenv(dotenv_path=env_path)
 print(f"✅ .env loaded: {env_loaded}")
 
 # 🔐 Validate API key
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("VITE_OPENAI_API_KEY")
 if not api_key:
     raise ValueError("❌ OPENAI_API_KEY not set in .env file!")
 print(f"🔑 Retrieved partial API key: {api_key[:10]}...")
