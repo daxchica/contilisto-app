@@ -1,38 +1,58 @@
 // src/pages/Landing.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { useNavigate } from "react-router-dom";
 import LoginModal from "../components/LoginModal";
 import RegisterModal from "../components/RegisterModal";
+import { Link } from "react-router-dom";
 
 export default function Landing() {
-  const [showLogin, setShowLogin] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-800 via-blue-700 to-blue-900 text-white flex flex-col items-center justify-center px-6">
-      <h1 className="text-4xl md:text-5xl font-bold mb-4 text-center">
-        Bienvenido a Contilisto
-      </h1>
-      <p className="text-lg md:text-xl max-w-xl text-center mb-8">
-        Plataforma inteligente para análisis contable automatizado. Sube tus documentos PDF, genera libros contables automáticamente y gestiona tus entidades con facilidad.
-      </p>
-      <div className="flex gap-4">
-        <button
-          onClick={() => setShowLogin(true)}
-          className="bg-white text-blue-700 px-6 py-2 rounded-lg font-semibold hover:bg-blue-100 transition"
+    <div className="min-h-screen bg-gradient-to-b from-blue-900 via-blue-800 to-blue-700 text-white px-6 py-10 flex flex-col items-center">
+      {/* Hero */}
+      <section className="text-center max-w-3xl">
+        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+          Contabilidad automatizada en minutos
+        </h1>
+        <p className="text-lg md:text-xl mb-6">
+          Con Contilisto puedes registrar hasta <strong>10 empresas</strong> y realizar hasta <strong>500 registros contables mensuales</strong> por solo <span className="bg-white text-blue-800 px-2 py-1 rounded font-bold">$29/mes</span>.
+        </p>
+        <Link
+          to="/register"
+          className="bg-white text-blue-800 font-semibold px-6 py-3 rounded hover:bg-blue-100 transition"
         >
-          Iniciar sesión
-        </button>
-        <button
-          onClick={() => setShowRegister(true)}
-          className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-semibold"
-        >
-          Registrarse
-        </button>
-      </div>
+          Empieza ahora
+        </Link>
+      </section>
 
-      {/* Modals */}
-      <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />
-      <RegisterModal isOpen={showRegister} onClose={() => setShowRegister(false)} />
+      {/* Beneficios */}
+      <section className="mt-16 w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white/10 p-6 rounded-xl shadow-md text-center">
+          <h3 className="text-xl font-bold mb-2">Sube PDF</h3>
+          <p className="text-sm">Sube tus facturas y Comprobantes PDF y déjalo en manos de la IA.</p>
+        </div>
+        <div className="bg-white/10 p-6 rounded-xl shadow-md text-center">
+          <h3 className="text-xl font-bold mb-2">Contabilidad Automática</h3>
+          <p className="text-sm">La IA genera los asientos contables con códigos PUC Ecuador y lógica tributaria.</p>
+        </div>
+        <div className="bg-white/10 p-6 rounded-xl shadow-md text-center">
+          <h3 className="text-xl font-bold mb-2">Reportes Financieros</h3>
+          <p className="text-sm">Obtén Estado de Resultados, Balance General y conciliaciones.</p>
+        </div>
+      </section>
+
+      {/* CTA Final */}
+      <section className="mt-20 text-center">
+        <h2 className="text-2xl font-semibold mb-4">
+          ¿Listo para comenzar?
+        </h2>
+        <Link
+          to="/register"
+          className="bg-yellow-400 text-blue-900 font-bold px-6 py-3 rounded-lg hover:bg-yellow-300 transition"
+        >
+          Registrarse por $29/mes
+        </Link>
+      </section>
     </div>
   );
 }
