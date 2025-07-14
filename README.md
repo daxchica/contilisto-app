@@ -1,4 +1,4 @@
-# 📊 Contilisto.io – AI-Powered Accounting SaaS
+# 📊 Contilisto – AI-Powered Accounting SaaS
 
 **Contilisto** is a modern SaaS platform designed to simplify accounting workflows for accountants, SMEs, and bookkeepers in Ecuador and Latin America. It integrates AI-powered PDF invoice parsing (via OpenAI), structured ledger logic based on Ecuadorian accounting standards (PUC), and real-time financial reporting.
 
