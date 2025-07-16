@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import EntitiesDashboard from "./pages/EntitiesDashboard";
 import PrivateRoute from "./components/PrivateRoute";
+import ErrorBoundary from "./components/ErrorBoundary";
+
 
 function App() {
   return (

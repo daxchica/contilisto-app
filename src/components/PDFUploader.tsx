@@ -54,11 +54,18 @@ export default function PDFUploader({ userRUC, onUploadComplete, entityId }: PDF
     setError("");
     setProcessedCount(0);
     const allJournalEntries: any[] = [];
+    const ignoredFiles: string[] = [];
 
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const entries = await parsePDF(file, userRUC, entityId);
+
+        if (entries.length === 0) {
+          ignoredFiles.push(file.name);
+          continue;
+        }
+
         allJournalEntries.push(...entries);
         setPreviewEntries([...allJournalEntries]); // update modal dynamically
         setShowPreview(true);
@@ -68,6 +75,8 @@ export default function PDFUploader({ userRUC, onUploadComplete, entityId }: PDF
       if (allJournalEntries.length === 0) {
         setError("PDFs seleccionados ya se han procesado.");
         setShowPreview(false);
+      } else if (ignoredFiles.length > 0) {
+        setError(`Se ignoraron estos archivos ya procesados:\n${ignoredFiles.join(", ")}`);
       }
     } catch (err: any) {
       console.error("Batch upload error:", err);
@@ -92,7 +101,7 @@ export default function PDFUploader({ userRUC, onUploadComplete, entityId }: PDF
       <p className="mb-2 text-gray-700">
         {loading
           ? `⏳ Processing ${processedCount} of ${files.length}...`
-          : "📤 Arrastre y deposite hasta 5 PDFs aqui o haga click para cargar"}
+          : "📤 Arrastre y deposite hasta 5 PDFs a la vez o haga click para cargar"}
       </p>
 
       <input
