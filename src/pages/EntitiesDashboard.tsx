@@ -15,6 +15,8 @@ import InvoiceSearch from "../components/InvoiceSearch";
 import InvoiceLogManager from "../components/InvoiceLogManager";
 import { clearLocalLogForEntity, deleteInvoicesFromLocalLog, getProcessedInvoices } from "../services/localLogService";
 import AccountsReport from "../components/AccountsReport";
+import { deleteInvoicesFromFirestoreLog } from "../services/firestoreLogService";
+import { deleteJournalEntriesByInvoiceNumber } from "../services/journalService";
 
 
 function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
@@ -39,7 +41,17 @@ function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string })
   );
 }
 
-function InvoiceLogDropdown({ entityId, ruc }: { entityId: string; ruc: string }) {
+function InvoiceLogDropdown({ 
+  entityId, 
+  ruc,
+  journal,
+  setJournal,
+}: { 
+  entityId: string; 
+  ruc: string;
+  journal: JournalEntry[];
+  setJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>; 
+}) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -48,7 +60,7 @@ function InvoiceLogDropdown({ entityId, ruc }: { entityId: string; ruc: string }
       const invoices = Array.from(getProcessedInvoices(ruc));
       setInvoices(invoices);
     }
-  }, [entityId, ruc]);
+  }, [entityId, ruc, journal]);
 
   const toggleInvoice = (invoice: string) => {
     const newSet = new Set(selected);
@@ -59,11 +71,18 @@ function InvoiceLogDropdown({ entityId, ruc }: { entityId: string; ruc: string }
   const handleDeleteSelected = async () => {
     const confirm = window.confirm("¿Borrar las facturas seleccionadas del log?");
     if (!confirm) return;
+
     const toDelete = Array.from(selected);
+
     await deleteInvoicesFromFirestoreLog(entityId, toDelete);
     deleteInvoicesFromLocalLog(ruc, toDelete);
+    await deleteJournalEntriesByInvoiceNumber(entityId, toDelete);
+
     setInvoices(invoices.filter((inv) => !toDelete.includes(inv)));
     setSelected(new Set());
+
+    setJournal((prev) => prev.filter((entry) => !toDelete.includes(entry.invoice_number?.trim()))
+  );
     alert("🗑️ Facturas seleccionadas eliminadas del log.");
   };
 
@@ -77,6 +96,7 @@ function InvoiceLogDropdown({ entityId, ruc }: { entityId: string; ruc: string }
           <li key={inv} className="flex items-center gap-2 mb-1">
             <input
               type="checkbox"
+              aria-label={`Seleccionar factura ${inv}`}
               checked={selected.has(inv)}
               onChange={() => toggleInvoice(inv)}
             />
@@ -182,7 +202,13 @@ export default function EntitiesDashboard() {
           )}
 
           {selectedEntity && (
-            <InvoiceLogDropdown entityId={selectedEntity} ruc={selectedEntityRUC} />
+            <InvoiceLogDropdown 
+            key={selectedEntity}
+            entityId={selectedEntity} 
+            ruc={selectedEntityRUC}
+            journal={journal}
+            setJournal={setJournal}
+            />
           )}
         </div>
 
@@ -195,13 +221,6 @@ export default function EntitiesDashboard() {
           }}
         />
 
-        {selectedEntity && (
-          <InvoiceSearch userRUC={selectedEntityRUC} />
-        )}
-
-        {selectedEntity && (
-          <InvoiceLogManager entityId={selectedEntity} ruc={selectedEntityRUC} />
-        )}
       </div>
 
       <InitialBalancePanel />

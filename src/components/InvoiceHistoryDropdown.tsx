@@ -9,6 +9,19 @@ interface Props {
 export default function InvoiceHistoryDropdown({ invoiceLog, onDelete }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Cierra el dropdown si se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const toggleInvoice = (invoice: string) => {
     setSelected((prev) =>
@@ -53,14 +66,25 @@ export default function InvoiceHistoryDropdown({ invoiceLog, onDelete }: Props) 
               ))
             )}
           </div>
-          <div className="p-2 border-t text-right">
-            <button
-              onClick={handleDelete}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm"
-            >
-              Eliminar Seleccionadas
-            </button>
-          </div>
+
+          {invoiceLog.length > 0 && (
+            <div className="p-3 border-t flex justify-between items-center">
+              <span className="text-xs text-gray-500">
+                {selected.length} seleccionada{selected.length !== 1 && "s"}
+              </span>
+              <button
+                onClick={handleDelete}
+                disabled={selected.length === 0}
+                className={`px-3 py-1 rounded text-sm text-white ${
+                  selected.length > 0
+                    ? "bg-red-500 hover:bg-red-600"
+                    : "bg-gray-300 cursor-not-allowed"
+                }`}
+              >
+                Eliminar Seleccionadas
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

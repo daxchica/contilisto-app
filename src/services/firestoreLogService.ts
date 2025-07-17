@@ -10,6 +10,7 @@ import {
   writeBatch
 } from "firebase/firestore";
 
+
 /**
  * Guarda el número de factura procesada en Firestore para evitar duplicados.
  */

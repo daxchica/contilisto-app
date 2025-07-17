@@ -8,24 +8,25 @@ export default function NavBar() {
   const navigate = useNavigate();
   const isLanding = location.pathname === "/";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Verifica si hay un usuario autenticado
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsLoggedIn(!!user); // true si está logueado
+      setIsLoggedIn(!!user);
+      setLoading(false);
     });
 
-    return () => unsubscribe(); // Limpieza
+    return () => unsubscribe();
   }, []);
 
-  // Cierre de sesion
+  // Cerrar sesion
   const handleLogout = async () => {
     try {
       const auth = getAuth();
       await signOut(auth);
       localStorage.removeItem("authToken");
-
       // Redirige fuera del ciclo React actual
       setTimeout(() => {
         navigate("/", {replace: true}); // Redirige a la página principal
@@ -37,37 +38,39 @@ export default function NavBar() {
 
   return (
     <nav className="bg-blue-700 text-white px-6 py-3 flex items-center justify-between shadow-md">
-      <div className="text-lg font-bold">
+      <div className="text-3xl font-bold">
         <Link to="/" className="hover:underline">
           Contilisto
         </Link>
       </div>
 
-      <div className="space-x-4 text-sm">
-        {!isLanding && (
-          <Link to="/dashboard" className="hover:underline">
-            Home
-          </Link>
-        )}
-
-        {!isLoggedIn && (
-          <>
-            <Link to="/login" className="hover:underline">
-              Login
+      {!loading && (
+        <div className="space-x-4 text-base">
+          {!isLanding && (
+            <Link to="/dashboard" className="hover:underline">
+              Home
             </Link>
+          )}
 
-            <Link to="/register" className="hover:underline">
-              Registrarse
-            </Link>
-          </>
-        )}
-
-        {isLoggedIn && (
-          <button onClick={handleLogout} className="hover:underline">
-            Logout
-          </button>
-        )}
-      </div>
+          {!isLoggedIn ? (
+            <>
+              <Link to="/login" className="hover:underline">
+                Login
+              </Link>
+              <Link to="/register" className="hover:underline">
+                Registrarse
+              </Link>
+            </>
+          ) : (
+            <button 
+              onClick={handleLogout} 
+              className="hover:underline"
+              >
+                Logout
+              </button>
+            )}
+        </div>
+      )}
     </nav>
   );
 }

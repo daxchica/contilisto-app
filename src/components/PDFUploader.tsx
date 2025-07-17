@@ -149,6 +149,7 @@ export default function PDFUploader({ userRUC, onUploadComplete, entityId }: PDF
           onCancel={() => setShowPreview(false)}
           onSave={(confirmed) => {
             setShowPreview(false);
+            setFiles([]);
             onUploadComplete(confirmed, `${confirmed.length} entries confirmed.`);
           }}
         />

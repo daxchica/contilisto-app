@@ -1,5 +1,7 @@
+// services/journalService.ts
+
 import { db } from "../firebase-config";
-import { collection, addDoc, getDocs, doc, setDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, deleteDoc } from "firebase/firestore";
 import * as pdfjsLib from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { extractInvoiceDataWithAI_gpt4 } from "../ai/extractInvoiceDataWithAI_gpt4";
@@ -9,6 +11,8 @@ import {
   logProcessedInvoice as logToLocalStorage, 
   getProcessedInvoices as getLocalProcessed 
 } from "./localLogService";
+import { parsePDF } from "../services/journalService";
+
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -23,6 +27,7 @@ export interface JournalEntry {
   credit?: number;
   type?: "income" | "expense";
   invoice_number?: string;
+  transactionId?: string;
 }
 
 export async function saveJournalEntries(entityId: string, entries: JournalEntry[]) {
@@ -48,7 +53,6 @@ export async function getAlreadyProcessedInvoiceNumbers(entityId: string): Promi
       invoiceSet.add(data.invoice_number.trim());
     }
   });
-
   return invoiceSet;
 }
 
@@ -57,7 +61,10 @@ function normalizeAmount(value: string): number {
     console.warn(`⚠️ Suspicious number skipped: ${value}`);
     return 0;
   }
-  const cleaned = value.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", ".");
+  const cleaned = value
+  .replace(/[^\d,.-]/g, "")
+  .replace(/\.(?=\d{3})/g, "")
+  .replace(",", ".");
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 }
@@ -74,12 +81,13 @@ function matchOr(text: string, ...regexes: RegExp[]): number {
 }
 
 function createEntry(
-  type: "debit" | "credit",
+  type: "debit" | "credit", 
   amount: number,
   code: string,
   name: string,
   entryType: "income" | "expense",
-  invoice_number?: string
+  invoice_number?: string,
+  transactionId?: string
 ): JournalEntry {
   return {
     date: new Date().toISOString().split("T")[0],
@@ -88,11 +96,15 @@ function createEntry(
     account_name: name,
     [type]: amount,
     type: entryType,
-    invoice_number
+    invoice_number,
+    transactionId,
   };
 }
 
-function extractInvoiceDataRegex(text: string, userRUC: string): JournalEntry[] {
+function extractInvoiceDataRegex(
+  text: string, 
+  userRUC: string
+): JournalEntry[] {
   const cleanText = text.replace(/\s+/g, " ").trim();
   const rucMatches = Array.from(new Set(cleanText.match(/\b\d{13}\b/g) || []));
   const issuerRUC = rucMatches.find(r => r !== userRUC);
@@ -116,7 +128,12 @@ function extractInvoiceDataRegex(text: string, userRUC: string): JournalEntry[] 
   console.log("Parsed amounts [regex]", { subtotal, ice, iva, total });
 
   if (subtotal === 0 && total === 0) {
-    console.warn("⚠️ Skipping: No valid amount found", { subtotal, ice, iva, total });
+    console.warn("⚠️ Skipping: No valid amount found", { 
+      subtotal, 
+      ice, 
+      iva, 
+      total 
+    });
     return [];
   }
 
@@ -126,11 +143,21 @@ function extractInvoiceDataRegex(text: string, userRUC: string): JournalEntry[] 
   const entries: JournalEntry[] = [];
   const cost = total - iva - ice;
 
-  if (cost > 0) entries.push(createEntry("debit", cost, "5XXXX", "Compras", type, invoice_number));
-  if (ice > 0 && INCLUDE_ICE_IN_EXPENSE) entries.push(createEntry("debit", ice, "5XXX1", "Gastos ICE", type, invoice_number));
-  if (iva > 0) entries.push(createEntry("debit", iva, "2XXXX", "IVA por pagar", type, invoice_number));
-
-  entries.push(createEntry("credit", total, "1XXXX", "Cuentas por pagar", type, invoice_number));
+  if (cost > 0) 
+    entries.push(
+      createEntry("debit", cost, "5XXXX", "Compras", type, invoice_number, transactionId)
+    );
+  if (ice > 0 && INCLUDE_ICE_IN_EXPENSE) 
+    entries.push(
+      createEntry("debit", ice, "5XXX1", "Gastos ICE", type, invoice_number, transactionId)
+    );
+  if (iva > 0) 
+    entries.push(
+      createEntry("debit", iva, "2XXXX", "IVA por pagar", type, invoice_number, transactionId)
+    );
+  entries.push(
+    createEntry("credit", total, "1XXXX", "Cuentas por pagar", type, invoice_number, transactionId)
+  );
 
   return entries;
 }
@@ -156,6 +183,8 @@ export async function parsePDF(
     fullText += " " + text;
   }
 
+  const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
   const firebaseProcessed = await getAlreadyProcessedInvoiceNumbers(entityId);
   const localProcessed = new Set(getLocalProcessed(userRUC));
   const allProcessed = new Set([...firebaseProcessed, ...localProcessed]);
@@ -165,22 +194,29 @@ export async function parsePDF(
 
   try {
     const aiEntries = await extractInvoiceDataWithAI_gpt4o(fullText, userRUC);
-    const newOnly = aiEntries.filter(e => e.invoice_number && !allProcessed.has(e.invoice_number));
+    const newOnly = aiEntries.filter(
+      (e) => e.invoice_number && !allProcessed.has(e.invoice_number)
+    );
 
     if (newOnly.length > 0) {
-      entries.push(...newOnly);
+      const enriched = newOnly.map((e) => ({
+        ...e,
+        transactionId
+      }));
+      entries.push(...enriched);
     } else {
       console.warn("❌ No new entries from GPT-4o. Aborting parse for this file.");
       return [];
     }
   } catch (err) {
     console.error("❌ AI extraction failed. Fallback to regex.", err);
-    const regexEntries = extractInvoiceDataRegex(fullText, userRUC);
-    const regexNew = regexEntries.filter(e => e.invoice_number && !allProcessed.has(e.invoice_number));
-
+    const regexEntries = extractInvoiceDataRegex(fullText, userRUC, transactionId);
+    const regexNew = regexEntries.filter(
+      (e) => e.invoice_number && !allProcessed.has(e.invoice_number)
+    );
     if (regexNew.length > 0) {
       entries.push(...regexNew);
-    } else {
+  } else {
       console.warn("⚠️ Invoice appears already processed:", fallbackInvoiceNumber);
       return [];
     }
@@ -195,4 +231,37 @@ export async function parsePDF(
   }
 
   return entries;
+}
+
+export async function deleteJournalEntriesByTransactionId(
+  entityId: string, 
+  transactionId: string
+) {
+  const journalRef = collection(db, "entities", entityId, "journalEntries");
+  const q = query(journalRef, where("transactionId", "==", transactionId));
+  const snapshot = await getDocs(q);
+
+  const deleteOps = snapshot.docs.map((doc) => deleteDoc(doc.ref));
+  await Promise.all(deleteOps);
+  console.log(
+    `🗑️ Deleted ${deleteOps.length} journal entries for transactionId: ${transactionId}`
+  );
+}
+
+export async function deleteJournalEntriesByInvoiceNumber(
+  entityId: string, 
+  invoiceNumbers: string[]
+): Promise<void> {
+  if (!entityId || invoiceNumbers.length === 0) return;
+
+  const journalRef = collection(db, "entities", entityId, "journal");
+
+  for (const invoiceNumber of invoiceNumbers) {
+    const q = query(journalRef, where("invoice_number", "==", invoiceNumber));
+    const snapshot = await getDocs(q);
+
+    const deletions = snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref));
+    await Promise.all(deletions);
+    console.log(`🗑️ Deleted ${deletions.length} journal entries for invoice: ${invoiceNumber}`);
+  }
 }
