@@ -1,15 +1,7 @@
-import React, { useEffect, useState } from "react";
+// src/components/JournalPreviewModal.tsx
 
-interface JournalEntry {
-  date: string;
-  description: string;
-  account_code: string;
-  account_name: string;
-  debit?: number;
-  credit?: number;
-  type?: "income" | "expense";
-  invoice_number?: string;
-}
+import React, { useEffect, useState } from "react";
+import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
   entries: JournalEntry[];

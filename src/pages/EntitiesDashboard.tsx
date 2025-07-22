@@ -1,3 +1,4 @@
+// ..src/pages/EntitiesDashboard.tsx 
 // ... (importaciones)
 import PnLSummary from "../components/PnLSummary";
 import { useEffect, useState } from "react";
@@ -6,7 +7,7 @@ import { auth } from "../firebase-config";
 import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
 import { createEntity, fetchEntities } from "../services/entityService";
-import { JournalEntry } from "../utils/accountMapper";
+import { JournalEntry } from "../types/JournalEntry";
 import InitialBalancePanel from "../components/InitialBalancePanel";
 import ManualBalanceForm from "../components/ManualBalanceForm";
 import BalancePDFUploader from "../components/BalancePDFUploader";
@@ -17,6 +18,9 @@ import { clearLocalLogForEntity, deleteInvoicesFromLocalLog, getProcessedInvoice
 import AccountsReport from "../components/AccountsReport";
 import { deleteInvoicesFromFirestoreLog } from "../services/firestoreLogService";
 import { deleteJournalEntriesByInvoiceNumber } from "../services/journalService";
+import BankMovementForm from "../components/BankMovementForm";
+import { clearFirestoreLogForEntity } from "../services/firestoreLogService";
+import { saveJournalEntries } from "../services/journalService";
 
 
 function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
@@ -81,8 +85,7 @@ function InvoiceLogDropdown({
     setInvoices(invoices.filter((inv) => !toDelete.includes(inv)));
     setSelected(new Set());
 
-    setJournal((prev) => prev.filter((entry) => !toDelete.includes(entry.invoice_number?.trim()))
-  );
+    setJournal((prev) => prev.filter((entry) => !toDelete.includes(entry.invoice_number?.trim())));
     alert("🗑️ Facturas seleccionadas eliminadas del log.");
   };
 
@@ -126,24 +129,53 @@ export default function EntitiesDashboard() {
 
   useEffect(() => {
     if (user) {
-      fetchEntities(user).then(setEntities);
+      fetchEntities(user)
+        .then(setEntities)
+        .catch((err) => console.error("Error fetching entities:", err));
     }
   }, [user]);
 
   const handleAddEntity = async () => {
-    if (!user || !ruc || !name) return;
+  console.log("🟡 Botón 'Agregar Registro' presionado");
+
+  if (!user || !ruc || !name) {
+    console.warn("⚠️ Faltan datos para crear entidad:", { user, ruc, name });
+    alert("Por favor, completa todos los campos antes de continuar.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `¿Estás seguro de que deseas registrar la nueva entidad con los siguientes datos?\n\nRUC: ${ruc}\nNombre: ${name}`
+  );
+
+  if (!confirmed) {
+    console.log("🛑 Operación cancelada por el usuario.");
+    return;
+  }
+
+  try {
     await createEntity(user, ruc, name);
     const updated = await fetchEntities(user);
     setEntities(updated);
     setRuc("");
     setName("");
-  };
+    alert("✅ Entidad creada con éxito.");
+    console.log("✅ Entidad creada y lista actualizada");
+  } catch (error) {
+    console.error("❌ Error al crear entidad:", error);
+    alert("❌ Hubo un error al crear la entidad. Revisa la consola para más detalles.");
+  }
+};
 
   const handleSaveJournal = async () => {
+    if (!user) return;
     const entity = entities.find((e) => e.id === selectedEntity);
     if (!entity) return;
+    
     const { saveJournalEntries } = await import("../services/journalService");
-    await saveJournalEntries(entity.id, journal);
+    console.log("Saving entries with userId:", user.uid);
+    await saveJournalEntries(entity.id, journal, user.uid);
+    console.log("UID:", user?.uid);
     alert("Journal saved successfully!");
   };
 
@@ -210,17 +242,24 @@ export default function EntitiesDashboard() {
             setJournal={setJournal}
             />
           )}
+
+          {selectedEntity && (
+            <BankMovementForm entityId={selectedEntity} />
+          )}
         </div>
 
-        <PDFUploader
-          userRUC={selectedEntityRUC}
-          entityId={selectedEntity}
-          onUploadComplete={(entries, preview) => {
-            setJournal((prev) => [...prev, ...entries]);
-            setInvoicePreview(preview);
-          }}
-        />
-
+        {/* Solo mostrar el PDFUploader shi hay entidad seleccionada */}
+        {selectedEntity && selectedEntityRUC && (
+          <PDFUploader
+            userRUC={selectedEntityRUC}
+            entityId={selectedEntity}
+            userId={auth.currentUser?.uid ?? ""}
+            onUploadComplete={(entries, preview) => {
+              setJournal((prev) => [...prev, ...entries]);
+              setInvoicePreview(preview);
+            }}
+          />
+        )}
       </div>
 
       <InitialBalancePanel />

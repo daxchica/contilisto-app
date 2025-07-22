@@ -1,157 +1,130 @@
+import { useState, DragEvent, ChangeEvent, useRef } from "react";
 import { parsePDF } from "../services/journalService";
-import { useState, DragEvent, ChangeEvent } from "react";
 import JournalPreviewModal from "./JournalPreviewModal";
 
 interface PDFUploaderProps {
-  onUploadComplete: (journal: any[], preview: string) => void;
+  onUploadComplete: (entries: any[], source: string) => void;
   userRUC?: string;
   entityId: string;
+  userId: string;
 }
 
-export default function PDFUploader({ userRUC, onUploadComplete, entityId }: PDFUploaderProps) {
+export default function PDFUploader({
+  userRUC,
+  entityId,
+  userId,
+  onUploadComplete,
+}: PDFUploaderProps) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [processedCount, setProcessedCount] = useState(0);
-
   const [showPreview, setShowPreview] = useState(false);
   const [previewEntries, setPreviewEntries] = useState<any[]>([]);
+  const [processedFiles, setProcessedFiles] = useState<string[]>([]);
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+   // 🧷 Declarar el ref correctamente
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    const newFiles = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type === "application/pdf"
-    );
-    if (files.length + newFiles.length > 5) {
-      setError("⚠️ You can only upload up to 5 PDF files.");
-      return;
-    }
-    setFiles((prev) => [...prev, ...newFiles]);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith(".pdf"));
+    await handleFiles(dropped);
   };
 
-  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles = Array.from(e.target.files).filter(
-        (f) => f.type === "application/pdf"
-      );
-      if (files.length + newFiles.length > 5) {
-        setError("⚠️ You can only upload up to 5 PDF files.");
-        return;
-      }
-      setFiles((prev) => [...prev, ...newFiles]);
+      const selected = Array.from(e.target.files).filter(f => f.name.endsWith(".pdf"));
+      await handleFiles(selected);
     }
   };
 
-  const handleParseAll = async () => {
-    if (!userRUC) {
-      setError("⚠️ Please select an entity with a valid RUC before parsing.");
+  const handleFiles = async (files: File[]) => {
+    if (!userRUC || !entityId || !userId) {
+      setError("Faltan parámetros obligatorios para procesar los archivos.");
       return;
     }
 
     setLoading(true);
     setError("");
-    setProcessedCount(0);
-    const allJournalEntries: any[] = [];
-    const ignoredFiles: string[] = [];
+    const allEntries: any[] = [];
+    const ignored: string[] = [];
 
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const entries = await parsePDF(file, userRUC, entityId);
-
-        if (entries.length === 0) {
-          ignoredFiles.push(file.name);
-          continue;
+    for (const file of files) {
+      try {
+        const entries = await parsePDF(file, userRUC, entityId, userId);
+        if (entries.length > 0) {
+          allEntries.push(...entries);
+          setProcessedFiles(prev => [...prev, file.name]);
+        } else {
+          ignored.push(file.name);
         }
-
-        allJournalEntries.push(...entries);
-        setPreviewEntries([...allJournalEntries]); // update modal dynamically
-        setShowPreview(true);
-        setProcessedCount(i + 1);
+      } catch (err) {
+        console.warn(`❌ Error procesando ${file.name}`, err);
+        ignored.push(file.name);
       }
+    }
 
-      if (allJournalEntries.length === 0) {
-        setError("PDFs seleccionados ya se han procesado.");
-        setShowPreview(false);
-      } else if (ignoredFiles.length > 0) {
-        setError(`Se ignoraron estos archivos ya procesados:\n${ignoredFiles.join(", ")}`);
-      }
-    } catch (err: any) {
-      console.error("Batch upload error:", err);
-      setError("❌ Parsing error. See console for details.");
+    if (allEntries.length === 0) {
+      setError("Ningún archivo nuevo fue procesado. Posiblemente ya fueron procesados antes.");
+      setLoading(false);
+      return;
+    }
+
+    setPreviewEntries(allEntries);
+    setShowPreview(true);
+
+    if (ignored.length > 0) {
+      setError(`Se ignoraron archivos ya procesados: ${ignored.join(", ")}`);
     }
 
     setLoading(false);
   };
 
+  const handleConfirm = (confirmed: any[]) => {
+    onUploadComplete(confirmed, "preview-confirmed");
+    setShowPreview(false);
+  };
+
   return (
     <div
-      className={`p-6 min-h-[240px] border-2 border-dashed rounded-lg text-center transition flex flex-col items-center justify-center ${
-        dragging ? "bg-blue-50 border-blue-400" : "bg-white"
-      }`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
+      className={`border-2 border-dashed p-6 rounded text-center ${dragging ? "bg-blue-100" : "bg-white"}`}
     >
-      <p className="mb-2 text-gray-700">
-        {loading
-          ? `⏳ Processing ${processedCount} of ${files.length}...`
-          : "📤 Arrastre y deposite hasta 5 PDFs a la vez o haga click para cargar"}
-      </p>
+      <p className="mb-2">Arrastra tus PDFs aquí o usa el botón para seleccionar.</p>
 
-      <input
-        type="file"
-        accept=".pdf"
-        multiple
-        onChange={handleFileSelect}
-        className="hidden"
-        id="pdf-upload"
-      />
-      <label
-        htmlFor="pdf-upload"
-        className="cursor-pointer inline-block mt-2 px-4 py-2 text-sm font-semibold bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
       >
-        Escoja los archivos
-      </label>
+          Seleccionar archivos
+        </button>
 
-      {files.length > 0 && (
-        <div className="mt-4 text-left text-sm text-gray-600 flex flex-col items-center text-center">
-          <p className="font-medium mb-1">🗂 Archivos a procesar:</p>
-          <ul className="list-disc pl-5 max-h-32 overflow-y-auto">
-            {files.map((file, i) => (
-              <li key={i}>
-                {file.name}
-                {loading && i < processedCount && " ✅"}
-              </li>
-            ))}
-          </ul>
-          <button
-            onClick={handleParseAll}
-            disabled={loading}
-            className="mt-3 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            🚀 Parse Files
-          </button>
-        </div>
-      )}
+      <input 
+        ref={fileInputRef}
+        id="pdf-upload-input"
+        type="file" 
+        accept=".pdf" 
+        multiple 
+        onChange={handleFileInput} 
+        className="hidden"
+        title="Selecciona tus archivos PDF" 
+        placeholder="Selecciona tus archivo PDF" 
+      />
 
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-
-      {/* 🔍 Preview Modal */}
+      {loading && <p className="mt-2 text-blue-600">Procesando archivos…</p>}
+      {error && <p className="mt-2 text-red-600 whitespace-pre-line">{error}</p>}
       {showPreview && (
         <JournalPreviewModal
           entries={previewEntries}
           onCancel={() => setShowPreview(false)}
-          onSave={(confirmed) => {
-            setShowPreview(false);
-            setFiles([]);
-            onUploadComplete(confirmed, `${confirmed.length} entries confirmed.`);
-          }}
+          onSave={handleConfirm}
         />
       )}
     </div>

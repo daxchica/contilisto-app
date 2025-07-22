@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import { JournalEntry } from "../utils/accountMapper";
+import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
   entries: JournalEntry[];
@@ -23,21 +23,25 @@ export default function PnLSummary({ entries }: Props) {
     });
   }, [entries, startDate, endDate]);
 
-  const ventas = filteredEntries.filter(e => e.account_code === "70101")
+  const ventas: number = filteredEntries 
+    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "70101")
     .reduce((sum, e) => sum + (e.credit || 0), 0);
 
-  const compras = filteredEntries.filter(e => e.account_code === "60601")
+  const compras: number = filteredEntries
+    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "60601")
     .reduce((sum, e) => sum + (e.debit || 0), 0);
 
-  const ice = filteredEntries.filter(e => e.account_code === "53901")
+  const ice: number = filteredEntries
+    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "53901")
     .reduce((sum, e) => sum + (e.debit || 0), 0);
 
-  const ivaCredito = filteredEntries.filter(e => e.account_code === "24301")
+  const ivaCredito: number = filteredEntries
+    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "24301")
     .reduce((sum, e) => sum + (e.debit || 0), 0);
 
-  const utilidadBruta = ventas - (compras + ice + ivaCredito);
-  const gastos = 0; // Placeholder for now
-  const utilidadNeta = utilidadBruta - gastos;
+  const utilidadBruta: number = ventas - (compras + ice + ivaCredito);
+  const gastos: number = 0; // Placeholder for now
+  const utilidadNeta: number = utilidadBruta - gastos;
 
   const exportToPDF = () => {
     const doc = new jsPDF();

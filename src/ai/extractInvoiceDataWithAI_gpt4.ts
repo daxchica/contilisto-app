@@ -1,4 +1,4 @@
-import { JournalEntry } from "../utils/accountMapper";
+import { JournalEntry } from "../types/JournalEntry";
 import { OpenAI } from "openai";
 
 const openai = new OpenAI({

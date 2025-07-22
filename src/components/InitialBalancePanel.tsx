@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import ManualBalanceForm from "./ManualBalanceForm";
 import BalancePDFUploader from "./BalancePDFUploader";
 import BalanceSheetDisplay from "./BalanceSheetDisplay";
-import { JournalEntry } from "../utils/accountMapper";
+import { JournalEntry } from "../types/JournalEntry";
 
 export default function InitialBalancePanel() {
   const [showPanel, setShowPanel] = useState(false);
@@ -25,7 +25,16 @@ export default function InitialBalancePanel() {
 
       {showPanel && (
         <div className="mt-4 space-y-6">
-          <ManualBalanceForm onSave={handleUpload} />
+          <ManualBalanceForm 
+            onSubmit={(entries) => {
+              const today = new Date().toISOString();
+              const asJournal: JournalEntry[] = entries.map(e => ({
+                ...e,
+                date: today,
+              }));
+              handleUpload(asJournal);
+            }} 
+          />
           <BalancePDFUploader onUploadComplete={handleUpload} />
           <BalanceSheetDisplay entries={balanceEntries} />
         </div>

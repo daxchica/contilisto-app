@@ -1,24 +1,7 @@
 // --- src/utils/accountMapper.ts ---
 
-export interface InvoiceData {
-  date: string;
-  invoice_number: string;
-  vendor: string;
-  client: string;
-  classification: string;
-  subtotal: number;
-  tax: number;
-  total: number;
-}
+import { JournalEntry } from "../types/JournalEntry";
 
-export interface JournalEntry {
-  date: string;
-  account_code: string;
-  account_name: string;
-  debit: number;
-  credit: number;
-  description?: string;
-}
 
 export function mapToJournalEntries(invoice: InvoiceData): JournalEntry[] {
   const { date, vendor, client, classification, subtotal, tax, total, invoice_number } = invoice;

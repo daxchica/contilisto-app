@@ -24,8 +24,10 @@ const UploadPDF = () => {
   return (
     <div>
       <input
+        id='pdf-upload'
         type="file"
         accept=".pdf"
+        multiple
         onChange={(e) => setPdfFile(e.target.files[0])}
       />
       <button onClick={handleUpload}>Upload PDF</button>

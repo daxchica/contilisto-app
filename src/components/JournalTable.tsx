@@ -1,7 +1,7 @@
 import React from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { JournalEntry } from "../utils/accountMapper";
+import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
   entries: JournalEntry[];

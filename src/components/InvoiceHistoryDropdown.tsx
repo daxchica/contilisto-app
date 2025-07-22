@@ -1,5 +1,5 @@
 // src/components/InvoiceHistoryDropdown.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 interface Props {
   invoiceLog: string[];
