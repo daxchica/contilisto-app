@@ -36,10 +36,10 @@ export default function BalanceSheetDisplay({ entries }: Props) {
     let y = 36;
 
     const section = (title: string, entries: Entry[]) => {
-      doc.setFont(undefined, "bold");
+      doc.setFont("helvetica", "bold");
       doc.text(title, 14, y);
       y += 6;
-      doc.setFont(undefined, "normal");
+      doc.setFont("helvetica", "normal");
       entries.forEach((e) => {
         const amount = e.debit ?? e.credit ?? 0;
         doc.text(`${e.account_code} - ${e.account_name}`, 14, y);
@@ -53,7 +53,7 @@ export default function BalanceSheetDisplay({ entries }: Props) {
     section("Liabilities", liabilities);
     section("Equity", equity);
 
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.text(`Total Assets: ${formatAmount(totalDebits)}`, 14, y);
     y += 6;
     doc.text(`Total Liabilities + Equity: ${formatAmount(totalCredits)}`, 14, y);

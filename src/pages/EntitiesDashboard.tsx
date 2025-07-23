@@ -85,7 +85,11 @@ function InvoiceLogDropdown({
     setInvoices(invoices.filter((inv) => !toDelete.includes(inv)));
     setSelected(new Set());
 
-    setJournal((prev) => prev.filter((entry) => !toDelete.includes(entry.invoice_number?.trim())));
+    setJournal((prev) => 
+      prev.filter(
+        (entry) => !toDelete.includes((entry.invoice_number ?? "").trim())
+      )
+    );
     alert("🗑️ Facturas seleccionadas eliminadas del log.");
   };
 
@@ -217,6 +221,8 @@ export default function EntitiesDashboard() {
             value={selectedEntity}
             onChange={(e) => setSelectedEntity(e.target.value)}
             className="w-full p-2 border rounded"
+            title="Seleccionar entidad"
+            aria-label="Seleccionar entidad"
           >
             <option value="">- Seleccionar -</option>
             {entities.map((e) => (

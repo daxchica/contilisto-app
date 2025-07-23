@@ -55,16 +55,16 @@ export default function PnLSummary({ entries }: Props) {
     doc.text(`Periodo: ${startDate} al ${endDate}`, 14, y);
     y += 10;
 
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.text("Ingresos operacionales:", 14, y);
-    doc.setFont(undefined, "normal");
+    doc.setFont("helvetica", "normal");
     y += 6;
     doc.text(`Ventas locales ....................................... $${ventas.toFixed(2)}`, 14, y);
     y += 10;
 
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.text("(-) Costo de Ventas:", 14, y);
-    doc.setFont(undefined, "normal");
+    doc.setFont("helvetica", "normal");
     y += 6;
     doc.text(`Compras locales ...................................... $${compras.toFixed(2)}`, 14, y);
     y += 6;
@@ -72,7 +72,7 @@ export default function PnLSummary({ entries }: Props) {
     y += 6;
     doc.text(`IVA crédito tributario .............................. $${ivaCredito.toFixed(2)}`, 14, y);
     y += 8;
-    doc.setFont(undefined, "bold");
+    doc.setFont("helvetica", "bold");
     doc.text(`Total Costo de Ventas .................................. $${(compras + ice + ivaCredito).toFixed(2)}`, 14, y);
     y += 10;
 
@@ -102,12 +102,16 @@ export default function PnLSummary({ entries }: Props) {
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
           className="border p-2 rounded"
+          title="Fecha de Inicio"
+          aria-label="Fecha de inicio"
         />
         <input
           type="date"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
           className="border p-2 rounded"
+          title="Fecha de fin"
+          aria-label="Fecha de fin"
         />
       </div>
 
