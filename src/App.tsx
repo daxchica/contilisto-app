@@ -2,6 +2,7 @@ import { useState } from "react";
 import PDFUploader from "./components/PDFUploader";
 import JournalPreview from "./components/JournalPreview";
 import JournalTable from "./components/JournalTable";
+import EstadosFinancieros from "./pages/FinancialReports"
 
 interface LedgerEntry {
   date: string;

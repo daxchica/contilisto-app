@@ -27,8 +27,9 @@ export async function saveJournalEntries(
   entries: JournalEntry[],
   userId: string
 ) {
-  const journalRef = collection(db, "entities", entityId, "journalEntries");
   if (!userId) throw new Error("Missing userId for journal entry");
+  const journalRef = collection(db, "entities", entityId, "journalEntries");
+  
 
   const ops = entries.map(({ userId: _, ...rest }) => {
     const fullEntry = { ...rest, userId };
@@ -219,3 +220,19 @@ export async function deleteJournalEntriesByInvoiceNumber(
     await Promise.all(snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref)));
   }
 }
+
+/**
+ * Saves an array of journal entries for a specific entity to Firestore.
+ * Each entry is saved individually using `addDoc`, and associated with the authenticated user.
+ * 
+ * This method is preferred in low- to medium-volume usage because:
+ * - It avoids batching complexity.
+ * - It allows logging and inspection per-entry.
+ * - It works well for systems with fewer than ~500 writes/minute.
+ * 
+ * @param entityId - Firestore document ID of the entity.
+ * @param entries - Array of journal entries to be saved.
+ * @param userId - UID of the authenticated user saving the entries.
+ * 
+ * @throws Will throw an error if `userId` is missing.
+ */

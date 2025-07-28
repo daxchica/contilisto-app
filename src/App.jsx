@@ -7,23 +7,36 @@ import Register from "./pages/Register";
 import EntitiesDashboard from "./pages/EntitiesDashboard";
 import PrivateRoute from "./components/PrivateRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { routes } from "./routes";
 
 
 function App() {
   return (
     <Router>
       <NavBar />
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/dashboard" 
-          element={
-            <PrivateRoute>
-              <EntitiesDashboard />
-            </PrivateRoute>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/dashboard"
+            element={
+              <PrivateRoute>
+                <EntitiesDashboard />
+              </PrivateRoute>
           } />
+
+          {routes.map(({ path, element, private: isPrivate }, ix) => (
+            <Route
+              key={ix}
+              path={path}
+              element={
+                isPrivate ? <PrivateRoute>{element}</PrivateRoute> : element
+              }
+            />
+          ))}
       </Routes>
+      </ErrorBoundary>
     </Router>
   );
 }

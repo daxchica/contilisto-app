@@ -1,26 +1,26 @@
 // ..src/pages/EntitiesDashboard.tsx 
-// ... (importaciones)
-import PnLSummary from "../components/PnLSummary";
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, useMemo } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
+
+import PnLSummary from "../components/PnLSummary";
 import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
-import { createEntity, fetchEntities } from "../services/entityService";
-import { JournalEntry } from "../types/JournalEntry";
 import InitialBalancePanel from "../components/InitialBalancePanel";
-import ManualBalanceForm from "../components/ManualBalanceForm";
-import BalancePDFUploader from "../components/BalancePDFUploader";
 import BalanceSheetDisplay from "../components/BalanceSheetDisplay";
+import AccountsReport from "../components/AccountsReport";
+import BankMovementForm from "../components/BankMovementForm";
+
+import { createEntity, fetchEntities } from "../services/entityService";
+import { fetchJournalEntries, deleteJournalEntriesByInvoiceNumber, saveJournalEntries, } from "../services/journalService";
+import { clearLocalLogForEntity, deleteInvoicesFromLocalLog, getProcessedInvoices } from "../services/localLogService";
+import { deleteInvoicesFromFirestoreLog, clearFirestoreLogForEntity } from "../services/firestoreLogService";
+import { JournalEntry } from "../types/JournalEntry";
+
 import InvoiceSearch from "../components/InvoiceSearch";
 import InvoiceLogManager from "../components/InvoiceLogManager";
-import { clearLocalLogForEntity, deleteInvoicesFromLocalLog, getProcessedInvoices } from "../services/localLogService";
-import AccountsReport from "../components/AccountsReport";
-import { deleteInvoicesFromFirestoreLog } from "../services/firestoreLogService";
-import { deleteJournalEntriesByInvoiceNumber } from "../services/journalService";
-import BankMovementForm from "../components/BankMovementForm";
-import { clearFirestoreLogForEntity } from "../services/firestoreLogService";
-import { saveJournalEntries } from "../services/journalService";
+
 
 
 function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
@@ -129,7 +129,14 @@ export default function EntitiesDashboard() {
   const [entities, setEntities] = useState<{ id: string; ruc: string; name: string }[]>([]);
   const [selectedEntity, setSelectedEntity] = useState("");
   const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [loadingJournal, setLoadingJournal] = useState(false);
   const [invoicePreview, setInvoicePreview] = useState("");
+
+  const selectedEntityObj = useMemo(
+    () => entities.find((e) => e.id === selectedEntity),
+    [selectedEntity, entities]
+  );
+  const selectedEntityRUC = selectedEntityObj?.ruc ?? "";
 
   useEffect(() => {
     if (user) {
@@ -139,11 +146,27 @@ export default function EntitiesDashboard() {
     }
   }, [user]);
 
-  const handleAddEntity = async () => {
-  console.log("🟡 Botón 'Agregar Registro' presionado");
+  useEffect(() => {
+    const loadJournal = async () => {
+      if (selectedEntity) {
+        try {
+          setLoadingJournal(true);
+          const fetched = await fetchJournalEntries(selectedEntity);
+          setJournal(fetched);
+        } catch (err) {
+          console.error("Error loading journal entries:", err);
+        } finally {
+          setLoadingJournal(false);
+        }
+      } else {
+        setJournal([]);
+      }
+    };
+    loadJournal();
+  }, [selectedEntity]);
 
+  const handleAddEntity = async () => {
   if (!user || !ruc || !name) {
-    console.warn("⚠️ Faltan datos para crear entidad:", { user, ruc, name });
     alert("Por favor, completa todos los campos antes de continuar.");
     return;
   }
@@ -153,7 +176,6 @@ export default function EntitiesDashboard() {
   );
 
   if (!confirmed) {
-    console.log("🛑 Operación cancelada por el usuario.");
     return;
   }
 
@@ -164,26 +186,21 @@ export default function EntitiesDashboard() {
     setRuc("");
     setName("");
     alert("✅ Entidad creada con éxito.");
-    console.log("✅ Entidad creada y lista actualizada");
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Error al crear entidad:", error);
-    alert("❌ Hubo un error al crear la entidad. Revisa la consola para más detalles.");
+    if (error.message.includes("already exists")) {
+      alert("❌ Hubo un error al crear la entidad. Revisa la consola para más detalles.");
+    } else {
+      alert("Error desconocido al crear la entidad.");
+    }
   }
 };
 
   const handleSaveJournal = async () => {
-    if (!user) return;
-    const entity = entities.find((e) => e.id === selectedEntity);
-    if (!entity) return;
-    
-    const { saveJournalEntries } = await import("../services/journalService");
-    console.log("Saving entries with userId:", user.uid);
-    await saveJournalEntries(entity.id, journal, user.uid);
-    console.log("UID:", user?.uid);
-    alert("Journal saved successfully!");
+    if (!user || !selectedEntityObj) return;
+    await saveJournalEntries(selectedEntityObj.id, journal, user.uid);
+    alert("Journal guardado con exito.");
   };
-
-  const selectedEntityRUC = entities.find(e => e.id === selectedEntity)?.ruc || "";
 
   return (
     <div className="p-4 max-w-screen-xl mx-auto">
@@ -192,6 +209,7 @@ export default function EntitiesDashboard() {
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* LEFT SIDE: Form + Entity List */}
         <div>
           <div className="flex flex-wrap gap-2 mb-3">
             <input
@@ -240,43 +258,49 @@ export default function EntitiesDashboard() {
           )}
 
           {selectedEntity && (
-            <InvoiceLogDropdown 
-            key={selectedEntity}
-            entityId={selectedEntity} 
-            ruc={selectedEntityRUC}
-            journal={journal}
-            setJournal={setJournal}
+            <>
+              <InvoiceLogDropdown 
+              key={selectedEntity}
+              entityId={selectedEntity} 
+              ruc={selectedEntityRUC}
+              journal={journal}
+              setJournal={setJournal}
             />
-          )}
+            <BankMovementForm entityId="{selectedEntity" />
+          </>
+        )}
+      </div>
 
-          {selectedEntity && (
-            <BankMovementForm entityId={selectedEntity} />
-          )}
-        </div>
-
-        {/* Solo mostrar el PDFUploader shi hay entidad seleccionada */}
-        {selectedEntity && selectedEntityRUC && (
-          <PDFUploader
-            userRUC={selectedEntityRUC}
-            entityId={selectedEntity}
-            userId={auth.currentUser?.uid ?? ""}
-            onUploadComplete={(entries, preview) => {
-              setJournal((prev) => [...prev, ...entries]);
-              setInvoicePreview(preview);
-            }}
-          />
+      {/* RIDHT SIDE: PDF Upload */}
+      {selectedEntity && selectedEntityRUC && (
+        <PDFUploader
+          userRUC={selectedEntityRUC}
+          entityId={selectedEntity}
+          userId={auth.currentUser?.uid ?? ""}
+          onUploadComplete={(entries) => {
+            setJournal((prev) => [...prev, ...entries]);
+          }}
+        />
         )}
       </div>
 
       <InitialBalancePanel />
-      <JournalTable 
-        entries={journal} 
-        entityName={selectedEntity}
-        onSave={handleSaveJournal} 
-      />
-      {journal.length > 0 && <PnLSummary entries={journal} />}
-      {journal.length > 0 && <BalanceSheetDisplay entries={journal}/>} 
-      {journal.length > 0 && <AccountsReport journal={journal} />}
-    </div>
+
+      {/* Journal Results */}
+      {loadingJournal && (
+        <div className="text-center text-blue-600 font-medium mt-4 animate-pulse">
+          ⏳ Cargando registros contables de la entidad...
+          </div>
+      )}
+
+      {!loadingJournal && journal.length > 0 && (
+        <>
+          <JournalTable entries={journal} entityName={selectedEntity} onSave={handleSaveJournal} />
+          <PnLSummary entries={journal} />
+          <BalanceSheetDisplay entries={journal} />
+          <AccountsReport journal={journal} />
+      </>
+  )}
+  </div>
   );
 }

@@ -17,7 +17,6 @@ export default function NavBar() {
       setIsLoggedIn(!!user);
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -37,20 +36,35 @@ export default function NavBar() {
   };
 
   return (
-    <nav className="bg-blue-700 text-white px-6 py-3 flex items-center justify-between shadow-md">
-      <div className="text-3xl font-bold">
-        <Link to="/" className="hover:underline">
-          Contilisto
-        </Link>
-      </div>
+    <nav className="bg-blue-700 text-white px-6 py-3 flex shadow-md">
+      <div className="max-w-7x1 mx-auto flex items-center justify-between w-full">
+        {/* Logo */}
+        <div className="text-xl font-bold">
+          <Link to="/" className="hover:underline">
+            Contilisto
+          </Link>
+        </div>
 
-      {!loading && (
-        <div className="space-x-4 text-base">
-          {!isLanding && (
-            <Link to="/dashboard" className="hover:underline">
-              Home
+        {/* Enlaces visibles solo si está logueado y no está en la landing */}
+        {isLoggedIn && !isLanding && (
+          <div className="flex space-x-6 text-sm">
+            <Link to="/dashboard" className="text-white hover:text-blue-300">
+              Tablero
             </Link>
-          )}
+            <Link to="/estados-financieros" className="text-white hover:text-blue-300">
+              Estados Financieros
+            </Link>
+          </div>
+        )}
+
+        {/* Autenticacion */}
+        {!loading && (
+          <div className="flex items-center text-sm space-x-4">
+            {!isLanding && (
+              <Link to="/dashboard" className="hover:underline">
+                Home
+              </Link>
+            )}
 
           {!isLoggedIn ? (
             <>
@@ -71,6 +85,7 @@ export default function NavBar() {
             )}
         </div>
       )}
+      </div>
     </nav>
   );
 }
