@@ -1,11 +1,11 @@
 // routes/index.tsx
-import FinancialReports from "../pages/FinancialReports";
+import FinancialStatements from "../pages/FinancialStatements";
 
 export const routes = [
 // Dentro de tu definición de rutas
     { 
         path: "/estados-financieros", 
-        element:<FinancialReports />,
+        element:<FinancialStatements />,
         private: true,
     }
 ];

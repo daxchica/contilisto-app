@@ -50,3 +50,13 @@ export const fetchEntities = async (user: User) => {
     return [];
   }
 };
+
+export const getEntities = async (uid: string) => {
+  const q = query(collection(db, "entities"), where("uid", "==", uid));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ruc: doc.data().ruc,
+    name: doc.data().name,
+  }));
+};
