@@ -11,6 +11,7 @@ import InitialBalancePanel from "../components/InitialBalancePanel";
 import BalanceSheetDisplay from "../components/BalanceSheetDisplay";
 import AccountsReport from "../components/AccountsReport";
 import BankMovementForm from "../components/BankMovementForm";
+import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
 
 import { createEntity, fetchEntities } from "../services/entityService";
 import { fetchJournalEntries, deleteJournalEntriesByInvoiceNumber, saveJournalEntries, } from "../services/journalService";
@@ -297,6 +298,7 @@ export default function EntitiesDashboard() {
         <>
           <JournalTable entries={journal} entityName={selectedEntity} onSave={handleSaveJournal} />
           <AccountsReport journal={journal} />
+          <AccountsReceivablePayable entries={journal} />
       </>
   )}
   </div>
