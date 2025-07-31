@@ -3,12 +3,20 @@ import { getAuth } from "firebase/auth";
 import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
 import { getEntities } from "../services/entityService";
-import { exportAccountToPDF } from "../utils/exportUtils";
+import { exportAccountToPDF, exportAccountToCSV } from "../utils/exportUtils";
 
 interface Entity {
   id: string;
   name: string;
   ruc: string;
+}
+
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const yyyy = date.getFullYear();
+  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
+  const dd = `${date.getDate()}`.padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export default function LedgerPage() {
@@ -91,12 +99,22 @@ export default function LedgerPage() {
             </h3>
             <button
               onClick={() =>
-                exportAccountToPDF(code, accountEntries[0]?.account_name || "", accountEntries)
+                exportAccountToPDF(code, accountEntries[0]?.account_name || "Sin nombre", accountEntries)
               }
               className="mt-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
               📄 Exportar a PDF
             </button>
+
+            <button
+              onClick={() =>
+                exportAccountToCSV(code, accountEntries[0]?.account_name || "", accountEntries)
+              }
+              className="mt-2 ml-2 px-4 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              📥 Exportar CSV
+            </button>
+
             <table className="w-full text-sm">
               <thead className="bg-gray-100">
                 <tr>
@@ -109,7 +127,7 @@ export default function LedgerPage() {
             <tbody>
               {accountEntries.map((e, i) => (
                 <tr key={i} className="border-t">
-                  <td>{new Date(e.date).toLocaleDateString("es-EC")}</td>
+                  <td>{formatDate(e.date)}</td>
                   <td>{e.description}</td>
                   <td>
                     {e.debit !== undefined

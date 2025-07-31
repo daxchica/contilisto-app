@@ -51,10 +51,10 @@ export default function NavBar() {
             <Link to="/dashboard" className="text-white hover:text-blue-300">
               Tablero
             </Link>
+            <Link to="/libro-mayor" className="text-white hover:text-blue-300">Libro Mayor</Link>
             <Link to="/estados-financieros" className="text-white hover:text-blue-300">
               Estados Financieros
             </Link>
-            <Link to="/libro-mayor" className="text-white hover:text-blue-300">Libro Mayor</Link>
             <Link to="/conciliacion" className="text-white hover:text-blue-300">
               Conciliación
             </Link>
