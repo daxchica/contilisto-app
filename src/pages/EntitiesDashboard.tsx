@@ -297,7 +297,6 @@ export default function EntitiesDashboard() {
       {!loadingJournal && journal.length > 0 && (
         <>
           <JournalTable entries={journal} entityName={selectedEntity} onSave={handleSaveJournal} />
-          <AccountsReport journal={journal} />
           <AccountsReceivablePayable entries={journal} />
       </>
   )}

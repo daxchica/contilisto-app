@@ -1,4 +1,5 @@
 export interface JournalEntry {
+    id?: string;
     date: string;
     description?: string;
     account_code: string;
