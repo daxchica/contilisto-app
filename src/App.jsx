@@ -8,7 +8,7 @@ import EntitiesDashboard from "./pages/EntitiesDashboard";
 import PrivateRoute from "./components/PrivateRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { routes } from "./routes";
-import BankReconciliationPage from "./pages/BankReconciliationPage";
+import BankBookPage from "./pages/BankBookPage";
 import LedgerPage from "./pages/LedgerPage";
 
 function App() {
@@ -26,7 +26,7 @@ function App() {
                 <EntitiesDashboard />
               </PrivateRoute>
           } />
-          <Route path="/conciliacion" element={<BankReconciliationPage />} />
+          <Route path="/libroBancos" element={<BankBookPage />} />
           <Route path="/libro-mayor" element={<LedgerPage />} />
 
           {routes.map(({ path, element, private: isPrivate }, ix) => (

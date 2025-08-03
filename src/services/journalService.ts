@@ -1,4 +1,4 @@
-// src/journalService.ts
+// src/services/journalService.ts
 
 import { db } from "../firebase-config";
 import {
@@ -30,7 +30,6 @@ export async function saveJournalEntries(
   if (!userId) throw new Error("Missing userId for journal entry");
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   
-
   const ops = entries.map(({ userId: _, ...rest }) => {
     const fullEntry = { ...rest, userId };
     console.log("Intentando guardar:", fullEntry);
@@ -221,6 +220,9 @@ export async function deleteJournalEntriesByInvoiceNumber(
   }
 }
 
+export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
+  await saveJournalEntries(entry.entityId, [entry], entry.userId);
+}
 /**
  * Saves an array of journal entries for a specific entity to Firestore.
  * Each entry is saved individually using `addDoc`, and associated with the authenticated user.

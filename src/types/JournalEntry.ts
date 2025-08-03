@@ -6,7 +6,7 @@ export interface JournalEntry {
     account_name: string;
     debit?: number;
     credit?: number;
-    type?: "income" | "expense";
+    type?: "income" | "expense" | "liability";
     invoice_number?: string;
     transactionId?: string;
     uid?: string;

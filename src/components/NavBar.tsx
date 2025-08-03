@@ -55,8 +55,8 @@ export default function NavBar() {
             <Link to="/estados-financieros" className="text-white hover:text-blue-300">
               Estados Financieros
             </Link>
-            <Link to="/conciliacion" className="text-white hover:text-blue-300">
-              Conciliación
+            <Link to="/libroBancos" className="text-white hover:text-blue-300">
+              Libro Bancos
             </Link>
           </div>
         )}

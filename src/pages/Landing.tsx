@@ -32,7 +32,7 @@ export default function Landing() {
         </div>
         <div className="bg-blue-800 p-6 rounded-xl shadow-md text-center text-white">
           <h3 className="text-xl font-bold mb-2">Reportes Financieros</h3>
-          <p className="text-sm">Obtén Estado de Resultados, Balance General y conciliaciones.</p>
+          <p className="text-sm">Obtén Estado de Resultados, Balance General y libroBancoses.</p>
         </div>
       </section>
 
