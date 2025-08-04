@@ -53,7 +53,8 @@ export default function BankBookPage() {
   const [tab, setTab] = useState<"libro" | "conciliacion">("libro");
 
   const auth = getAuth();
-  const userId = auth.currentUser?.uid || "";
+  const userId = auth.currentUser?.uid || "demo-user";
+  const entityId = "demo-entity-id";
   
   useEffect(() => {
     if (!userId) return;
@@ -139,8 +140,9 @@ export default function BankBookPage() {
       </h1>
 
         <div className="mb-4">
-            <label>Seleccionar Entidad:</label>
+            <label htmlFor="accountSelect">Seleccionar Entidad:</label>
         <select
+          id="accountSelect"
           className="ml-2 border p-1"
           value={selectedEntityId}
           onChange={(e) => setSelectedEntityId(e.target.value)}
@@ -176,8 +178,9 @@ export default function BankBookPage() {
          {tab === "libro" && (
         <>
           <div className="mb-4">
-            <label>Seleccionar Banco:</label>
+            <label htmlFor="bankSelect">Seleccionar Banco:</label>
             <select
+              id="bankSelect"
               className="ml-2 border p-1"
               value={selectedBankId}
               onChange={(e) => setSelectedBankId(e.target.value)}
@@ -209,14 +212,18 @@ export default function BankBookPage() {
               <input placeholder="Fecha" type="date" onChange={(e) => setForm({ ...form, date: e.target.value })} />
               <input placeholder="Beneficiario" onChange={(e) => setForm({ ...form, payee: e.target.value })} />
               <input placeholder="Monto" type="number" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-              <select onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <select
+                aria-label="Tipo de Movimiento" 
+                onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="">Tipo Movimiento</option>
                 <option value="INGRESO">Ingreso</option>
                 <option value="EGRESO">Egreso</option>
                 
               </select>
               <input placeholder="Descripción" onChange={(e) => setForm({ ...form, description: e.target.value })} />
-              <select onChange={(e) => setForm({ ...form, relatedTo: e.target.value })}>
+              <select
+                aria-label="Relacionado a" 
+                onChange={(e) => setForm({ ...form, relatedTo: e.target.value })}>
                 <option value="">Relacionado a</option>
                 <option value="expense">Gasto</option>
                 <option value="accountsPayable">Cuentas por Pagar</option>

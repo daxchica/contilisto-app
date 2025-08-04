@@ -1,18 +1,20 @@
 import { useState } from "react";
+import { getAuth } from "firebase/auth";
 import PDFUploader from "./components/PDFUploader";
 import JournalPreview from "./components/JournalPreview";
 import JournalTable from "./components/JournalTable";
-import EstadosFinancieros from "./pages/FinancialStatements";
 import { JournalEntry } from "./types/JournalEntry";
-
-
 
 export default function App() {
   const [ledgerData, setLedgerData] = useState<JournalEntry[]>([]);
   const [previewText, setPreviewText] = useState("");
 
+  const auth = getAuth();
+  const userId = auth.currentUser?.uid || "demo-user";
+  const entityId = "demo-entity-id"; 
+
   const handleUploadComplete = (ledger: any[], preview: string) => {
-    const journalEntries = JournalEntry[] = ledger.map((entry, index) => ({
+    const journalEntries: JournalEntry[] = ledger.map((entry, index) => ({
       id: entry.date + "-" + index,
       date: entry.date,
       account_code: entry.debit_account || entry.credit_account || "00000",
@@ -35,15 +37,27 @@ export default function App() {
 
       {/* Grid layout for uploader and ledger */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <PDFUploader onUploadComplete={handleUploadComplete} />
-        {ledgerData.length > 0 && (<JournalTable entries={ledgerData} />
+        <PDFUploader 
+          onUploadComplete={handleUploadComplete}
+          entityId={entityId}
+          userId={userId} 
+          />
+        {ledgerData.length > 0 && (
+          <JournalTable 
+            entries={ledgerData}
+            entityName="Entidad Demo" 
+            onSave={(entries) => {
+              console.log("Guardar estos entries:", entries);
+            }}
+          />
       )}
       </div>
 
       {/* Preview goes below */}
       {previewText && (
         <div className="mt-8">
-          <h3 className="text-md font-semibold text-gray-600">🧾 Parsed Record Preview (bottom)</h3>
+          <h3 className="text-md font-semibold text-gray-600">
+            🧾 Parsed Record Preview (bottom)</h3>
           <JournalPreview previewText={previewText} />
         </div>
       )}

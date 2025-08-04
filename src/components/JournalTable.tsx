@@ -6,7 +6,7 @@ import { JournalEntry } from "../types/JournalEntry";
 interface Props {
   entries: JournalEntry[];
   entityName: string;
-  onSave: () => void;
+  onSave: (entries: JournalEntry[]) => void;
 }
 
 export default function JournalTable({ entries, entityName, onSave }: Props) {
@@ -36,7 +36,7 @@ export default function JournalTable({ entries, entityName, onSave }: Props) {
         <h2 className="text-xl font-semibold">Registros de Diario</h2>
         <div className="space-x-2">
           <button
-            onClick={onSave}
+            onClick={() => onSave(entries)}
             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
           >
             💾 Grabar Diario
