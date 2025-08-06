@@ -1,3 +1,5 @@
+// /src/pages/EntitiesDashboard.tsx
+
 import { useEffect, useState, useMemo } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
@@ -5,7 +7,6 @@ import { auth } from "../firebase-config";
 import PnLSummary from "../components/PnLSummary";
 import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
-import InitialBalancePanel from "../components/InitialBalancePanel";
 import BalanceSheetDisplay from "../components/BalanceSheetDisplay";
 import AccountsReport from "../components/AccountsReport";
 import BankMovementForm from "../components/BankMovementForm";
@@ -263,8 +264,6 @@ export default function EntitiesDashboard() {
           />
         )}
       </div>
-
-      <InitialBalancePanel />
 
       {loadingJournal && (
         <div className="text-center text-blue-600 font-medium mt-4 animate-pulse">

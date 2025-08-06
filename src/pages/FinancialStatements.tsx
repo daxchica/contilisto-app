@@ -7,6 +7,7 @@ import { getEntities, deleteEntity } from "../services/entityService";
 import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
 import { getAuth } from "firebase/auth";
+import InitialBalancePanel from "../components/InitialBalancePanel";
 
 interface Entity {
   id: string;
@@ -15,8 +16,10 @@ interface Entity {
 }
 
 export default function FinancialStatements() {
+  
   const auth = getAuth();
   const currentUser = auth.currentUser;
+  
 
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
@@ -105,10 +108,13 @@ export default function FinancialStatements() {
   };
 
   return (
+    
     <div className="p-8 bg-gray-50 min-h-screen">
       <h1 className="text-2xl font-bold text-blue-700 mb-6">
         📊 Estados Financieros
       </h1>
+
+      <InitialBalancePanel />
 
       {/* Entity Selector */}
       <div className="mb-6">
