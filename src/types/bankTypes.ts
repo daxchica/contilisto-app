@@ -1,7 +1,7 @@
 // src/types/BankTypes.ts
 
 export interface BankAccount {
-  id: string;
+  id?: string;
   entityId: string;
   name: string;
   number: string;
@@ -9,6 +9,7 @@ export interface BankAccount {
   bankName: string;
   createdBy: string;
   createdAt: string;
+  userId: string;
 }
 
 export interface BankBookEntry {

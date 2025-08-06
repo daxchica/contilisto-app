@@ -52,11 +52,11 @@ export default function NavBar() {
               Tablero
             </Link>
             <Link to="/libro-mayor" className="text-white hover:text-blue-300">Libro Mayor</Link>
-            <Link to="/estados-financieros" className="text-white hover:text-blue-300">
-              Estados Financieros
-            </Link>
             <Link to="/libroBancos" className="text-white hover:text-blue-300">
               Libro Bancos
+            </Link>
+            <Link to="/estados-financieros" className="text-white hover:text-blue-300">
+              Estados Financieros
             </Link>
           </div>
         )}

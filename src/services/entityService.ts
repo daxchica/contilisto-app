@@ -5,7 +5,10 @@ import {
   where, 
   getDocs,
   addDoc,
-  query
+  query,
+  getFirestore,
+  doc,
+  deleteDoc
 } from "firebase/firestore";
 import { auth, db } from "../firebase-config";
 import { User } from "firebase/auth";
@@ -60,3 +63,9 @@ export const getEntities = async (uid: string) => {
     name: doc.data().name,
   }));
 };
+
+export async function deleteEntity(entityId: string): Promise<void> {
+  const db = getFirestore();
+  const entityRef = doc(db, "entities", entityId);
+  await deleteDoc(entityRef);
+}

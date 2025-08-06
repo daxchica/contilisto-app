@@ -54,7 +54,6 @@ export default function BankBookPage() {
 
   const auth = getAuth();
   const userId = auth.currentUser?.uid || "demo-user";
-  const entityId = "demo-entity-id";
   
   useEffect(() => {
     if (!userId) return;
@@ -66,7 +65,7 @@ export default function BankBookPage() {
     if (selectedBankId) {
       fetchBankBookEntries(selectedBankId, selectedBankId).then(setEntries);
     }
-  }, [selectedBankId]);
+  }, [selectedBankId, selectedEntityId]);
 
   useEffect(() => {
     if (selectedEntityId) {
@@ -76,9 +75,11 @@ export default function BankBookPage() {
   }, [selectedEntityId]);
 
   const handleAddBankAccount = async () => {
+    if (!selectedEntityId || !newAccountName) return;
+
     const newAccount: BankAccount = {
       id: uuidv4(),
-      entityId: "default-entity", // replace as needed
+      entityId: selectedEntityId,
       name: newAccountName,
       number: "",
       currency: "USD",
@@ -105,7 +106,7 @@ export default function BankBookPage() {
       entityId: selectedEntityId,
       bankAccountId: selectedBankId,
       date: form.date,
-      amount: parseFloat(form.amount),
+      amount: parsedAmount,
       type: form.type,
       payee: form.payee,
       description: form.description,
@@ -132,7 +133,6 @@ export default function BankBookPage() {
     await saveJournalEntries(selectedEntityId, [journalEntry], userId);
   };
     
-
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">

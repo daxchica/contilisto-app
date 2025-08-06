@@ -2,6 +2,7 @@
 import { db } from "../firebase-config";
 import { collection, addDoc, deleteDoc, doc, getDocs, query, where } from "firebase/firestore";
 import { BankAccount } from "../types/BankTypes";
+import { getAuth } from "firebase/auth";
 
 export async function fetchBankAccounts(userId: string): Promise<BankAccount[]> {
   const ref = collection(db, "bankAccounts");
