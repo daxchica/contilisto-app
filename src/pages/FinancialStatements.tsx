@@ -1,153 +1,76 @@
 ""// src/pages/FinancialStatements.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { useSelectedEntity } from "../context/SelectedEntityContext";
+
 import PnLSummary from "../components/PnLSummary";
 import BalanceSheet from "../components/BalanceSheet";
-import { getEntities, deleteEntity } from "../services/entityService";
-import { fetchJournalEntries } from "../services/journalService";
-import { JournalEntry } from "../types/JournalEntry";
-import { getAuth } from "firebase/auth";
 import InitialBalancePanel from "../components/InitialBalancePanel";
 
-interface Entity {
-  id: string;
-  ruc: string;
-  name: string;
-}
+import { fetchJournalEntries } from "../services/journalService";
+import { JournalEntry } from "../types/JournalEntry";
+
+type Tab = "estado" | "balance";
 
 export default function FinancialStatements() {
-  
-  const auth = getAuth();
-  const currentUser = auth.currentUser;
-  
+  const { entity } = useSelectedEntity();
+  const entityId = entity?.id ?? "";
+  const entityName = useMemo(() => entity?.name ?? "", [entity?.name]);
+  const entityRuc = useMemo(() => entity?.ruc ?? "", [entity?.ruc]);
 
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"estado" | "balance">("estado");
-
-  const [entityToDelete, setEntityToDelete] = useState<Entity | null>(null);
-  const [confirmText, setConfirmText] = useState("");
-
+  const [activeTab, setActiveTab] = useState<Tab>("estado");
+  
+ // Load journal entries for the selected entity
   useEffect(() => {
-    if (!currentUser?.uid) return;
-
-    getEntities(currentUser.uid)
-      .then((data) => {
-        setEntities(data);
-        if (data.length > 0) setSelectedEntity(data[0]);
-      })
-      .catch(console.error);
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!selectedEntity) return;
-
+    if (!entityId) {
+      setEntries([]);
+      return;
+    }
     setLoading(true);
-    fetchJournalEntries(selectedEntity.id)
+    fetchJournalEntries(entityId)
       .then(setEntries)
       .catch((err) => {
         console.error("Error loading journal entries:", err);
         setEntries([]);
       })
       .finally(() => setLoading(false));
-  }, [selectedEntity]);
-
-  const handleDeleteClick = (entity: Entity) => {
-    setEntityToDelete(entity);
-    setConfirmText("");
-  };
-
-  const confirmDelete = async () => {
-    if (!entityToDelete || confirmText !== entityToDelete.name) return;
-
-    try {
-      await deleteEntity(entityToDelete.id);
-      const updatedEntities = entities.filter(e => e.id !== entityToDelete.id);
-      setEntities(updatedEntities);
-      if (selectedEntity?.id === entityToDelete.id) {
-        setSelectedEntity(null);
-        setEntries([]);
-      }
-      setEntityToDelete(null);
-      setConfirmText("");
-      alert("Entidad eliminada con éxito.");
-    } catch (error) {
-      console.error("❌ Error al eliminar entidad:", error);
-      alert("No se pudo eliminar la entidad.");
-    }
-  };
+  }, [entityId]);
 
   const renderContent = () => {
     if (loading) {
-      return (
-        <p className="text-blue-600 animate-pulse">
-          ⏳ Cargando registros contables...
-        </p>
-      );
+      return <p className="text-blue-600 animate-pulse">⏳ Cargando registros contables...</p>
     }
-
     if (!entries.length) {
-      return (
-        <p className="text-gray-500 italic">
-          No hay registros contables para esta entidad.
-        </p>
-      );
+      return <p className="text-gray-500 italic">No hay registros contables para esta entidad.</p>
     }
-
-    if (activeTab === "estado") {
-      return <PnLSummary entries={entries} />;
-    }
-
-    if (activeTab === "balance") {
-      return <BalanceSheet entries={entries} />;
-    }
-
+    if (activeTab === "estado") return <PnLSummary entries={entries} />;
+    if (activeTab === "balance") return <BalanceSheet entries={entries} />;
     return null;
   };
 
-  return (
-    
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold text-blue-700 mb-6">
-        📊 Estados Financieros
-      </h1>
-
-      <InitialBalancePanel />
-
-      {/* Entity Selector */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Selecciona una entidad
-        </label>
-        <div className="flex gap-2 items-center">
-          <select
-            value={selectedEntity?.ruc || ""}
-            onChange={(e) =>
-              setSelectedEntity(
-                entities.find((ent) => ent.ruc === e.target.value) || null
-              )
-            }
-            className="p-2 border rounded w-full max-w-md"
-          >
-            {entities.map((entity) => (
-              <option key={entity.id} value={entity.ruc}>
-                {entity.ruc} – {entity.name}
-              </option>
-            ))}
-          </select>
-{/*}
-          {selectedEntity && (
-            <button
-              className="px-2 py-1 text-sm text-red-600 border border-red-500 rounded hover:bg-red-100"
-              onClick={() => handleDeleteClick(selectedEntity)}
-            >
-              🗑 Eliminar
-            </button>
-          )}*/}
-        </div> 
+  // If user hasn’t selected an entity yet, guide them to the dashboard
+  if (!entityId) {
+    return (
+      <div className="pt-20 p-8 bg-gray-50 min-h-screen">
+        <h1 className="text-2xl font-bold text-blue-700 mb-4">📊 Estados Financieros</h1>
+        <p className="mb-4">
+          Debes seleccionar una entidad primero en el{" "}
+          <Link className="text-blue-600 underline" to="/dashboard">Tablero de Entidades</Link>.
+        </p>
       </div>
+    );
+  }
+
+  return (
+    <div className="pt-20 p-8 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-bold text-blue-700 mb-6">📊 Estados Financieros</h1>
+      <p className="text-sm text-gray-600 mb-6">Entidad: <strong>{entityRuc}</strong> - {entityName}</p>
+
+      {/* Si tu panel de saldos iniciales necesita el entityId, puedes pasarlo aquí */}
+      <InitialBalancePanel entityId={entityId} />
 
       {/* Tabs */}
       <div className="flex space-x-4 border-b mb-6">
@@ -172,42 +95,6 @@ export default function FinancialStatements() {
       {/* Content */}
       <div className="bg-white shadow rounded p-6">{renderContent()}</div>
 
-      {/* Delete Confirmation Modal */}
-      {entityToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-white p-6 rounded shadow-lg w-96">
-            <h2 className="text-lg font-bold mb-4 text-red-700">Confirmar eliminación</h2>
-            <p className="mb-2">
-              Escribe el nombre exacto de la empresa <strong>{entityToDelete.name}</strong> para confirmar.
-            </p>
-            <input
-              type="text"
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              className="w-full border px-2 py-1 rounded mb-4"
-            />
-            <div className="flex justify-end space-x-2">
-              <button
-                className="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
-                onClick={() => setEntityToDelete(null)}
-              >
-                Cancelar
-              </button>
-              <button
-                disabled={confirmText !== entityToDelete.name}
-                className={`px-3 py-1 rounded ${
-                  confirmText === entityToDelete.name
-                    ? "bg-red-600 text-white hover:bg-red-700"
-                    : "bg-red-200 text-gray-500 cursor-not-allowed"
-                }`}
-                onClick={confirmDelete}
-              >
-                Eliminar definitivamente
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

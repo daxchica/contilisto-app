@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+// src/pages/LedgerPage.tsx
+
+import { useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
-import { getEntities } from "../services/entityService";
+import { fetchEntities } from "../services/entityService";
 import { exportAccountToPDF, exportAccountToCSV } from "../utils/exportUtils";
 
 interface Entity {
@@ -29,7 +31,7 @@ export default function LedgerPage() {
   // Load user entities
   useEffect(() => {
     if (!auth.currentUser?.uid) return;
-    getEntities(auth.currentUser.uid).then(setEntities);
+    fetchEntities(auth.currentUser.uid).then(setEntities);
   }, []);
 
   // Load journal entries for selected entity
@@ -62,7 +64,7 @@ export default function LedgerPage() {
   }, [entries]);
 
   return (
-    <div className="p-6">
+    <div className="pt-20 p-6">
       <h2 className="text-xl font-bold text-blue-700 mb-4">📚 Libro Mayor</h2>
 
       <select

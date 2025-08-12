@@ -36,7 +36,7 @@ export default function NavBar() {
   };
 
   return (
-    <nav className="bg-blue-700 text-white px-6 py-3 flex shadow-md">
+    <nav className="fixed top-0 left-0 w-full bg-blue-700 text-white px-6 py-3 flex shadow-md z-50">
       <div className="max-w-7x1 mx-auto flex items-center justify-between w-full">
         {/* Logo */}
         <div className="text-xl font-bold">
@@ -45,7 +45,7 @@ export default function NavBar() {
           </Link>
         </div>
 
-        {/* Enlaces visibles solo si está logueado y no está en la landing */}
+        {/* Main navigation links */}
         {isLoggedIn && !isLanding && (
           <div className="flex space-x-6 text-sm">
             <Link to="/dashboard" className="text-white hover:text-blue-300">

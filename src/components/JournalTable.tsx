@@ -31,16 +31,10 @@ export default function JournalTable({ entries, entityName, onSave }: Props) {
   };
 
   return (
-    <div className="mt-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Registros de Diario</h2>
-        <div className="space-x-2">
-          <button
-            onClick={() => onSave(entries)}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          >
-            💾 Grabar Diario
-          </button>
+    <div className="mt-8">
+      <div className="w-full mt-8 mb-2">
+        <h2 className="text-xl font-semibold text-center">Registros de Diario</h2>
+        <div className="flex justify-end pr-16 mb-4">
           <button
             onClick={exportToPDF}
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
@@ -49,7 +43,7 @@ export default function JournalTable({ entries, entityName, onSave }: Props) {
           </button>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="p-4 max-w-screen-xl mx-auto">
         <table className="min-w-full border">
           <thead>
             <tr className="bg-gray-200">

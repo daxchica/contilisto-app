@@ -10,7 +10,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-white from-blue-900 via-blue-800 to-blue-700 text-black px-6 py-10 flex flex-col items-center">
       {/* Hero */}
-      <section className="text-center max-w-3xl">
+      <section className="pt-20 text-center max-w-3xl">
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
           Contabilidad automatizada en minutos
         </h1>

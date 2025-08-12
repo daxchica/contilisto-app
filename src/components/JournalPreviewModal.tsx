@@ -94,6 +94,7 @@ export default function JournalPreviewModal({ entries, onCancel, onSave }: Props
                   <td className="p-2 border">
                     {editMode ? (
                       <input
+                        title="acc_description"
                         type="text"
                         className="w-full border rounded px-1"
                         value={e.description}
@@ -107,6 +108,7 @@ export default function JournalPreviewModal({ entries, onCancel, onSave }: Props
                   <td className="p-2 border">
                     {editMode ? (
                       <input
+                        title="acc_code"
                         type="text"
                         className="w-full border rounded px-1"
                         value={e.account_code}
@@ -120,6 +122,7 @@ export default function JournalPreviewModal({ entries, onCancel, onSave }: Props
                   <td className="p-2 border">
                     {editMode ? (
                       <input
+                        title="acc_name"
                         type="text"
                         className="w-full border rounded px-1"
                         value={e.account_name}
@@ -133,6 +136,7 @@ export default function JournalPreviewModal({ entries, onCancel, onSave }: Props
                   <td className="p-2 border text-right">
                     {editMode ? (
                       <input
+                        title="acc_title"
                         type="number"
                         step="0.01"
                         className="w-20 border rounded px-1 text-right"
@@ -147,6 +151,7 @@ export default function JournalPreviewModal({ entries, onCancel, onSave }: Props
                   <td className="p-2 border text-right">
                     {editMode ? (
                       <input
+                        title="acc_debit"
                         type="number"
                         step="0.01"
                         className="w-20 border rounded px-1 text-right"

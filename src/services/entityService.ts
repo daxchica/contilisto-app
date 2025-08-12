@@ -1,71 +1,29 @@
 // src/services/entityService.ts
 
-import { 
-  collection, 
-  where, 
-  getDocs,
-  addDoc,
-  query,
-  getFirestore,
-  doc,
-  deleteDoc
-} from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, query, where } from "firebase/firestore";
 import { auth, db } from "../firebase-config";
 import { User } from "firebase/auth";
 
-// Creating entity using RUC as ID
-export const createEntity = async (
-  user: User, 
-  ruc: string,
-  name: string
-) => {
-  const ref = collection(db, "entities"); 
-  const docRef = await addDoc(ref, {
-    ruc,
-    name,
-    uid: user.uid,
-    createdAt: new Date().toISOString(),
-  });
-  console.log("Entity created with ID:", docRef.id);
-  return docRef.id;
-};
+type EntityDoc = { id: string; ruc: string; name: string };
 
 // Obtain user's entities
-export const fetchEntities = async (user: User) => {
-  if (!user?.uid) {
-    console.error("No user provided to fetchEntities");
-    return [];
-  }
+export async function fetchEntities (userId: string): Promise<EntityDoc[]> {
+  const col = collection(db, "entities");
+  const q = query(col, where("uid", "==", userId));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<EntityDoc, "id">) }));
+}
 
-  console.log(" Fetching entities for UID:", user.uid);
-  try {
-    const q = query(collection(db, "entities"), where("uid", "==", auth.currentUser?.uid));
-    const snapshot = await getDocs(q);
-    console.log("Fetched", snapshot.size, "entities");
+export async function createEntity(userId: string, ruc: string, name: string) {
+  const col = collection(db, "entities");
+  await addDoc(col, {
+    uid: userId,
+    ruc: ruc.trim(),
+    name: name.trim(),
+    createdAt: new Date().toISOString(),
+  });
+}
 
-    return snapshot.docs.map(doc => ({ 
-      id: doc.id,
-      ruc: doc.data().ruc, 
-      name: doc.data().name, 
-    }));
-  } catch (error) {
-    console.error("Firestore fetch error:", error);
-    return [];
-  }
-};
-
-export const getEntities = async (uid: string) => {
-  const q = query(collection(db, "entities"), where("uid", "==", uid));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({
-    id: doc.id,
-    ruc: doc.data().ruc,
-    name: doc.data().name,
-  }));
-};
-
-export async function deleteEntity(entityId: string): Promise<void> {
-  const db = getFirestore();
-  const entityRef = doc(db, "entities", entityId);
-  await deleteDoc(entityRef);
+export async function deleteEntity(entityId: string) {
+  await deleteDoc (doc(db, "entities", entityId));
 }
