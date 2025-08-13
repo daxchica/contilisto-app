@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import LoginModal from "../components/LoginModal";
 import RegisterModal from "../components/RegisterModal";
 import { Link } from "react-router-dom";
+import PricingPlans from "../components/PricingPlans";
 
 export default function Landing() {
   return (
@@ -14,9 +15,9 @@ export default function Landing() {
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
           Contabilidad automatizada en minutos
         </h1>
-        <p className="text-lg md:text-xl mb-6">
+        {/* <p className="text-lg md:text-xl mb-6">
           Con Contilisto puedes registrar hasta <strong>10 empresas</strong> y realizar hasta <strong>500 registros contables mensuales</strong> por solo <span className="bg-white text-blue-800 px-2 py-1 rounded font-bold">$29/mes</span>.
-        </p>
+        </p> */}
         
       </section>
 
@@ -32,9 +33,12 @@ export default function Landing() {
         </div>
         <div className="bg-blue-800 p-6 rounded-xl shadow-md text-center text-white">
           <h3 className="text-xl font-bold mb-2">Reportes Financieros</h3>
-          <p className="text-sm">Obtén Estado de Resultados, Balance General y libroBancoses.</p>
+          <p className="text-sm">Obtén Estado de Resultados, Balance General y Libro Bancos.</p>
         </div>
       </section>
+
+      {/* Pricing Plans */}
+      <PricingPlans />
 
       {/* CTA Final */}
       <section className="mt-20 text-center">
@@ -45,7 +49,7 @@ export default function Landing() {
           to="/register"
           className="bg-yellow-400 text-blue-900 font-bold px-6 py-3 rounded-lg hover:bg-yellow-300 transition"
         >
-          Registrarse por $29/mes
+          Registrate
         </Link>
       </section>
     </div>
