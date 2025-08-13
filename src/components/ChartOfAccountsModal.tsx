@@ -1,100 +1,90 @@
 // src/components/ChartOfAccountsModal.tsx
 import React, { useMemo, useState } from "react";
-import { Account } from "../types/AccountTypes"; // Asegúrate de tener este tipo definido
+import type { Account } from "../types/AccountTypes"
+import { ECUADOR_COA } from "../data/ecuador_coa";
 
-interface Props {
-  accounts: Account[];
+type Props = {
+  accounts?: Account[];
   onClose: () => void;
+};
+
+// normalize accents for searching
+function normalize (s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
 }
 
 export default function ChartOfAccountsModal({ accounts, onClose }: Props) {
-    const [q, setQ] = useState("");
+  const [query, setQuery] = useState("");
 
-    const filtered = useMemo(() => {
-        if (!q.trim()) return accounts;
-        const needle = q.toLowerCase();
-        return accounts.filter(
-            (a) =>
-                a.code.toLowerCase().includes(needle) ||
-                a.name.toLowerCase().includes(needle)
-        );
-    }, [accounts, q]);
+  // Use the provided list or the full Ecuador COA; keep a stable, sorted copy
+  const source = useMemo(
+    () =>
+      (accounts && accounts.length ? accounts : ECUADOR_COA)
+        .slice()
+        .sort((a, b) => a.code.localeCompare(b.code, "es", { numeric: true })),
+    [accounts]
+  );
 
-    // Cerrar con ESC
-    React.useEffect(() => {
-        const onEsc = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
-        window.addEventListener("keydown", onEsc);
-        return () => window.removeEventListener("keydown", onEsc);
-    }, [onClose]);
+  // Filter by code or name (accent-insensitive)
+  const filtered = useMemo(() => {
+    const q = normalize(query.trim());
+    if (!q) return source;
+    return source.filter((a) => a.code.includes(q) || normalize(a.name).includes(q));
+  }, [query, source]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="coa-title"
-      onClick={onClose} // click en backdrop cierra
-    >
-      <div 
-        className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4 p-5 flex flex-col"
-        onClick={(e) => e.stopPropagation()} // evita cerrar al hacer click dentro
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-3">
-            <h2 
-                id="coa-title" 
-                className="text-xl font-bold text-center w-full"
-            >
-                    Plan de Cuentas
-            </h2>
-            <button
-                onClick={onClose}
-                className="px-3 py-1 rounded border hover:bg-gray-50"
-                aria-label="Cerrar"
-            >
-                Cerrar
-            </button>
-            </div>
-
-            {/* Search */}
-            <input
-                type="text"
-                placeholder="Buscar por código o nombre…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="w-full border rounded px-3 py-2 mb-3"
-            />
-
-            {/* Table (sticky header + scrollable body) */}
-            {filtered.length === 0 ? (
-                <p className="text-sm text-gray-600">
-                    {accounts.length === 0
-                        ? "No hay cuentas detectadas aún. Carga o genera asientos para verlas aquí."
-                        : "No se encontraron cuentas que coincidan con tu búsqueda."}
-                </p>
-            ) : (
-              <div className="max-h-[55vh] overflow-auto border rounded">
-                <table className="w-full text-sm">
-                    <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                        <th className="text-left px-3 py-2 w-40">Código</th>
-                        <th className="text-left px-3 py-2">Nombre</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                        {filtered.map((a) => (
-                            <tr key={a.code} className="border-t">
-                                <td className="px-3 py-2 font-mono">{a.code}</td>
-                                <td className="px-3 py-2">{a.name}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-              </div>
-            )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden max-w-3xl w-[90vw]">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <h2 className="text-lg font-semibold">Plan de Cuentas</h2>
+          <button
+            onClick={onClose}
+            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+            aria-label="Cerrar"
+          >
+            Cerrar
+          </button>
         </div>
+
+        <div className="p-4">
+          <input
+            type="text"
+            placeholder="Buscar por código o nombre…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full border rounded px-3 py-2 mb-3"
+          />
+
+          <div className="max-h-[60vh] overflow-auto border rounded">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-100 sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-2 w-40">Código</th>
+                  <th className="text-left px-3 py-2">Nombre</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((a) => (
+                  <tr key={a.code} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2 font-mono">{a.code}</td>
+                    <td className="px-3 py-2">{a.name}</td>
+                  </tr>
+                ))}
+
+                {!filtered.length && (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-gray-500" colSpan={2}>
+                      No se encontraron cuentas para “{query}”.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </div>
+    </div>
   );
 }
+
+ 

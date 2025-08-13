@@ -23,8 +23,7 @@ import { JournalEntry } from "../types/JournalEntry";
 
 import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
 import { Account } from "../types/AccountTypes";
-// Optional: quick navigation (uncomment if you want buttons to other pages)
-// import { useNavigate } from "react-router-dom";
+import ECUADOR_COA from "../data/ecuador_coa";
 
 function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
   if (!entityId || !ruc) return null;
@@ -241,7 +240,7 @@ load();
 
       if ( selectedEntityId === entityToDelete.id) {
         setSelectedEntityId("");
-        setGlobalEntity(null);
+        setEntity(null);
         setJournal([]);
       }
       setEntityToDelete(null);
@@ -275,9 +274,24 @@ load();
   return (
     <>
       <div className="pt-20 pb-6 max-w-screen-xl mx-auto">
-        <h1 className="text-2xl font-bold text-blue-900 flex items-center mb-4">
-          <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
-        </h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-blue-900 flex items-center mb-4">
+            <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
+          </h1>
+
+        {/* Top-right toolbar */}
+        {selectedEntity && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAccountsModal(true)}
+              className="px-4 py-2 bg-green-400 border rounded text-blue-700 hover:bg-green-200 w-fit"
+              title="Ver Plan de Cuentas"
+            >
+              Ver Plan de Cuentas
+            </button>
+          </div>
+        )}
+      </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div>
@@ -300,11 +314,11 @@ load();
                 onClick={handleAddEntity}
                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
               >
-                ➕ Agregar Registro
+                ➕ Agregar Entidad
               </button>
             </div>
 
-            <label className="font-semibold block mb-1">Lista de Empresas</label>
+            <label className="font-semibold block mb-1">Lista de Entidades</label>
             <select
               value={selectedEntityId}
               onChange={(e) => setSelectedEntityId(e.target.value)}
@@ -340,33 +354,7 @@ load();
                 />
               )}
 
-              {selectedEntity && (
-                <button
-                  onClick={() => setShowAccountsModal(true)}
-                  className="px-4 py-2 bg-gray-100 border rounded text-blue-700 hover:bg-gray-200 w-fit"
-                >
-                  VER Plan de Cuentas
-                </button>
-              )}
-
-              {/* Optional quick navigation
-              {selectedEntityId && (
-                <div className="flex gap-2 mt-2">
-                  <button
-                    className="px-3 py-1 border rounded hover:bg-gray-100"
-                    onClick={() => navigate("/libroBancos")}
-                  >
-                    Ir a Libro Bancos
-                  </button>
-                  <button
-                    className="px-3 py-1 border rounded hover:bg-gray-100"
-                    onClick={() => navigate("/libro-mayor")}
-                  >
-                    Ir a Libro Mayor
-                  </button>
-                </div>
-              )}
-              */}
+              
 
               {entityToDelete && (
                 <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-40 z-50">
@@ -402,6 +390,7 @@ load();
                 </div>
               )}
 
+              
               {selectedEntity && (
                 <InvoiceLogDropdown
                   key={selectedEntityId}
@@ -444,10 +433,8 @@ load();
       )}
 
       {showAccountsModal && (
-        <ChartOfAccountsModal
-          accounts={accountsFromJournal}
-          onClose={() => setShowAccountsModal(false)}
-        />
+        <ChartOfAccountsModal onClose={() => setShowAccountsModal(false)}
+        accounts={ECUADOR_COA}/>
       )}
     </>
   );

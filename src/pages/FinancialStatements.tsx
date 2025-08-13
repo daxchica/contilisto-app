@@ -67,7 +67,7 @@ export default function FinancialStatements() {
   return (
     <div className="pt-20 p-8 bg-gray-50 min-h-screen">
       <h1 className="text-2xl font-bold text-blue-700 mb-6">📊 Estados Financieros</h1>
-      <p className="text-sm text-gray-600 mb-6">Entidad: <strong>{entityRuc}</strong> - {entityName}</p>
+      <p className="text-l text-gray-600 mb-6">Entidad: <strong>{entityRuc}</strong> - {entityName}</p>
 
       {/* Si tu panel de saldos iniciales necesita el entityId, puedes pasarlo aquí */}
       <InitialBalancePanel entityId={entityId} />
