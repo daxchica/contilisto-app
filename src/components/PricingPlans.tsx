@@ -18,6 +18,10 @@ function Wrapper({
   );
 }
 
+function rememberPlan(plan: "starter" | "pro" | "enterprise") {
+  sessionStorage.setItem("selectedPlan", plan);
+}
+
 export default function PricingPlans() {
   return (
     <section className="max-w-6xl mx-auto w-full px-4 sm:px-6 mt-10">
@@ -83,6 +87,7 @@ export default function PricingPlans() {
           {/* CTA */}
           <Link
             to="/register?plan=starter"
+            onClick={() => rememberPlan("starter")}
             className="inline-block mt-6 rounded-xl bg-emerald-600 text-white px-5 py-3 font-semibold
                        hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-700"
           >
@@ -150,9 +155,13 @@ export default function PricingPlans() {
             </div>
           </div>
 
+            <p className="mt-2 text-white-800/80">
+            Para profesionales contables.
+          </p>
           {/* CTA */}
           <Link
             to="/register?plan=pro"
+            onClick={() => rememberPlan("pro")}
             className="inline-block mt-6 rounded-xl border border-white/70 px-6 py-3 font-semibold
                        hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50"
           >
@@ -195,6 +204,7 @@ export default function PricingPlans() {
 
           <Link
             to="/contact?plan=enterprise"
+            onClick={() => rememberPlan("enterprise")}
             className="inline-block mt-6 rounded-xl bg-white text-slate-900 px-5 py-3 font-semibold
                        hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-white/70"
           >

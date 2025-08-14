@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { getAuth } from "firebase/auth";
-import { getEntities } from "../services/entityService";
+import { fetchEntities } from "../services/entityService";
 import { fetchJournalEntries } from "../services/journalService";
 import { fetchBankMovements } from "../services/bankMovementService";
 import { JournalEntry } from "../types/JournalEntry";
@@ -24,7 +24,7 @@ export default function BankReconciliationPage() {
 
   useEffect(() => {
     if (!auth.currentUser?.uid) return;
-    getEntities(auth.currentUser.uid).then(setEntities);
+    fetchEntities(auth.currentUser.uid).then(setEntities);
   }, []);
 
   useEffect(() => {
@@ -41,6 +41,7 @@ export default function BankReconciliationPage() {
       </h2>
 
       <select
+        aria-label="Selecciona una entidad"
         className="p-2 mb-6 border rounded"
         onChange={(e) => {
           const ent = entities.find((x) => x.ruc === e.target.value);

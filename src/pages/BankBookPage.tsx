@@ -133,7 +133,7 @@ export default function BankBookPage() {
     const created = refreshed.find(
       (b) => b.name.trim().toLowerCase() === newAccountName.trim().toLowerCase()
     );
-    if (!selectedBankId && created) setSelectedBankId(created.id);
+    if (!selectedBankId && created?.id) setSelectedBankId(created.id);
     setNewAccountName("");
     alert("Banco creado exitosamente.");
   };
@@ -226,8 +226,9 @@ export default function BankBookPage() {
       {tab === "libro" && (
         <>
           <div className="mb-4">
-            <label>Seleccionar Banco:</label>
+            <label htmlFor="bankSelect" className="sr-only">Seleccionar Banco:</label>
             <select
+              id="bankSelect"
               className="ml-2 border p-1"
               value={selectedBankId}
               onChange={(e) => setSelectedBankId(e.target.value)}
@@ -288,7 +289,12 @@ export default function BankBookPage() {
               <select
                 aria-label="Tipo de movimiento"
                 value={form.type ?? ""}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
+                onChange={(e) => 
+                  setForm((prev) => ({
+                    ...prev, 
+                    type: (e.target.value || "") as FormState["type"], 
+                }))
+              }
                 required
               >
                 <option value="">Tipo Movimiento</option>

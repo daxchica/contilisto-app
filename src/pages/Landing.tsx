@@ -6,6 +6,7 @@ import LoginModal from "../components/LoginModal";
 import RegisterModal from "../components/RegisterModal";
 import { Link } from "react-router-dom";
 import PricingPlans from "../components/PricingPlans";
+import Footer from "../components/Footer"
 
 export default function Landing() {
   return (

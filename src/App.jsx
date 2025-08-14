@@ -11,6 +11,7 @@ import BankBookPage from "./pages/BankBookPage";
 import LedgerPage from "./pages/LedgerPage";
 import FinancialStatements from "./pages/FinancialStatements";
 import { SelectedEntityProvider } from "./context/SelectedEntityContext";
+import Footer from "./components/Footer";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/estados-financieros" element={<PrivateRoute><FinancialStatements /></PrivateRoute>}/>
       </Routes>
       </ErrorBoundary>
+      <Footer />
     </Router>
     </SelectedEntityProvider>
   );
