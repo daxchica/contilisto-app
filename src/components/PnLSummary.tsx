@@ -1,159 +1,105 @@
-// components/PnLSummary.tsx
-
-import React, { useMemo, useState, useEffect } from "react";
+// src/components/PnLSummary.tsx
+import React, { useMemo } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { JournalEntry } from "../types/JournalEntry";
 
-interface Props {
-  entries: JournalEntry[];
-}
+interface Props { entries: JournalEntry[]; }
 
 export default function PnLSummary({ entries }: Props) {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Totales por código (puedes ajustar el mapeo a tus cuentas reales)
+  const sumByCode = (code: string, side: "debit" | "credit") =>
+    entries
+      .filter((e) => (e.account_code || "") === code)
+      .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
-  const filteredEntries = useMemo(() => {
-    return entries.filter(entry => {
-      if (!startDate && !endDate) return true;
-      const entryDate = new Date(entry.date);
-      const afterStart = startDate ? entryDate >= new Date(startDate) : true;
-      const beforeEnd = endDate ? entryDate <= new Date(endDate) : true;
-      return afterStart && beforeEnd;
-    });
-  }, [entries, startDate, endDate]);
+  const ventas       = sumByCode("70101", "credit");
+  const compras      = sumByCode("60601", "debit");
+  const ice          = sumByCode("53901", "debit");
+  const ivaCredito   = sumByCode("24301", "debit");
 
-  const ventas: number = filteredEntries 
-    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "70101")
-    .reduce((sum, e) => sum + (e.credit || 0), 0);
+  const costoVentas  = compras + ice + ivaCredito;
+  const utilidadBruta = ventas - costoVentas;
+  const gastos = 0; // TODO: integrar mapeo de gastos cuando lo definas
+  const utilidadNeta = utilidadBruta - gastos;
 
-  const compras: number = filteredEntries
-    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "60601")
-    .reduce((sum, e) => sum + (e.debit || 0), 0);
-
-  const ice: number = filteredEntries
-    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "53901")
-    .reduce((sum, e) => sum + (e.debit || 0), 0);
-
-  const ivaCredito: number = filteredEntries
-    .filter((e): e is JournalEntry & {account_code: string} => e.account_code === "24301")
-    .reduce((sum, e) => sum + (e.debit || 0), 0);
-
-  const utilidadBruta: number = ventas - (compras + ice + ivaCredito);
-  const gastos: number = 0; // Placeholder for now
-  const utilidadNeta: number = utilidadBruta - gastos;
+  const fmt = (n: number) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(n);
 
   const exportToPDF = () => {
     const doc = new jsPDF();
-    const now = new Date().toLocaleDateString();
     let y = 20;
-
     doc.setFontSize(16);
-    doc.text("📊 Estado de Pérdidas y Ganancias", 14, y);
-    y += 8;
-    doc.setFontSize(11);
-    doc.text(`Periodo: ${startDate} al ${endDate}`, 14, y);
-    y += 10;
+    doc.text("📊 Estado de Pérdidas y Ganancias", 14, y); y += 10;
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Ingresos operacionales:", 14, y);
-    doc.setFont("helvetica", "normal");
-    y += 6;
-    doc.text(`Ventas locales ....................................... $${ventas.toFixed(2)}`, 14, y);
-    y += 10;
+    const line = (label: string, value: number, code?: string, bold?: boolean) => {
+      doc.setFont("helvetica", bold ? "bold" : "normal");
+      const left = code ? `${code}  ${label}` : label;
+      doc.text(`${left} ....................................... ${fmt(value)}`, 14, y);
+      y += 8;
+    };
 
-    doc.setFont("helvetica", "bold");
-    doc.text("(-) Costo de Ventas:", 14, y);
-    doc.setFont("helvetica", "normal");
-    y += 6;
-    doc.text(`Compras locales ...................................... $${compras.toFixed(2)}`, 14, y);
-    y += 6;
-    doc.text(`Otros tributos (ICE) ................................ $${ice.toFixed(2)}`, 14, y);
-    y += 6;
-    doc.text(`IVA crédito tributario .............................. $${ivaCredito.toFixed(2)}`, 14, y);
-    y += 8;
-    doc.setFont("helvetica", "bold");
-    doc.text(`Total Costo de Ventas .................................. $${(compras + ice + ivaCredito).toFixed(2)}`, 14, y);
-    y += 10;
+    line("Ingresos operacionales", 0, undefined, true);
+    line("Ventas locales", ventas, "70101");
 
-    doc.text(`= Utilidad Bruta ....................................... $${utilidadBruta.toFixed(2)}`, 14, y);
-    y += 10;
-    doc.text(`(-) Gastos Operacionales:                              $${gastos.toFixed(2)}`, 14, y);
-    y += 10;
-    doc.text(`= Utilidad Neta del Ejercicio ......................... $${utilidadNeta.toFixed(2)}`, 14, y);
+    y += 2;
+    line("(-) Costo de Ventas", 0, undefined, true);
+    line("Compras locales", compras, "60601");
+    line("Otros tributos (ICE)", ice, "53901");
+    line("IVA crédito tributario", ivaCredito, "24301");
+    line("Total Costo de Ventas", costoVentas, undefined, true);
+
+    y += 2;
+    line("= Utilidad Bruta", utilidadBruta, undefined, true);
+    line("(-) Gastos Operacionales", gastos);
+    line("= Utilidad Neta del Ejercicio", utilidadNeta, undefined, true);
 
     doc.save("Estado_Perdidas_Ganancias.pdf");
   };
 
-  useEffect(() => {
-    (window as any).exportPnLPDF = exportToPDF;
-    return () => {
-      delete (window as any).exportPnLPDF;
-    };
-  }, [exportToPDF]);
-
+  // Estructura visible
   return (
-    <div className="mt-8 bg-white p-4 shadow rounded border">
+    <div className="bg-white p-4 shadow rounded border">
       <h2 className="text-xl font-bold text-blue-800 mb-4">📈 Estado de Pérdidas y Ganancias</h2>
-
-      <div className="flex flex-wrap gap-4 mb-4">
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          className="border p-2 rounded"
-          title="Fecha de Inicio"
-          aria-label="Fecha de inicio"
-        />
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          className="border p-2 rounded"
-          title="Fecha de fin"
-          aria-label="Fecha de fin"
-        />
-      </div>
 
       <div className="space-y-1 font-mono text-sm">
         <div className="flex justify-between">
-          <span>Ventas locales</span>
-          <span>${ventas.toFixed(2)}</span>
+          <span><span className="text-gray-500 mr-2">70101</span>Ventas locales</span>
+          <span>{fmt(ventas)}</span>
         </div>
 
         <div className="flex justify-between font-semibold mt-2">
           <span>Costos de Ventas:</span>
-          <span>-${(compras + ice + ivaCredito).toFixed(2)}</span>
+          <span>-{fmt(costoVentas)}</span>
         </div>
 
         <div className="pl-4 space-y-1">
           <div className="flex justify-between">
-            <span>Compras locales</span>
-            <span>${compras.toFixed(2)}</span>
+            <span><span className="text-gray-500 mr-2">60601</span>Compras locales</span>
+            <span>{fmt(compras)}</span>
           </div>
           <div className="flex justify-between">
-            <span>Otros tributos (ICE)</span>
-            <span>${ice.toFixed(2)}</span>
+            <span><span className="text-gray-500 mr-2">53901</span>Otros tributos (ICE)</span>
+            <span>{fmt(ice)}</span>
           </div>
           <div className="flex justify-between">
-            <span>IVA crédito tributario</span>
-            <span>${ivaCredito.toFixed(2)}</span>
+            <span><span className="text-gray-500 mr-2">24301</span>IVA crédito tributario</span>
+            <span>{fmt(ivaCredito)}</span>
           </div>
         </div>
 
         <div className="flex justify-between font-bold border-t mt-2 pt-1">
           <span>Utilidad Bruta</span>
-          <span>${utilidadBruta.toFixed(2)}</span>
+          <span>{fmt(utilidadBruta)}</span>
         </div>
 
         <div className="flex justify-between mt-2">
           <span>Gastos operacionales</span>
-          <span>$0.00</span>
+          <span>{fmt(gastos)}</span>
         </div>
 
         <div className="flex justify-between font-bold border-t mt-2 pt-1 text-green-600">
           <span>Utilidad Neta del Ejercicio</span>
-          <span>${utilidadNeta.toFixed(2)}</span>
+          <span>{fmt(utilidadNeta)}</span>
         </div>
       </div>
 

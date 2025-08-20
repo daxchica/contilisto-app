@@ -1,5 +1,4 @@
-""// src/pages/FinancialStatements.tsx
-
+// src/pages/FinancialStatements.tsx
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
@@ -7,23 +6,27 @@ import { useSelectedEntity } from "../context/SelectedEntityContext";
 import PnLSummary from "../components/PnLSummary";
 import BalanceSheet from "../components/BalanceSheet";
 import InitialBalancePanel from "../components/InitialBalancePanel";
+import TrialBalance from "../components/TrialBalance";
 
 import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
 
-type Tab = "estado" | "balance";
+type Tab = "comprobacion" | "estado" | "balance";
 
 export default function FinancialStatements() {
   const { entity } = useSelectedEntity();
   const entityId = entity?.id ?? "";
   const entityName = useMemo(() => entity?.name ?? "", [entity?.name]);
-  const entityRuc = useMemo(() => entity?.ruc ?? "", [entity?.ruc]);
+  const entityRuc   = useMemo(() => entity?.ruc  ?? "", [entity?.ruc]);
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("estado");
-  
- // Load journal entries for the selected entity
+  const [activeTab, setActiveTab] = useState<Tab>("comprobacion");
+
+  // filtros de fecha (globales)
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate]     = useState<string>("");
+
   useEffect(() => {
     if (!entityId) {
       setEntries([]);
@@ -39,62 +42,116 @@ export default function FinancialStatements() {
       .finally(() => setLoading(false));
   }, [entityId]);
 
+  const filteredEntries = useMemo(() => {
+    if (!startDate && !endDate) return entries;
+    const from = startDate ? new Date(startDate) : null;
+    const to   = endDate   ? new Date(endDate)   : null;
+    return entries.filter((e) => {
+      const d = new Date(e.date);
+      if (from && d < from) return false;
+      if (to && d > to)     return false;
+      return true;
+    });
+  }, [entries, startDate, endDate]);
+
   const renderContent = () => {
-    if (loading) {
-      return <p className="text-blue-600 animate-pulse">⏳ Cargando registros contables...</p>
-    }
-    if (!entries.length) {
-      return <p className="text-gray-500 italic">No hay registros contables para esta entidad.</p>
-    }
-    if (activeTab === "estado") return <PnLSummary entries={entries} />;
-    if (activeTab === "balance") return <BalanceSheet entries={entries} />;
+    if (loading) return <p className="text-blue-600 animate-pulse">⏳ Cargando registros contables...</p>;
+    if (!filteredEntries.length) return <p className="text-gray-500 italic">No hay registros en el rango seleccionado.</p>;
+
+    if (activeTab === "comprobacion") return <TrialBalance entries={filteredEntries} />;
+    if (activeTab === "estado")       return <PnLSummary   entries={filteredEntries} />;
+    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} />;
+
     return null;
   };
 
-  // If user hasn’t selected an entity yet, guide them to the dashboard
   if (!entityId) {
     return (
-      <div className="pt-20 p-8 bg-gray-50 min-h-screen">
-        <h1 className="text-2xl font-bold text-blue-700 mb-4">📊 Estados Financieros</h1>
-        <p className="mb-4">
-          Debes seleccionar una entidad primero en el{" "}
-          <Link className="text-blue-600 underline" to="/dashboard">Tablero de Entidades</Link>.
-        </p>
+      <div className="pt-24 px-4 min-h-screen flex justify-center">
+        <div className="w-full max-w-5xl">
+          <h1 className="text-2xl font-bold text-blue-700 mb-4">📊 Estados Financieros</h1>
+          <p className="mb-4">
+            Debes seleccionar una entidad primero en el{" "}
+            <Link className="text-blue-600 underline" to="/dashboard">Tablero de Entidades</Link>.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="pt-20 p-8 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold text-blue-700 mb-6">📊 Estados Financieros</h1>
-      <p className="text-l text-gray-600 mb-6">Entidad: <strong>{entityRuc}</strong> - {entityName}</p>
+    <div className="pt-24 px-4 min-h-screen flex justify-center">
+      <div className="w-full max-w-5xl">
+        <h1 className="text-2xl font-bold text-blue-700 mb-2 text-center">📊 Estados Financieros</h1>
+        <p className="text-base text-gray-600 mb-8 text-center">
+          Entidad: <strong>{entityRuc}</strong> — {entityName}
+        </p>
 
-      {/* Si tu panel de saldos iniciales necesita el entityId, puedes pasarlo aquí */}
-      <InitialBalancePanel entityId={entityId} />
+        {/* Panel de Saldos Iniciales */}
+        <div className="mb-8">
+          <InitialBalancePanel entityId={entityId} />
+        </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-4 border-b mb-6">
-        {[
-          { id: "estado", label: "Estado de Resultados" },
-          { id: "balance", label: "Balance General" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as "estado" | "balance")}
-            className={`pb-2 font-medium ${
-              activeTab === tab.id
-                ? "border-b-2 border-blue-700 text-blue-700"
-                : "text-gray-500 hover:text-blue-600"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {/* Filtros globales */}
+        <div className="bg-white border rounded-lg shadow p-4 mb-6">
+          <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
+            <div className="flex items-center gap-2">
+              <label htmlFor="fi" className="text-sm text-gray-700">Desde</label>
+              <input
+                id="fi"
+                type="date"
+                className="border rounded px-2 py-1"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="ff" className="text-sm text-gray-700">Hasta</label>
+              <input
+                id="ff"
+                type="date"
+                className="border rounded px-2 py-1"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button
+                className="text-sm text-blue-700 underline"
+                onClick={() => { setStartDate(""); setEndDate(""); }}
+              >
+                Limpiar rango
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex justify-center gap-6 border-b mb-6">
+          {[
+            { id: "comprobacion", label: "Balance de Comprobación" },
+            { id: "estado",       label: "Estado de Resultados" },
+            { id: "balance",      label: "Balance General" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id as Tab)}
+              className={`pb-2 font-medium ${
+                activeTab === t.id
+                  ? "border-b-2 border-blue-700 text-blue-700"
+                  : "text-gray-500 hover:text-blue-600"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Contenido */}
+        <div className="bg-white shadow rounded p-6 mb-16">
+          {renderContent()}
+        </div>
       </div>
-
-      {/* Content */}
-      <div className="bg-white shadow rounded p-6">{renderContent()}</div>
-
     </div>
   );
 }

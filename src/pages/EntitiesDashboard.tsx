@@ -8,8 +8,17 @@ import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
 import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
 
-import { createEntity, deleteEntity, fetchEntities } from "../services/entityService";
-import { fetchJournalEntries, deleteJournalEntriesByInvoiceNumber, saveJournalEntries } from "../services/journalService";
+import { 
+  createEntity, 
+  deleteEntity, 
+  fetchEntities,
+  type Entity, 
+} from "../services/entityService";
+import { 
+  fetchJournalEntries, 
+  deleteJournalEntriesByInvoiceNumber, 
+  saveJournalEntries 
+} from "../services/journalService";
 import {
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
@@ -144,80 +153,94 @@ export default function EntitiesDashboard() {
   
   // 1) Fetch entities for the logged-in user
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
     if (!user?.uid) {
-      setEntities([]);
-      setSelectedEntityId("");
-      setEntity(null);
+      if (!cancelled){
+        setEntities([]);
+        setSelectedEntityId("");
+        setEntity(null);
+      }
       return;
     }
     try {
       // Pass userId consistently
-      const list = await fetchEntities(user.uid);
-      setEntities(list);
-      
-      // If current selection is not in the refreshed list, clear it
-      if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
-        setSelectedEntityId("");
-        setEntity(null);
-    }
+      const list = await fetchEntities();
+      if (!cancelled) {
+        setEntities(list);
+        // If current selection is not in the refreshed list, clear it
+        if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
+          setSelectedEntityId("");
+          setEntity(null);
+        }
+      }
   } catch (err) {
     console.error("Error fetching entities:", err);
-  }
-};
-load();
-// eslint-disable-next-line react-hooks-exhaustive-deps
-}, [user?.uid]);
-
-  // 2) Hydrate local selection from global context on mount / when it changes
-  useEffect(() => {
-      if (globalEntity?.id) setSelectedEntityId(globalEntity.id);
-      else setSelectedEntityId("");
-  }, [globalEntity?.id]);
-
-  // 3) Keep global context in sync when selection changes locally
-  useEffect(() => {
-    if (!selectedEntity) {
-      setEntity(null);
-      return;
-    }
-    setEntity({ id: selectedEntity.id, ruc: selectedEntity.ruc, name: selectedEntity.name });
-  }, [selectedEntityId, entities, setEntity]);
-
-  // 4) Load journal for the selected entity
-  useEffect(() => {
-    const loadJournal = async () => {
-      if (!selectedEntityId) {
-        setJournal([]);
-        return;
-      }
-      try {
-        setLoadingJournal(true);
-        const fetched = await fetchJournalEntries(selectedEntityId);
-        setJournal(fetched);
-      } catch (err) {
-        console.error("Error loading journal entries:", err);
-      } finally {
-        setLoadingJournal(false);
+    if (!cancelled) {
+          setEntities([]);
+          setSelectedEntityId("");
+          setEntity(null);
+        }
       }
     };
-    loadJournal();
-  }, [selectedEntityId]);
+    load();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks-exhaustive-deps
+    }, [user?.uid]);
+
+    // 2) Hydrate local selection from global context on mount / when it changes
+    useEffect(() => {
+        setSelectedEntityId(globalEntity?.id ?? "");
+    }, [globalEntity?.id]);
+
+    // 3) Keep global context in sync when selection changes locally
+    useEffect(() => {
+      if (!selectedEntity) {
+        setEntity(null);
+        return;
+      }
+      setEntity({ id: selectedEntity.id, ruc: selectedEntity.ruc, name: selectedEntity.name });
+    }, [selectedEntityId, entities, setEntity, selectedEntity]);
+
+    // 4) Load journal for the selected entity
+    useEffect(() => {
+      let cancelled = false;
+      const loadJournal = async () => {
+        if (!selectedEntityId) {
+          setJournal([]);
+          return;
+        }
+        try {
+          setLoadingJournal(true);
+          const fetched = await fetchJournalEntries(selectedEntityId);
+          if (!cancelled) setJournal(fetched);
+        } catch (err) {
+          console.error("Error loading journal entries:", err);
+          if (!cancelled) setJournal([]);
+        } finally {
+          if (!cancelled) setLoadingJournal(false);
+        }
+      };
+      loadJournal();
+      return () => {
+        cancelled = true;
+      }
+    }, [selectedEntityId]);
 
   const handleAddEntity = async () => {
     if (!user?.uid || !ruc || !name) {
       alert("Por favor, completa todos los campos antes de continuar.");
       return;
     }
-
     const confirmed = window.confirm(
       `¿Estás seguro de que deseas registrar la nueva entidad con los siguientes datos?\n\nRUC: ${ruc}\nNombre: ${name}`
     );
     if (!confirmed) return;
 
     try {
-      await createEntity(user.uid, ruc, name);
-      const updated = await fetchEntities(user.uid);
+      await createEntity({ ruc, name });
+      const updated = await fetchEntities();
       setEntities(updated);
       setRuc("");
       setName("");
@@ -425,7 +448,7 @@ load();
         <>
           <JournalTable
             entries={journal}
-            entityName={selectedEntityId}
+            entityName={selectedEntity?.name ?? ""}
             onSave={handleSaveJournal}
           />
           <AccountsReceivablePayable entries={journal} />
