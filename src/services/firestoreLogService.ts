@@ -9,7 +9,21 @@ import {
   getDocs,
   deleteDoc,
   writeBatch,
+  serverTimestamp,
+  QueryDocumentSnapshot,
 } from "firebase/firestore";
+
+/** ---------- helpers ---------- */
+const authUid = () => getAuth().currentUser?.uid ?? null;
+
+async function commitInBatches(refs: Array<QueryDocumentSnapshot["ref"] | ReturnType<typeof doc>>) {
+  // Firestore write batch limit is 500
+  for (let i = 0; i < refs.length; i += 500) {
+    const batch = writeBatch(db);
+    for (const r of refs.slice(i, i + 500)) batch.delete(r);
+    await batch.commit();
+  }
+}
 
 /**
  * Guarda el número de factura procesada en Firestore para evitar duplicados.
@@ -33,6 +47,7 @@ export async function logProcessedInvoice(
   const invoiceRef = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
 
   console.log("Logging invoice:", {
+      entityId,
       invoice_number: invoiceNumber,
       userId: uid,
       invoicePath: invoiceRef.path
@@ -40,10 +55,15 @@ export async function logProcessedInvoice(
 
   try {
     await setDoc(invoiceRef, {
-      invoice_number: invoiceNumber,
-      userId: uid,
-      timestamp: new Date().toISOString()
-    }, { merge: false });
+      // 🔐 Required by your Firestore rules
+        entityId,
+        userId: uid,
+
+      // Data
+        invoice_number: invoiceNumber,
+        createdAt: serverTimestamp(),
+    }, { merge: true } // idempotent
+  );
     
   console.log(`🧾 Invoice log saved for invoice: ${invoiceNumber}`);
   } catch (error) {
@@ -65,10 +85,10 @@ export async function clearFirestoreLogForEntity(entityId: string): Promise<void
     const logRef = collection(db, "entities", entityId, "invoiceLogs");
     const snapshot = await getDocs(logRef);
 
-    const deleteOps = snapshot.docs.map((doc) => deleteDoc(doc.ref));
-    await Promise.all(deleteOps);
+    const refs = snapshot.docs.map((d) => d.ref);
+    await commitInBatches(refs);
 
-    console.log(`🧹 Cleared ${deleteOps.length} invoice logs for entity: ${entityId}`);
+    console.log(`🧹 Cleared ${refs.length} invoice logs for entity: ${entityId}`);
   } catch (error) {
     console.error("❌ Error clearing invoice logs:", error);
     throw error;
@@ -88,14 +108,12 @@ export async function deleteInvoicesFromFirestoreLog(
   }
 
   try {
-    const batch = writeBatch(db);
+    const refs = invoiceNumbers.map((n) =>
+      doc(db, "entities", entityId, "invoiceLogs", n)
+    );
 
-    invoiceNumbers.forEach((invoiceNumber) => {
-      const docRef = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
-      batch.delete(docRef);
-    });
+    await commitInBatches(refs);
 
-    await batch.commit();
     console.log(`🗑️ Deleted ${invoiceNumbers.length} invoice logs for entity: ${entityId}`);
   } catch (error) {
     console.error("❌ Error deleting specific invoice logs:", error);
@@ -114,18 +132,22 @@ export async function testInvoiceLogWrite(entityId: string): Promise<void> {
     console.warn("❌ No authenticated user for testInvoiceLogWrite");
     throw new Error("No authenticated user");
   }
+
+  if (!entityId) {
+    console.warn("❌ testInvoiceLogWrite called without entityId");
+    throw new Error("Missing entityId");
+  }
   
   try {
     const testRef = doc(db, "entities", entityId, "invoiceLogs", "TEST-INVOICE-123");
-
     await setDoc(testRef, {
-      invoice_number: "TEST-INVOICE-123",
+      entityId,
       userId: uid,
-      timestamp: new Date().toISOString()
-    });
+      invoice_number: "TEST-INVOICE-123",
+      createdAt: serverTimestamp(),
+    }, { merge: true });
 
-    console.log("🧾 Logging invoice with userId:", uid);
-    console.log("📍 Invoice path:", testRef.path);
+    console.log("🧾 Test invoice logged", { path: testRef.path, userId: uid});
   } catch (error) {
     console.error("❌ Test invoice log write failed:", error);
     throw error;

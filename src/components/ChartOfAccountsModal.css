@@ -1,0 +1,51 @@
+.coa-modal__backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 60;
+}
+.coa-modal {
+  width: min(1000px, 92vw);
+  max-height: 92vh;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.coa-modal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid #e5e7eb;
+}
+.coa-modal__header h2 { margin: 0; font-size: 22px; }
+.coa-modal__search {
+  margin: 12px 16px; padding: 10px 12px;
+  border: 1px solid #d1d5db; border-radius: 10px; width: calc(100% - 32px);
+}
+.coa-modal__actions {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px 8px;
+}
+.coa-modal__hint { color: #374151; }
+.coa-modal__create {
+  margin: 0 16px 8px; padding: 12px; border: 1px dashed #cbd5e1; border-radius: 10px;
+  background: #f8fafc;
+}
+.coa-modal__create__row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: center; margin-bottom: 8px; }
+.coa-modal__create__row input { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; }
+.coa-modal__create__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.coa-modal__tablewrap { overflow: auto; margin: 8px 16px; border: 1px solid #e5e7eb; border-radius: 10px; }
+.coa-modal__table { width: 100%; border-collapse: collapse; }
+.coa-modal__table th, .coa-modal__table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+.coa-modal__table thead tr { background: #f8fafc; }
+.coa-modal__table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #374151; }
+.coa-modal__table tr.is-selected { background: #eef5ff; }
+.coa-modal__rowactions { text-align: right; }
+.coa-modal__table .empty { text-align: center; color: #6b7280; padding: 20px; }
+.coa-modal__footer { padding: 10px 16px 16px; color: #6b7280; }
+
+.btn { border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 8px; background: #fff; cursor: pointer; }
+.btn--primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+.btn--danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+.btn--danger-outline { border-color: #dc2626; color: #dc2626; background: transparent; }
+.btn--ghost { background: #f3f4f6; }
+.btn--xs { padding: 4px 8px; font-size: 12px; }
+.btn:disabled { opacity: .6; cursor: not-allowed; }

@@ -7,10 +7,11 @@ const openai = new OpenAI({
 });
 
 const SYSTEM_PROMPT = `
-Eres un contador experto en normativas ecuatorianas y debes analizar el texto plano generado por un sistema OCR de una factura. Este OCR extrae los valores y conceptos **en una línea corrida**, colocando los **valores numéricos a la izquierda** de su etiqueta correspondiente.
+Eres un contador experto en normativas ecuatorianas. Tu tarea es analizar el texto plano de una factura obtenido por OCR. 
 
-📌 Tu tarea es interpretar correctamente el cuadro resumen de la factura, ubicando los valores **de derecha a izquierda**, partiendo de los textos clave como:
+⚠️ El OCR presenta los valores en una línea corrida, colocando los **valores a la izquierda** de su etiqueta correspondiente. Debes interpretar estos valores en orden inverso al listado de conceptos.
 
+📌 Conceptos clave a identificar (en orden inverso):
 - SUBTOTAL 12%
 - SUBTOTAL 0%
 - SUBTOTAL NO OBJETO DE IVA
@@ -24,23 +25,19 @@ Eres un contador experto en normativas ecuatorianas y debes analizar el texto pl
 - PROPINA
 - VALOR TOTAL
 
-🔍 Cuando encuentres la frase **"SUBTOTAL 12%"** o **"SUBTOTAL 0%"**, **los valores están hacia la izquierda**, en orden inverso al listado anterior. Por ejemplo:
-
-📄 Ejemplo OCR:
-71.37 SUBTOTAL 12% 0.00 SUBTOTAL 0% 0.00 SUBTOTAL NO OBJETO DE IVA ...
-
-🔄 Interpreta como:
+Ejemplo OCR:
+71.37 SUBTOTAL 12% 0.00 SUBTOTAL 0% 0.00 SUBTOTAL NO OBJETO DE IVA
+→ Interpretación:
 - SUBTOTAL 12% = 71.37
 - SUBTOTAL 0% = 0.00
 - SUBTOTAL NO OBJETO DE IVA = 0.00
 
-⚠️ Si el valor de **SUBTOTAL 12%** es 0.00 o no está presente, debes usar **SUBTOTAL 0%** como base imponible de ventas.
+📌 Reglas de interpretación:
+1. Si el RUC del emisor = RUC de la entidad activa en el EntitiesDashboard → es una **VENTA** ("income").
+2. Si el RUC del emisor ≠ RUC de la entidad activa en el EntitiesDashboard → es una **COMPRA** ("expense").
+3. Si SUBTOTAL 12% = 0 o no existe → usa SUBTOTAL 0% como base imponible.
 
-📌 Reglas para determinar el tipo:
-- Si el RUC del emisor es igual al del usuario: es una **venta** ("income").
-- Si el RUC es diferente o no se encuentra: es una **compra** ("expense").
-
-📌 Estructura contable esperada (en JSON):
+📌 Estructura de salida esperada (JSON puro, sin texto adicional):
 {
   date: "YYYY-MM-DD",
   description: "Descripción contable",
@@ -54,20 +51,20 @@ Eres un contador experto en normativas ecuatorianas y debes analizar el texto pl
 
 🎯 Reglas contables:
 
-👉 En COMPRAS (expense):
+👉 EN COMPRAS (expense):
 - SUBTOTAL SIN IMPUESTOS → debit "60601", "Compras locales"
 - ICE → debit "53901", "Otros tributos"
-- IVA 12% → debit "24301", "IVA crédito tributario"
+- IVA 12% → debit "1010501", "CREDITO TRIBUTARIO A FAVOR DE LA EMPRESA (IVA)"  ⚠️ ACTIVO, siempre va en el DEBE
 - VALOR TOTAL → credit "21101", "Cuentas por pagar comerciales locales"
 
-👉 En VENTAS (income):
+👉 EN VENTAS (income):
 - SUBTOTAL 12% o SUBTOTAL 0% → credit "70101", "Ventas locales"
 - IVA 12% → credit "24302", "IVA débito tributario"
-- VALOR TOTAL → debit "11101", "Caja"
+- VALOR TOTAL → debit "1020901", "CUENTAS Y DOCUMENTOS A COBRAR A CLIENTES"
 
 🧾 Siempre incluye el asiento del IVA aunque sea 0.00.
 
-Devuelve sólo el arreglo JSON, sin explicaciones, sin comentarios, sin etiquetas Markdown.
+Devuelve únicamente el arreglo JSON de asientos contables, sin explicaciones, sin comentarios y sin etiquetas Markdown.
 `;
 
 export async function extractInvoiceDataWithAI_gpt4o(fullText: string, userRUC: string): Promise<JournalEntry[]> {

@@ -7,14 +7,43 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../firebase-config";
+import { auth, db } from "../firebase-config";
 import { BankAccount } from "../types/BankTypes";
+import type { CustomAccount } from "../types/AccountTypes";
+
+const colRef = (entityId: string) =>
+  collection(db, "entities", entityId, "chart_of_accounts");
+
+/** Fetch user-defined accounts for an entity */
+export async function fetchCustomAccounts(entityId: string): Promise<CustomAccount[]> {
+  const q = query(colRef(entityId), orderBy("code"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as CustomAccount);
+}
+
+/** Create/overwrite a subaccount with the provided code (document id = code) */
+export async function createSubaccount(entityId: string, row: Omit<CustomAccount, "entityId">) {
+  const uid = auth.currentUser?.uid ?? "";
+  const payload: CustomAccount = {
+    ...row,
+    entityId,
+    userId: uid || undefined,
+    createdAt: Date.now(),
+  };
+  await setDoc(doc(colRef(entityId), payload.code), payload);
+}
+
+/** Optional: allow deleting a custom subaccount */
+export async function deleteCustomAccount(entityId: string, code: string) {
+  await deleteDoc(doc(colRef(entityId), code));
+}
 
 /* ----------------------------- helpers ----------------------------- */
 

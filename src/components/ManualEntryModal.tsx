@@ -1,0 +1,466 @@
+// src/components/ManualEntryModal.tsx
+import React, { useEffect, useRef, useState, useId, useMemo } from "react";
+import { createPortal } from "react-dom";
+import ECUADOR_COA, { Account } from "../data/ecuador_coa";
+import "./ManualEntryModal.css";
+import { getEntityChart } from "../services/getEntityChart";
+
+interface Props {
+  onClose: () => void;
+  entityId: string;
+  accounts?: Account[];
+}
+
+interface ManualLine {
+  account_code: string;
+  account_name: string;
+  debit: number;
+  credit: number;
+  description: string;
+}
+
+const emptyLine = (): ManualLine => ({
+  account_code: "",
+  account_name: "",
+  debit: 0,
+  credit: 0,
+  description: "",
+});
+
+// Accent-insensitive normalizer
+const norm = (s: string) =>
+  (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+/* ---------------- Searchable account input (portal menu) ---------------- */
+function AccountSearchInput({
+  value,
+  onPick,
+  accounts,
+  placeholder = "Buscar cuenta por nombre o código…",
+}: {
+  value: string;
+  onPick: (acc: { code: string; name: string }) => void;
+  accounts: { code: string; name: string }[];
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const menuRef = useRef<HTMLUListElement | null>(null);
+  const listId = useId();
+
+  // fixed-position coords for the portal dropdown
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 0,
+  });
+
+  const filtered = useMemo(() => {
+    const query = norm(q);
+    if (!query) return accounts.slice(0, 50);
+    return accounts
+      .filter((a) => norm(a.name).includes(query) || a.code.includes(query))
+      .slice(0, 50);
+  }, [q, accounts]);
+
+  const positionMenu = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ top: r.bottom, left: r.left, width: r.width });
+  };
+
+  // open/close listeners + position on open/resize/scroll
+  useEffect(() => {
+    if (!open) return;
+    positionMenu();
+
+    const onDocDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!inputRef.current?.contains(t) && !menuRef.current?.contains(t)) {
+        setOpen(false);
+      }
+    };
+    const onResizeOrScroll = () => positionMenu();
+
+    document.addEventListener("mousedown", onDocDown);
+    window.addEventListener("resize", onResizeOrScroll);
+    // capture = true to listen inside scrollable containers
+    document.addEventListener("scroll", onResizeOrScroll, true);
+
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      window.removeEventListener("resize", onResizeOrScroll);
+      document.removeEventListener("scroll", onResizeOrScroll, true);
+    };
+  }, [open]);
+
+  // keep active option in view
+  useEffect(() => {
+    if (!menuRef.current) return;
+    const el = menuRef.current.querySelector<HTMLElement>(`[data-idx="${active}"]`);
+    if (!el) return;
+    const parent = menuRef.current;
+    const top = el.offsetTop;
+    const bottom = top + el.offsetHeight;
+    if (top < parent.scrollTop) parent.scrollTop = top;
+    else if (bottom > parent.scrollTop + parent.clientHeight) {
+      parent.scrollTop = bottom - parent.clientHeight;
+    }
+  }, [active]);
+
+  const pick = (acc: { code: string; name: string }) => {
+    onPick(acc);
+    setQ(acc.name);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        aria-label="Buscar cuenta"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open ? `${listId}-opt-${active}` : undefined}
+        autoComplete="off"
+        value={open ? q : value}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setActive(0);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => {
+          setQ(value || "");
+          setActive(0);
+          setOpen(true);
+          requestAnimationFrame(positionMenu);
+        }}
+        onKeyDown={(e) => {
+          if (!open) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const acc = filtered[active];
+            if (acc) pick(acc);
+          } else if (e.key === "Escape" || e.key === "Tab") {
+            setOpen(false);
+          }
+        }}
+        placeholder={placeholder}
+        className="border rounded px-2 py-1 w-full"
+      />
+
+      {open &&
+        createPortal(
+          <ul
+            id={listId}
+            ref={menuRef}
+            role="listbox"
+            className="account-dropdown"
+            style={{
+              top: `${pos.top}px`,
+              left: `${pos.left}px`,
+              width: `${pos.width}px`,
+            }}
+          >
+            {filtered.length === 0 ? (
+              <li role="option" aria-disabled="true" className="px-3 py-2 text-sm text-gray-500">
+                Sin resultados…
+              </li>
+            ) : (
+              filtered.map((acc, idx) => (
+                <li
+                  key={acc.code}
+                  id={`${listId}-opt-${idx}`}
+                  data-idx={idx}
+                  role="option"
+                  aria-selected={idx === active}
+                  onMouseDown={(e) => e.preventDefault()} // keep focus on input
+                  onMouseEnter={() => setActive(idx)}
+                  onClick={() => pick(acc)}
+                  className={`cursor-pointer px-3 py-2 hover:bg-gray-100 ${
+                    idx === active ? "bg-gray-50" : ""
+                  }`}
+                >
+                  <div className="font-mono text-xs text-gray-600">{acc.code}</div>
+                  <div className="text-sm">{acc.name}</div>
+                </li>
+              ))
+            )}
+          </ul>,
+          document.body
+        )}
+    </>
+  );
+}
+
+/* -------------------------- Modal -------------------------- */
+export default function ManualEntryModal({ onClose, entityId }: Props) {
+  const [note, setNote] = useState("");
+  const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]); // two lines by default
+  const [accounts, setAccounts] = useState<Account[]>(
+    ECUADOR_COA.slice().sort((a, b) => a.code.localeCompare(b.code, "es", { numeric: true }))
+  );
+
+  const addLine = () => setLines((prev) => [...prev, emptyLine()]);
+  const removeLine = (idx: number) =>
+    setLines((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx)));
+
+  const setLine = (idx: number, patch: Partial<ManualLine>) =>
+    setLines((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+
+  const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+  const balanced = Math.abs(totalDebit - totalCredit) < 0.005;
+
+  const amountValue = (n: number) => (n === 0 ? "" : String(n));
+  const parseAmount = (v: string) => Math.max(0, parseFloat(v || "0") || 0);
+
+  const saveEntries = () => {
+    if (lines.length < 2) return alert("Debes tener al menos dos líneas.");
+
+    for (const [i, l] of lines.entries()) {
+      if (!l.account_code || !l.account_name)
+        return alert(`Línea ${i + 1}: selecciona la cuenta.`);
+      const count = (l.debit ? 1 : 0) + (l.credit ? 1 : 0);
+      if (count !== 1)
+        return alert(`Línea ${i + 1}: ingresa solo débito o solo crédito.`);
+    }
+    if (!balanced) return alert("El asiento no está cuadrado (Débitos ≠ Créditos).");
+
+    console.log("Asiento manual guardado:", { note, lines });
+    onClose();
+  };
+
+  // Load merged chart (base + custom) per entity
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!entityId) {
+          if (alive) {
+            setAccounts(
+              ECUADOR_COA.slice().sort((a, b) =>
+                a.code.localeCompare(b.code, "es", { numeric: true })
+              )
+            );
+          }
+          return;
+        }
+        const chart = await getEntityChart(entityId); // already sorted in service
+        if (alive) setAccounts(chart);
+      } catch {
+        if (alive) {
+          setAccounts(
+            ECUADOR_COA.slice().sort((a, b) =>
+              a.code.localeCompare(b.code, "es", { numeric: true })
+            )
+          );
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [entityId]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-xl w-[92vw] max-w-5xl max-h-[92vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-2xl font-bold text-blue-700">✍️ Carga Manual de Asientos</h2>
+          <button onClick={onClose} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">
+            Cerrar
+          </button>
+        </div>
+
+        {/* Nota opcional */}
+        <div className="px-6 pt-4">
+          <label className="block text-sm font-medium mb-1" htmlFor="asiento-note">
+            Anotación del asiento (opcional)
+          </label>
+          <input
+            id="asiento-note"
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ej: Ajuste por depreciación, reclasificación, etc."
+            className="w-full border rounded px-3 py-2"
+          />
+        </div>
+
+        {/* Tabla */}
+        <div className="px-6 py-4">
+          <div className="overflow-x-auto overflow-visible">
+            {/* allow visible overflow so portal menus won't clip */}
+            <table className="w-full text-sm border rounded overflow-visible">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="p-3 border text-left w-44">Código</th>
+                  <th className="p-3 border text-left">Cuenta</th>
+                  <th className="p-3 border text-right w-40">Débito</th>
+                  <th className="p-3 border text-right w-40">Crédito</th>
+                  <th className="p-3 border text-left">Descripción</th>
+                  <th className="p-3 border w-14" />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    {/* Código */}
+                    <td className="p-2 border">
+                      <label className="sr-only" htmlFor={`code-${i}`}>
+                        Código de cuenta
+                      </label>
+                      <select
+                        id={`code-${i}`}
+                        value={line.account_code}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          const acc = accounts.find((a) => a.code === code);
+                          setLine(i, { account_code: code, account_name: acc ? acc.name : "" });
+                        }}
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="">-- Seleccionar --</option>
+                        {accounts.map((acc) => (
+                          <option key={acc.code} value={acc.code}>
+                            {acc.code}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* Cuenta (searchable) */}
+                    <td className="p-2 border">
+                      <AccountSearchInput
+                        value={line.account_name}
+                        accounts={accounts}
+                        onPick={(acc) => setLine(i, { account_code: acc.code, account_name: acc.name })}
+                      />
+                    </td>
+
+                    {/* Débito */}
+                    <td className="p-2 border text-right">
+                      <label className="sr-only" htmlFor={`debit-${i}`}>
+                        Débito
+                      </label>
+                      <input
+                        id={`debit-${i}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={amountValue(line.debit)}
+                        onChange={(e) => setLine(i, { debit: parseAmount(e.target.value), credit: 0 })}
+                        onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                        className="border rounded px-2 py-1 w-full text-right"
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Crédito */}
+                    <td className="p-2 border text-right">
+                      <label className="sr-only" htmlFor={`credit-${i}`}>
+                        Crédito
+                      </label>
+                      <input
+                        id={`credit-${i}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={amountValue(line.credit)}
+                        onChange={(e) => setLine(i, { credit: parseAmount(e.target.value), debit: 0 })}
+                        onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                        className="border rounded px-2 py-1 w-full text-right"
+                        placeholder="0.00"
+                      />
+                    </td>
+
+                    {/* Descripción */}
+                    <td className="p-2 border">
+                      <label className="sr-only" htmlFor={`desc-${i}`}>
+                        Descripción
+                      </label>
+                      <input
+                        id={`desc-${i}`}
+                        type="text"
+                        value={line.description}
+                        onChange={(e) => setLine(i, { description: e.target.value })}
+                        className="border rounded px-2 py-1 w-full"
+                        placeholder="Detalle de la línea (opcional)"
+                      />
+                    </td>
+
+                    {/* Remove */}
+                    <td className="p-2 border text-center">
+                      <button
+                        onClick={() => removeLine(i)}
+                        className={`px-2 py-1 text-white rounded ${
+                          lines.length <= 2 ? "bg-gray-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+                        }`}
+                        title={lines.length <= 2 ? "Debe haber al menos dos líneas" : "Eliminar línea"}
+                        disabled={lines.length <= 2}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {/* Totales */}
+                <tr className="bg-gray-50 font-semibold">
+                  <td className="p-2 border" colSpan={2}>
+                    Totales
+                  </td>
+                  <td className="p-2 border text-right">{totalDebit.toFixed(2)}</td>
+                  <td className="p-2 border text-right">{totalCredit.toFixed(2)}</td>
+                  <td className="p-2 border text-left" colSpan={2}>
+                    {balanced ? (
+                      <span className="text-green-600">Asiento cuadrado</span>
+                    ) : (
+                      <span className="text-red-600">
+                        Descuadrado: {Math.abs(totalDebit - totalCredit).toFixed(2)}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Acciones */}
+          <div className="flex justify-end gap-3 mt-4 pb-6">
+            <button onClick={addLine} className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
+              ➕ Agregar línea
+            </button>
+            <button onClick={saveEntries} className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">
+              💾 Guardar
+            </button>
+            <button onClick={onClose} className="px-5 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700">
+              ✖️ Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

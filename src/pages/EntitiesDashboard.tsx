@@ -1,51 +1,50 @@
 // src/pages/EntitiesDashboard.tsx
-import { useEffect, useState, useMemo } from "react";
-import { useSelectedEntity } from "../context/SelectedEntityContext";
+import { useEffect, useMemo, useState } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
+import { useSelectedEntity } from "../context/SelectedEntityContext";
 
 import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
 import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
+import ManualEntryModal from "../components/ManualEntryModal";
+import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
 
-import { 
-  createEntity, 
-  deleteEntity, 
+import { Account } from "../types/AccountTypes";
+import { JournalEntry } from "../types/JournalEntry";
+
+import {
+  createEntity,
+  deleteEntity,
   fetchEntities,
-  type Entity, 
 } from "../services/entityService";
-import { 
-  fetchJournalEntries, 
-  deleteJournalEntriesByInvoiceNumber, 
-  saveJournalEntries 
+import {
+  fetchJournalEntries,
+  deleteJournalEntriesByInvoiceNumber,
+  saveJournalEntries,
 } from "../services/journalService";
+import {
+  deleteInvoicesFromFirestoreLog,
+  clearFirestoreLogForEntity,
+} from "../services/firestoreLogService";
 import {
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
   getProcessedInvoices,
 } from "../services/localLogService";
-import {
-  deleteInvoicesFromFirestoreLog,
-  clearFirestoreLogForEntity,
-} from "../services/firestoreLogService";
-import { JournalEntry } from "../types/JournalEntry";
 
-import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
-import { Account } from "../types/AccountTypes";
-import ECUADOR_COA from "../data/ecuador_coa";
+// merged chart loader
+import { getEntityChart } from "../services/getEntityChart";
 
+/* ---------------- Dev helper (only in DEV) ---------------- */
 function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
-  if (!entityId || !ruc) return null;
+  if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
 
   const handleReset = async () => {
-    const confirm = window.confirm(
-      "¿Estás seguro de que deseas borrar todos los logs procesados?"
-    );
-    if (!confirm) return;
-
+    if (!window.confirm("¿Borrar todos los logs procesados?")) return;
     await clearFirestoreLogForEntity(entityId);
     clearLocalLogForEntity(ruc);
-    alert("✔️ Todos los logs procesados han sido eliminados.");
+    alert("✔️ Logs borrados.");
   };
 
   return (
@@ -58,6 +57,7 @@ function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string })
   );
 }
 
+/* ---------------- Facturas procesadas ---------------- */
 function InvoiceLogDropdown({
   entityId,
   ruc,
@@ -71,22 +71,26 @@ function InvoiceLogDropdown({
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (entityId && ruc) {
-      const invs = Array.from(getProcessedInvoices(ruc));
-      setInvoices(invs);
+    if (!entityId || !ruc) {
+      setInvoices([]);
       setSelected(new Set());
+      return;
     }
-  }, [entityId, ruc ]);
+    setInvoices(Array.from(getProcessedInvoices(ruc)));
+    setSelected(new Set());
+  }, [entityId, ruc]);
 
   const toggleInvoice = (invoice: string) => {
-    const next = new Set(selected);
-    next.has(invoice) ? next.delete(invoice) : next.add(invoice);
-    setSelected(next);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(invoice) ? next.delete(invoice) : next.add(invoice);
+      return next;
+    });
   };
 
   const handleDeleteSelected = async () => {
-    const confirm = window.confirm("¿Borrar las facturas seleccionadas del log?");
-    if (!confirm) return;
+    if (!selected.size) return;
+    if (!window.confirm("¿Borrar las facturas seleccionadas del log?")) return;
 
     const toDelete = Array.from(selected);
 
@@ -98,8 +102,9 @@ function InvoiceLogDropdown({
     setSelected(new Set());
 
     setJournal((prev) =>
-      prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
-    alert("🗑️ Facturas seleccionadas eliminadas del log.");
+      prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim()))
+    );
+    alert("🗑️ Facturas eliminadas del log.");
   };
 
   if (!invoices.length) return null;
@@ -123,7 +128,7 @@ function InvoiceLogDropdown({
       <button
         disabled={selected.size === 0}
         onClick={handleDeleteSelected}
-        className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit"
+        className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit disabled:opacity-50"
       >
         🗑️ Borrar seleccionadas
       </button>
@@ -131,8 +136,10 @@ function InvoiceLogDropdown({
   );
 }
 
+/* =========================== Page =========================== */
 export default function EntitiesDashboard() {
   const [user] = useAuthState(auth);
+
   const [ruc, setRuc] = useState("");
   const [name, setName] = useState("");
   const [entities, setEntities] = useState<{ id: string; ruc: string; name: string }[]>([]);
@@ -140,120 +147,151 @@ export default function EntitiesDashboard() {
 
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [loadingJournal, setLoadingJournal] = useState(false);
-  const [entityToDelete, setEntityToDelete] = useState< {id: string; ruc: string; name: string} | null>(null);
+
+  const [entityToDelete, setEntityToDelete] =
+    useState<{ id: string; ruc: string; name: string } | null>(null);
   const [confirmText, setConfirmText] = useState("");
+
   const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [showManualModal, setShowManualModal] = useState(false);
+
+  // merged chart state (base + custom)
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
   const { entity: globalEntity, setEntity } = useSelectedEntity();
-  
+
   const selectedEntity = useMemo(
     () => entities.find((e) => e.id === selectedEntityId) ?? null,
     [selectedEntityId, entities]
   );
   const selectedEntityRUC = selectedEntity?.ruc ?? "";
-  
-  // 1) Fetch entities for the logged-in user
+
+  /* 1) Load user entities */
   useEffect(() => {
     let cancelled = false;
-
-    const load = async () => {
-    if (!user?.uid) {
-      if (!cancelled){
-        setEntities([]);
-        setSelectedEntityId("");
-        setEntity(null);
-      }
-      return;
-    }
-    try {
-      // Pass userId consistently
-      const list = await fetchEntities();
-      if (!cancelled) {
-        setEntities(list);
-        // If current selection is not in the refreshed list, clear it
-        if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
-          setSelectedEntityId("");
-          setEntity(null);
-        }
-      }
-  } catch (err) {
-    console.error("Error fetching entities:", err);
-    if (!cancelled) {
+    (async () => {
+      if (!user?.uid) {
+        if (!cancelled) {
           setEntities([]);
           setSelectedEntityId("");
           setEntity(null);
+          setJournal([]);
+          setAccounts([]);
         }
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks-exhaustive-deps
-    }, [user?.uid]);
-
-    // 2) Hydrate local selection from global context on mount / when it changes
-    useEffect(() => {
-        setSelectedEntityId(globalEntity?.id ?? "");
-    }, [globalEntity?.id]);
-
-    // 3) Keep global context in sync when selection changes locally
-    useEffect(() => {
-      if (!selectedEntity) {
-        setEntity(null);
         return;
       }
-      setEntity({ id: selectedEntity.id, ruc: selectedEntity.ruc, name: selectedEntity.name });
-    }, [selectedEntityId, entities, setEntity, selectedEntity]);
-
-    // 4) Load journal for the selected entity
-    useEffect(() => {
-      let cancelled = false;
-      const loadJournal = async () => {
-        if (!selectedEntityId) {
+      try {
+        const list = await fetchEntities();
+        if (!cancelled) {
+          setEntities(list);
+          // if the previously selected id no longer exists, clear selection
+          if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
+            setSelectedEntityId("");
+            setEntity(null);
+            setJournal([]);
+            setAccounts([]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching entities:", err);
+        if (!cancelled) {
+          setEntities([]);
+          setSelectedEntityId("");
+          setEntity(null);
           setJournal([]);
-          return;
+          setAccounts([]);
         }
-        try {
-          setLoadingJournal(true);
-          const fetched = await fetchJournalEntries(selectedEntityId);
-          if (!cancelled) setJournal(fetched);
-        } catch (err) {
-          console.error("Error loading journal entries:", err);
-          if (!cancelled) setJournal([]);
-        } finally {
-          if (!cancelled) setLoadingJournal(false);
-        }
-      };
-      loadJournal();
-      return () => {
-        cancelled = true;
       }
-    }, [selectedEntityId]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
-  const handleAddEntity = async () => {
-    if (!user?.uid || !ruc || !name) {
-      alert("Por favor, completa todos los campos antes de continuar.");
+  /* 2) Hydrate selection from global context */
+  useEffect(() => {
+    setSelectedEntityId(globalEntity?.id ?? "");
+  }, [globalEntity?.id]);
+
+  /* 3) Keep global context in sync */
+  useEffect(() => {
+    if (!selectedEntity) {
+      setEntity(null);
       return;
     }
-    const confirmed = window.confirm(
-      `¿Estás seguro de que deseas registrar la nueva entidad con los siguientes datos?\n\nRUC: ${ruc}\nNombre: ${name}`
-    );
-    if (!confirmed) return;
+    setEntity({ id: selectedEntity.id, ruc: selectedEntity.ruc, name: selectedEntity.name });
+  }, [selectedEntity, setEntity]);
+
+  /* 4) Load journal for selected entity */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedEntityId) {
+        setJournal([]);
+        return;
+      }
+      try {
+        setLoadingJournal(true);
+        const fetched = await fetchJournalEntries(selectedEntityId);
+        if (!cancelled) setJournal(fetched);
+      } catch (err) {
+        console.error("Error loading journal entries:", err);
+        if (!cancelled) setJournal([]);
+      } finally {
+        if (!cancelled) setLoadingJournal(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntityId]);
+
+  /* 5) Load merged Chart of Accounts on entity change */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedEntityId) {
+        setAccounts([]);
+        return;
+      }
+      try {
+        const chart = await getEntityChart(selectedEntityId);
+        if (!cancelled) setAccounts(chart);
+      } catch (e) {
+        console.error("Error loading chart of accounts:", e);
+        if (!cancelled) setAccounts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntityId]);
+
+  /* ---- Actions ---- */
+  const handleAddEntity = async () => {
+    if (!user?.uid || !ruc.trim() || !name.trim()) {
+      alert("Por favor, completa RUC y Nombre.");
+      return;
+    }
+    if (!window.confirm(`Crear entidad?\n\nRUC: ${ruc}\nNombre: ${name}`)) return;
 
     try {
-      await createEntity({ ruc, name });
+      await createEntity({ ruc: ruc.trim(), name: name.trim() });
       const updated = await fetchEntities();
       setEntities(updated);
       setRuc("");
       setName("");
-      alert("✅ Entidad creada con éxito.");
-    } catch (error: any) {
+      alert("✅ Entidad creada.");
+    } catch (error) {
       console.error("❌ Error al crear entidad:", error);
-      alert("❌ Hubo un error al crear la entidad. Revisa la consola para más detalles.");
+      alert("❌ Hubo un error al crear la entidad.");
     }
   };
 
   const confirmDelete = async () => {
     if (!entityToDelete || confirmText !== entityToDelete.name) {
-      alert("El nombre ingresado no coincide con el de la entidad seleccionada.");
+      alert("El nombre ingresado no coincide con la entidad seleccionada.");
       return;
     }
     try {
@@ -261,62 +299,50 @@ export default function EntitiesDashboard() {
       const remaining = entities.filter((e) => e.id !== entityToDelete.id);
       setEntities(remaining);
 
-      if ( selectedEntityId === entityToDelete.id) {
+      if (selectedEntityId === entityToDelete.id) {
         setSelectedEntityId("");
         setEntity(null);
         setJournal([]);
+        setAccounts([]);
       }
       setEntityToDelete(null);
       setConfirmText("");
       alert("Entidad eliminada");
     } catch (error) {
-      alert("Error al eliminar entidad");
       console.error("❌ Error al eliminar entidad:", error);
+      alert("Error al eliminar entidad");
     }
   };
 
   const handleSaveJournal = async () => {
     if (!user?.uid || !selectedEntity) return;
     await saveJournalEntries(selectedEntity.id, journal, user.uid);
-    alert("Journal guardado con exito.");
+    alert("Journal guardado con éxito.");
   };
 
-  // Construir cuentas desde el diario
-  const accountsFromJournal: Account[] = useMemo(() => {
-    const map = new Map<string, string>(); // code -> name
-    for (const e of journal) {
-      const code = (e.account_code ?? "").toString().trim();
-      const name = (e.account_name ?? "").toString().trim();
-      if (code && name && !map.has(code)) map.set(code, name);
-    }
-    return Array.from(map.entries())
-      .map(([code, name]) => ({ code, name }))
-      .sort((a, b) => a.code.localeCompare(b.code, "es"));
-  }, [journal]);
-
+  /* ------------------------------ UI ------------------------------ */
   return (
     <>
       <div className="pt-20 pb-6 max-w-screen-xl mx-auto">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-blue-900 flex items-center mb-4">
+          <h1 className="text-2xl font-bold text-blue-900 flex items-center">
             <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
           </h1>
 
-        {/* Top-right toolbar */}
-        {selectedEntity && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowAccountsModal(true)}
-              className="px-4 py-2 bg-green-400 border rounded text-blue-700 hover:bg-green-200 w-fit"
-              title="Ver Plan de Cuentas"
-            >
-              Ver Plan de Cuentas
-            </button>
-          </div>
-        )}
-      </div>
+          <button
+            onClick={() => setShowAccountsModal(true)}
+            disabled={!selectedEntityId}
+            className="px-4 py-2 bg-emerald-500 text-white rounded shadow hover:bg-emerald-600 disabled:opacity-50"
+            title={selectedEntityId ? "Ver / Editar Plan de Cuentas" : "Selecciona una entidad"}
+          >
+            Ver Plan de Cuentas
+          </button>
+        </div>
 
+        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Left column: entities & actions */}
           <div>
             <div className="flex flex-wrap gap-2 mb-3">
               <input
@@ -361,8 +387,7 @@ export default function EntitiesDashboard() {
               {selectedEntity && (
                 <button
                   onClick={() =>
-                    setEntityToDelete(
-                      entities.find((e) => e.id === selectedEntityId) || null)
+                    setEntityToDelete(entities.find((e) => e.id === selectedEntityId) || null)
                   }
                   className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded w-fit"
                 >
@@ -370,50 +395,8 @@ export default function EntitiesDashboard() {
                 </button>
               )}
 
-              {process.env.NODE_ENV === "development" && selectedEntity && (
-                <DevLogResetButton
-                  entityId={selectedEntityId}
-                  ruc={selectedEntityRUC}
-                />
-              )}
+              <DevLogResetButton entityId={selectedEntityId} ruc={selectedEntityRUC} />
 
-              
-
-              {entityToDelete && (
-                <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-40 z-50">
-                  <div className="bg-white p-6 rounded shadow-md max-w-sm w-full">
-                    <h2 className="text-lg font-bold text-red-700 mb-2">
-                      Confirmar eliminación
-                    </h2>
-                    <p className="text-sm mb-2">
-                      Escribe el nombre exacto para confirmar:
-                    </p>
-                    <input
-                      type="text"
-                      className="border px-2 py-1 rounded w-full"
-                      placeholder="Nombre de la entidad"
-                      value={confirmText}
-                      onChange={(e) => setConfirmText(e.target.value)}
-                    />
-                    <div className="flex justify-end gap-2 mt-4">
-                      <button
-                        onClick={() => setEntityToDelete(null)}
-                        className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={confirmDelete}
-                        className="px-3 py-1 rounded bg-red-700 text-white hover:bg-red-800"
-                      >
-                        🗑️ Eliminar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              
               {selectedEntity && (
                 <InvoiceLogDropdown
                   key={selectedEntityId}
@@ -425,25 +408,43 @@ export default function EntitiesDashboard() {
             </div>
           </div>
 
-          {selectedEntity && selectedEntityRUC && (
-            <PDFUploader
-              userRUC={selectedEntityRUC}
-              entityId={selectedEntityId}
-              userId={auth.currentUser?.uid ?? ""}
-              onUploadComplete={(entries) =>
-                setJournal((prev) => [...prev, ...entries])
-              }
-            />
-          )}
+          {/* Right column: actions + uploader */}
+          <div className="w-full">
+            <div className="w-full flex justify-center mb-3">
+              <button
+                onClick={() => setShowManualModal(true)}
+                disabled={!selectedEntityId}
+                className="px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 disabled:opacity-50"
+                title={selectedEntityId ? "Registrar asientos manuales" : "Selecciona una entidad"}
+              >
+                ➕ Carga Manual
+              </button>
+            </div>
+
+            {selectedEntity && selectedEntityRUC ? (
+              <PDFUploader
+                userRUC={selectedEntityRUC}
+                entityId={selectedEntityId}
+                userId={auth.currentUser?.uid ?? ""}
+                onUploadComplete={(entries) => setJournal((prev) => [...prev, ...entries])}
+              />
+            ) : (
+              <div className="p-6 border rounded text-gray-500">
+                Selecciona una entidad para habilitar la carga de PDFs.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Loading state */}
       {loadingJournal && (
         <div className="text-center text-blue-600 font-medium mt-4 animate-pulse">
           ⏳ Cargando registros contables de la entidad...
         </div>
       )}
 
+      {/* Journal + AR/AP */}
       {!loadingJournal && journal.length > 0 && (
         <>
           <JournalTable
@@ -455,9 +456,53 @@ export default function EntitiesDashboard() {
         </>
       )}
 
-      {showAccountsModal && (
-        <ChartOfAccountsModal onClose={() => setShowAccountsModal(false)}
-        accounts={ECUADOR_COA}/>
+      {/* Confirm delete modal */}
+      {entityToDelete && (
+        <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 z-50">
+          <div className="bg-white p-6 rounded shadow-md max-w-sm w-full">
+            <h2 className="text-lg font-bold text-red-700 mb-2">Confirmar eliminación</h2>
+            <p className="text-sm mb-2">Escribe el nombre exacto para confirmar:</p>
+            <input
+              type="text"
+              className="border px-2 py-1 rounded w-full"
+              placeholder="Nombre de la entidad"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setEntityToDelete(null)}
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-3 py-1 rounded bg-red-700 text-white hover:bg-red-800"
+              >
+                🗑️ Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showAccountsModal && selectedEntityId && (
+        <ChartOfAccountsModal
+          onClose={() => setShowAccountsModal(false)}
+          entityId={selectedEntityId}
+          accounts={accounts}      // immediate render with merged chart
+        />
+      )}
+
+      {showManualModal && selectedEntityId && (
+        <ManualEntryModal
+          onClose={() => setShowManualModal(false)}
+          entityId={selectedEntityId}
+          // ManualEntryModal can use its own fetch OR use accounts prop if you add it
+          // accounts={accounts}
+        />
       )}
     </>
   );

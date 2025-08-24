@@ -1,0 +1,13 @@
+/* src/components/ManualEntryModal.css */
+
+.account-dropdown {
+  position: fixed;
+  z-index: 70;
+  max-height: 20rem; /* h-64 */
+  overflow: auto;
+  background-color: white;
+  border: 1px solid #e5e7eb; /* tailwind border-gray-200 */
+  border-radius: 0.5rem;    /* tailwind rounded */
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); /* tailwind shadow-2xl */
+  padding: .25rem 0;
+}

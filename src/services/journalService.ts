@@ -1,18 +1,22 @@
 // src/services/journalService.ts
-
 import { db } from "../firebase-config";
 import {
-  collection,
   addDoc,
+  collection,
   getDocs,
   query,
   where,
   deleteDoc,
+  serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import * as pdfjsLib from "pdfjs-dist";
 import "../pdfWorker";
 
 import { extractInvoiceDataWithAI_gpt4o } from "../ai/extractInvoiceDataWithAI_gpt4o";
+// Make sure this function signature matches your actual file.
+// If your firestoreLogService.logProcessedInvoice expects (entityId, invoiceNumber, userId),
+// pass all three. If it auto-pulls auth.currentUser, two are fine.
 import { logProcessedInvoice as logToFirestore } from "./firestoreLogService";
 import {
   logProcessedInvoice as logToLocalStorage,
@@ -22,21 +26,28 @@ import { JournalEntry } from "../types/JournalEntry";
 
 const INCLUDE_ICE_IN_EXPENSE = true;
 
+/** 🔧 FIX: include entityId and userId in every write, plus createdAt */
 export async function saveJournalEntries(
   entityId: string,
   entries: JournalEntry[],
   userId: string
 ) {
+  if (!entityId) throw new Error("Missing entityId for journal entry");
   if (!userId) throw new Error("Missing userId for journal entry");
-  const journalRef = collection(db, "entities", entityId, "journalEntries");
-  
-  const ops = entries.map(({ userId: _, ...rest }) => {
-    const fullEntry = { ...rest, userId };
-    console.log("Intentando guardar:", fullEntry);
-    return addDoc(journalRef, fullEntry);
-  });
 
-  await Promise.all(ops);
+  const journalRef = collection(db, "entities", entityId, "journalEntries");
+
+  // Write sequentially or in small batches to keep logs readable
+  for (const { userId: _ignored, ...rest } of entries) {
+    const fullEntry = {
+      ...rest,
+      entityId,                // ✅ required by your rules
+      userId,                  // ✅ must match request.auth.uid (your rule says “if present”)
+      createdAt: serverTimestamp(),
+    };
+    console.log("Intentando guardar:", fullEntry);
+    await addDoc(journalRef, fullEntry);
+  }
 }
 
 export async function fetchJournalEntries(
@@ -60,7 +71,6 @@ export async function getAlreadyProcessedInvoiceNumbers(
       invoiceSet.add(invoice_number.trim());
     }
   });
-
   return invoiceSet;
 }
 
@@ -158,7 +168,7 @@ export async function parsePDF(
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    fullText += " " + content.items.map((item: any) => item.str).join(" ");
+    fullText += " " + (content.items as any[]).map((item: any) => item.str).join(" ");
   }
 
   const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -182,16 +192,20 @@ export async function parsePDF(
     entries.push(...regexEntries.map(e => ({ ...e, userId })));
   }
 
+  // 🔧 Make sure invoice logs also satisfy your rules (entityId + userId if your rules require it)
+  // If your firestoreLogService signature is (entityId, invoiceNumber, userId), pass userId too.
   await Promise.all(
     entries.map(e =>
-      logToFirestore(entityId, e.invoice_number!).catch(err =>
+      logToFirestore(entityId, e.invoice_number! /* , userId */).catch(err =>
         console.error(`Error logging invoice ${e.invoice_number}`, err)
       )
     )
   );
 
+  // Local log is fine
   entries.forEach(e => logToLocalStorage(userRUC, e.invoice_number!));
-  console.log("Entradas a guardar:", entries.map(e => ({ invoice: e.invoice_number, userId: e.userId })));
+
+  console.log("Entradas a guardar:", entries.map(e => ({ invoice: e.invoice_number, userId: userId })));
   await saveJournalEntries(entityId, entries, userId);
 
   return entries;
@@ -201,40 +215,33 @@ export async function deleteJournalEntriesByTransactionId(
   entityId: string,
   transactionId: string
 ) {
-  const q = query(collection(db, "entities", entityId, "journalEntries"), where("transactionId", "==", transactionId));
-  const snapshot = await getDocs(q);
+  const qy = query(collection(db, "entities", entityId, "journalEntries"), where("transactionId", "==", transactionId));
+  const snapshot = await getDocs(qy);
   await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
 }
 
+/** 🔧 Batch deletes using IN (chunks of 10) to be efficient and avoid many roundtrips */
 export async function deleteJournalEntriesByInvoiceNumber(
   entityId: string,
   invoiceNumbers: string[]
 ): Promise<void> {
   if (!entityId || invoiceNumbers.length === 0) return;
 
-  const journalRef = collection(db, "entities", entityId, "journalEntries");
-  for (const invoiceNumber of invoiceNumbers) {
-    const q = query(journalRef, where("invoice_number", "==", invoiceNumber));
-    const snapshot = await getDocs(q);
-    await Promise.all(snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref)));
+  const colRef = collection(db, "entities", entityId, "journalEntries");
+  const chunks: string[][] = [];
+  for (let i = 0; i < invoiceNumbers.length; i += 10) {
+    chunks.push(invoiceNumbers.slice(i, i + 10));
+  }
+
+  for (const inChunk of chunks) {
+    const qy = query(colRef, where("invoice_number", "in", inChunk));
+    const snap = await getDocs(qy);
+    const batch = writeBatch(db);
+    snap.forEach(d => batch.delete(d.ref));
+    await batch.commit();
   }
 }
 
 export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
   await saveJournalEntries(entry.entityId, [entry], entry.userId);
 }
-/**
- * Saves an array of journal entries for a specific entity to Firestore.
- * Each entry is saved individually using `addDoc`, and associated with the authenticated user.
- * 
- * This method is preferred in low- to medium-volume usage because:
- * - It avoids batching complexity.
- * - It allows logging and inspection per-entry.
- * - It works well for systems with fewer than ~500 writes/minute.
- * 
- * @param entityId - Firestore document ID of the entity.
- * @param entries - Array of journal entries to be saved.
- * @param userId - UID of the authenticated user saving the entries.
- * 
- * @throws Will throw an error if `userId` is missing.
- */
