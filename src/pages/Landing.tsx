@@ -6,7 +6,8 @@ import LoginModal from "../components/LoginModal";
 import RegisterModal from "../components/RegisterModal";
 import { Link } from "react-router-dom";
 import PricingPlans from "../components/PricingPlans";
-import Footer from "../components/Footer"
+import Footer from "../components/Footer";
+import FeatureCards from "../components/FeatureCards";
 
 export default function Landing() {
   return (
@@ -19,10 +20,10 @@ export default function Landing() {
         {/* <p className="text-lg md:text-xl mb-6">
           Con Contilisto puedes registrar hasta <strong>10 empresas</strong> y realizar hasta <strong>500 registros contables mensuales</strong> por solo <span className="bg-white text-blue-800 px-2 py-1 rounded font-bold">$29/mes</span>.
         </p> */}
-        
       </section>
 
-      {/* Beneficios */}
+      
+      {/* Beneficios 
       <section className="mt-16 w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-blue-800 p-6 rounded-xl shadow-md text-center text-white">
           <h3 className="text-xl font-bold mb-2">Sube PDF</h3>
@@ -36,10 +37,18 @@ export default function Landing() {
           <h3 className="text-xl font-bold mb-2">Reportes Financieros</h3>
           <p className="text-sm">Obtén Estado de Resultados, Balance General y Libro Bancos.</p>
         </div>
-      </section>
-
+      
+      </section>*/}
+      
+      {/* NUEVO: tarjetas de features */}
+      <div className="mt-10">
+        <FeatureCards />
+      </div>
+      
       {/* Pricing Plans */}
-      <PricingPlans />
+      <section className="mx-auto mt-10 max-w-6xl px-4 sm:px-6 lg:px-8">
+          <PricingPlans />
+      </section>
 
       {/* CTA Final */}
       <section className="mt-20 text-center">
