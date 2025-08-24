@@ -1,5 +1,5 @@
 // src/pages/EntitiesDashboard.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
@@ -9,9 +9,10 @@ import JournalTable from "../components/JournalTable";
 import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
 import ManualEntryModal from "../components/ManualEntryModal";
 import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
+import AddEntityModal from "../components/AddEntityModal";
 
-import { Account } from "../types/AccountTypes";
-import { JournalEntry } from "../types/JournalEntry";
+import type { Account } from "../types/AccountTypes";
+import type { JournalEntry } from "../types/JournalEntry";
 
 import {
   createEntity,
@@ -80,15 +81,15 @@ function InvoiceLogDropdown({
     setSelected(new Set());
   }, [entityId, ruc]);
 
-  const toggleInvoice = (invoice: string) => {
+  const toggleInvoice = useCallback((invoice: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(invoice) ? next.delete(invoice) : next.add(invoice);
       return next;
     });
-  };
+  }, []);
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = useCallback(async () => {
     if (!selected.size) return;
     if (!window.confirm("¿Borrar las facturas seleccionadas del log?")) return;
 
@@ -105,7 +106,7 @@ function InvoiceLogDropdown({
       prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim()))
     );
     alert("🗑️ Facturas eliminadas del log.");
-  };
+  }, [entityId, ruc, selected, setJournal]);
 
   if (!invoices.length) return null;
 
@@ -140,8 +141,6 @@ function InvoiceLogDropdown({
 export default function EntitiesDashboard() {
   const [user] = useAuthState(auth);
 
-  const [ruc, setRuc] = useState("");
-  const [name, setName] = useState("");
   const [entities, setEntities] = useState<{ id: string; ruc: string; name: string }[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
 
@@ -154,6 +153,7 @@ export default function EntitiesDashboard() {
 
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
+  const [showAddEntity, setShowAddEntity] = useState(false);
 
   // merged chart state (base + custom)
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -184,7 +184,7 @@ export default function EntitiesDashboard() {
         const list = await fetchEntities();
         if (!cancelled) {
           setEntities(list);
-          // if the previously selected id no longer exists, clear selection
+          // keep selection only if it still exists
           if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
             setSelectedEntityId("");
             setEntity(null);
@@ -269,27 +269,7 @@ export default function EntitiesDashboard() {
   }, [selectedEntityId]);
 
   /* ---- Actions ---- */
-  const handleAddEntity = async () => {
-    if (!user?.uid || !ruc.trim() || !name.trim()) {
-      alert("Por favor, completa RUC y Nombre.");
-      return;
-    }
-    if (!window.confirm(`Crear entidad?\n\nRUC: ${ruc}\nNombre: ${name}`)) return;
-
-    try {
-      await createEntity({ ruc: ruc.trim(), name: name.trim() });
-      const updated = await fetchEntities();
-      setEntities(updated);
-      setRuc("");
-      setName("");
-      alert("✅ Entidad creada.");
-    } catch (error) {
-      console.error("❌ Error al crear entidad:", error);
-      alert("❌ Hubo un error al crear la entidad.");
-    }
-  };
-
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!entityToDelete || confirmText !== entityToDelete.name) {
       alert("El nombre ingresado no coincide con la entidad seleccionada.");
       return;
@@ -312,13 +292,29 @@ export default function EntitiesDashboard() {
       console.error("❌ Error al eliminar entidad:", error);
       alert("Error al eliminar entidad");
     }
-  };
+  }, [confirmText, entities, entityToDelete, selectedEntityId, setEntity]);
 
-  const handleSaveJournal = async () => {
+  const handleSaveJournal = useCallback(async () => {
     if (!user?.uid || !selectedEntity) return;
     await saveJournalEntries(selectedEntity.id, journal, user.uid);
     alert("Journal guardado con éxito.");
-  };
+  }, [journal, selectedEntity, user?.uid]);
+
+  const handleEntityCreated = useCallback(
+    async ({ ruc, name }: { ruc: string; name: string }) => {
+      await createEntity({ ruc: ruc.trim(), name: name.trim() });
+      const updated = await fetchEntities();
+      setEntities(updated);
+
+      // Try to select the one we just created
+      const newlyCreated =
+        updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
+      if (newlyCreated) setSelectedEntityId(newlyCreated.id);
+
+      alert("✅ Entidad creada.");
+    },
+    []
+  );
 
   /* ------------------------------ UI ------------------------------ */
   return (
@@ -345,30 +341,18 @@ export default function EntitiesDashboard() {
           {/* Left column: entities & actions */}
           <div>
             <div className="flex flex-wrap gap-2 mb-3">
-              <input
-                type="text"
-                placeholder="Ingresa el RUC"
-                value={ruc}
-                onChange={(e) => setRuc(e.target.value)}
-                className="border p-2 rounded w-[140px]"
-              />
-              <input
-                type="text"
-                placeholder="Ingresa Nombre de Empresa"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="border p-2 rounded flex-grow"
-              />
               <button
-                onClick={handleAddEntity}
+                onClick={() => setShowAddEntity(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
               >
                 ➕ Agregar Entidad
               </button>
             </div>
 
-            <label className="font-semibold block mb-1">Lista de Entidades</label>
+            <label htmlFor="entity-select" className="font-semibold block mb-1">
+              Lista de Entidades</label>
             <select
+              id="entity-select"
               value={selectedEntityId}
               onChange={(e) => setSelectedEntityId(e.target.value)}
               className="w-full p-2 border rounded"
@@ -456,6 +440,13 @@ export default function EntitiesDashboard() {
         </>
       )}
 
+      {/* Empty state when no entries */}
+      {!loadingJournal && selectedEntityId && journal.length === 0 && (
+        <div className="max-w-screen-xl mx-auto mt-6 text-center text-gray-500">
+          No hay registros aún. Sube PDFs o crea asientos manuales.
+        </div>
+      )}
+
       {/* Confirm delete modal */}
       {entityToDelete && (
         <div className="fixed top-0 left-0 w-full h-full flex items-center justify-center bg-black/40 z-50">
@@ -504,6 +495,11 @@ export default function EntitiesDashboard() {
           // accounts={accounts}
         />
       )}
+    <AddEntityModal
+      isOpen={showAddEntity}
+      onClose={() => setShowAddEntity(false)}
+      onCreate={handleEntityCreated}
+    />
     </>
   );
 }
