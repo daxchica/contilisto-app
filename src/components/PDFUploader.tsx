@@ -1,42 +1,56 @@
 import { useState, DragEvent, ChangeEvent, useRef } from "react";
 import { parsePDF } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
+import type { JournalEntry } from "../types/JournalEntry";
+import type { Account } from "../types/AccountTypes";
 
 interface PDFUploaderProps {
-  onUploadComplete: (entries: any[], source: string) => void;
+  onUploadComplete: (entries: JournalEntry[], source?: string) => void;
   userRUC?: string;
   entityId: string;
   userId: string;
+  accounts?: Account[];
 }
 
 export default function PDFUploader({
   userRUC,
   entityId,
   userId,
+  accounts = [],
   onUploadComplete,
 }: PDFUploaderProps) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(false);
-  const [previewEntries, setPreviewEntries] = useState<any[]>([]);
-  const [processedFiles, setProcessedFiles] = useState<string[]>([]);
+  const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
+  const [processedFiles, setProcessedFiles] = useState<string[]>([]); // (optional)
 
-   // 🧷 Declarar el ref correctamente
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith(".pdf"));
+    const dropped = Array.from(e.dataTransfer.files).filter((f) =>
+      f.name.toLowerCase().endsWith(".pdf")
+    );
+    if (dropped.length === 0) {
+      setError("Solo se aceptan archivos PDF.");
+      return;
+    }
     await handleFiles(dropped);
   };
 
   const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const selected = Array.from(e.target.files).filter(f => f.name.endsWith(".pdf"));
-      await handleFiles(selected);
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    const selected = list.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    if (selected.length === 0) {
+      setError("Selecciona al menos un archivo PDF.");
+      return;
     }
+    await handleFiles(selected);
+    // permite volver a seleccionar los mismos archivos
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleFiles = async (files: File[]) => {
@@ -47,7 +61,7 @@ export default function PDFUploader({
 
     setLoading(true);
     setError("");
-    const allEntries: any[] = [];
+    const allEntries: JournalEntry[] = [];
     const ignored: string[] = [];
 
     for (const file of files) {
@@ -55,7 +69,7 @@ export default function PDFUploader({
         const entries = await parsePDF(file, userRUC, entityId, userId);
         if (entries.length > 0) {
           allEntries.push(...entries);
-          setProcessedFiles(prev => [...prev, file.name]);
+          setProcessedFiles((prev) => [...prev, file.name]);
         } else {
           ignored.push(file.name);
         }
@@ -81,9 +95,14 @@ export default function PDFUploader({
     setLoading(false);
   };
 
-  const handleConfirm = (confirmed: any[]) => {
-    onUploadComplete(confirmed, "preview-confirmed");
+  const resetPreviewState = () => {
     setShowPreview(false);
+    setPreviewEntries([]);
+  };
+
+  const handleConfirm = (confirmed: JournalEntry[]) => {
+    onUploadComplete(confirmed, "preview-confirmed");
+    resetPreviewState();
   };
 
   return (
@@ -94,7 +113,9 @@ export default function PDFUploader({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
-      className={`border-2 border-dashed p-6 rounded text-center ${dragging ? "bg-blue-100" : "bg-white"}`}
+      className={`border-2 border-dashed p-6 rounded text-center ${
+        dragging ? "bg-blue-100" : "bg-white"
+      }`}
     >
       <p className="mb-2">Arrastra tus PDFs aquí o usa el botón para seleccionar.</p>
 
@@ -103,26 +124,30 @@ export default function PDFUploader({
         onClick={() => fileInputRef.current?.click()}
         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
       >
-          Seleccionar archivos
-        </button>
+        Seleccionar archivos
+      </button>
 
-      <input 
+      <input
         ref={fileInputRef}
         id="pdf-upload-input"
-        type="file" 
-        accept=".pdf" 
-        multiple 
-        onChange={handleFileInput} 
+        type="file"
+        accept=".pdf"
+        multiple
+        onChange={handleFileInput}
         className="hidden"
-        title="Selecciona tus archivos PDF" 
-        placeholder="Selecciona tus archivo PDF" 
+        title="Selecciona tus archivos PDF"
+        placeholder="Selecciona tus archivos PDF"
       />
 
       {loading && <p className="mt-2 text-blue-600">Procesando archivos…</p>}
-      {error && <p className="mt-2 text-red-600 whitespace-pre-line">{error}</p>}
+      {error && <p className="mt-2 whitespace-pre-line text-red-600">{error}</p>}
+
       {showPreview && (
         <JournalPreviewModal
           entries={previewEntries}
+          accounts={accounts}
+          entityId={entityId}
+          userId={userId}
           onCancel={() => setShowPreview(false)}
           onSave={handleConfirm}
         />

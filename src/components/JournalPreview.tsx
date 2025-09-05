@@ -1,3 +1,5 @@
+// src/components/JournalPreview.tsx
+
 interface Props {
   previewText: string;
 }

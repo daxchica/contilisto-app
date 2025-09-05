@@ -410,6 +410,7 @@ export default function EntitiesDashboard() {
                 userRUC={selectedEntityRUC}
                 entityId={selectedEntityId}
                 userId={auth.currentUser?.uid ?? ""}
+                accounts={accounts}
                 onUploadComplete={(entries) => setJournal((prev) => [...prev, ...entries])}
               />
             ) : (
