@@ -19,7 +19,7 @@ export default function BankReconciliationPage() {
   const auth = getAuth();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalEntries, setSessionJournalEntries] = useState<JournalEntry[]>([]);
   const [bankMovements, setBankMovements] = useState<BankMovement[]>([]);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function BankReconciliationPage() {
   useEffect(() => {
     if (!selectedEntity) return;
 
-    fetchJournalEntries(selectedEntity.id).then(setJournalEntries);
+    fetchJournalEntries(selectedEntity.id).then(setSessionJournalEntries);
     fetchBankMovements(selectedEntity.id).then(setBankMovements);
   }, [selectedEntity]);
 

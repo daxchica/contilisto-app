@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import ECUADOR_COA from "../data/ecuador_coa";
+import ECUADOR_COA from "@coa/ECUADOR_COA";
 import { createSubaccount, fetchCustomAccounts, deleteCustomAccount } from "../services/chartOfAccountsService";
 import type { Account, CustomAccount } from "../types/AccountTypes";
 import { auth } from "../firebase-config";

@@ -5,7 +5,6 @@ import type { JournalEntry } from "../types/JournalEntry";
 import AccountPicker from "./AccountPicker";
 import { saveAccountHint } from "../services/aiLearningService";
 
-
 // 👇 Usamos el PUC unificado
 import {
   canonicalCodeFrom,
@@ -21,7 +20,7 @@ interface Props {
   entityId: string;
   userId: string;
   onCancel: () => void;
-  onSave: (confirmed: JournalEntry[]) => void;
+  onSave: (confirmed: JournalEntry[], comment: string) => void;
 }
 
 type Row = JournalEntry & { _rid: string };
@@ -67,7 +66,10 @@ export default function JournalPreviewModal({
 }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const [note, setNote] = useState<string>("");
+  const [note, setNote] = useState<string>(() => {
+    const inv = entries.find((e) => e.invoice_number)?.invoice_number;
+    return inv ? `Factura No. ${inv}` : "";
+  });
 
   /* --------- Indexes para resolución código<->nombre --------- */
   const codeToName = useMemo(() => {
@@ -293,7 +295,7 @@ export default function JournalPreviewModal({
     }));
 
     await learnFromEdits(withNote);
-    onSave(withNote);
+    onSave(withNote, note);
   }, [rows, note, userId, canConfirm, onSave]);
 
   /* -------------------- UI -------------------- */
@@ -335,7 +337,7 @@ export default function JournalPreviewModal({
         <div className="mb-3">
           <input
             className="w-full rounded border px-3 py-3 text-slate-700"
-            placeholder="Ej: Ajuste por depreciación, reclasificación, etc."
+            placeholder="Ej: Factura No. XXX-XXX-000123, ajuste por depreciación, reclasificación, etc."
             aria-label="Anotación del asiento (opcional)"
             value={note}
             onChange={(e) => setNote(e.target.value)}

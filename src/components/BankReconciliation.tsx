@@ -48,6 +48,7 @@ export default function BankReconciliation({ journalEntries, bankMovements }: Pr
             {journalEntries.map((entry, i) => (
               <tr key={i} className="border-t">
                 <td>{entry.date}</td>
+                <td>{entry.account_code}</td>
                 <td>{entry.account_name}</td>
                 <td>{entry.debit || "-"}</td>
                 <td>{entry.credit || "-"}</td>

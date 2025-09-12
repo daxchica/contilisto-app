@@ -1,5 +1,6 @@
 // src/pages/EntitiesDashboard.tsx
-import { useEffect, useMemo, useState, useCallback } from "react";
+
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
@@ -13,6 +14,7 @@ import AddEntityModal from "../components/AddEntityModal";
 
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
+import type { Entity } from "../types/Entity";
 
 import {
   createEntity,
@@ -38,13 +40,23 @@ import {
 import { getEntityChart } from "../services/getEntityChart";
 
 /* ---------------- Dev helper (only in DEV) ---------------- */
-function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string }) {
+function DevLogResetButton({ 
+  entityId, 
+  ruc,
+  setSessionJournal,
+}: { 
+  entityId: string; 
+  ruc: string;
+  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>; 
+}) {
   if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
 
   const handleReset = async () => {
     if (!window.confirm("¿Borrar todos los logs procesados?")) return;
     await clearFirestoreLogForEntity(entityId);
     clearLocalLogForEntity(ruc);
+    await clearFirestoreLogForEntity(entityId);
+    setSessionJournal([]);
     alert("✔️ Logs borrados.");
   };
 
@@ -62,11 +74,11 @@ function DevLogResetButton({ entityId, ruc }: { entityId: string; ruc: string })
 function InvoiceLogDropdown({
   entityId,
   ruc,
-  setJournal,
+  setSessionJournal,
 }: {
   entityId: string;
   ruc: string;
-  setJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>;
+  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>;
 }) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -102,11 +114,11 @@ function InvoiceLogDropdown({
     setInvoices((prev) => prev.filter((inv) => !toDelete.includes(inv)));
     setSelected(new Set());
 
-    setJournal((prev) =>
+    setSessionJournal((prev) =>
       prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim()))
     );
     alert("🗑️ Facturas eliminadas del log.");
-  }, [entityId, ruc, selected, setJournal]);
+  }, [entityId, ruc, selected, setSessionJournal]);
 
   if (!invoices.length) return null;
 
@@ -141,16 +153,15 @@ function InvoiceLogDropdown({
 export default function EntitiesDashboard() {
   const [user] = useAuthState(auth);
 
-  const [entities, setEntities] = useState<{ id: string; ruc: string; name: string }[]>([]);
+  type Entity = { id: string; ruc: string; name: string };
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
-
-  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [historicalJournal, setHistoricalJournal] = useState<JournalEntry[]>([]);
+  const [sessionJournal, setSessionJournal] = useState<JournalEntry[]>([]);
   const [loadingJournal, setLoadingJournal] = useState(false);
-
   const [entityToDelete, setEntityToDelete] =
     useState<{ id: string; ruc: string; name: string } | null>(null);
   const [confirmText, setConfirmText] = useState("");
-
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAddEntity, setShowAddEntity] = useState(false);
@@ -175,7 +186,7 @@ export default function EntitiesDashboard() {
           setEntities([]);
           setSelectedEntityId("");
           setEntity(null);
-          setJournal([]);
+          setSessionJournal([]);
           setAccounts([]);
         }
         return;
@@ -188,7 +199,7 @@ export default function EntitiesDashboard() {
           if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
             setSelectedEntityId("");
             setEntity(null);
-            setJournal([]);
+            setSessionJournal([]);
             setAccounts([]);
           }
         }
@@ -198,7 +209,7 @@ export default function EntitiesDashboard() {
           setEntities([]);
           setSelectedEntityId("");
           setEntity(null);
-          setJournal([]);
+          setSessionJournal([]);
           setAccounts([]);
         }
       }
@@ -228,16 +239,16 @@ export default function EntitiesDashboard() {
     let cancelled = false;
     (async () => {
       if (!selectedEntityId) {
-        setJournal([]);
+        setSessionJournal([]);
         return;
       }
       try {
         setLoadingJournal(true);
         const fetched = await fetchJournalEntries(selectedEntityId);
-        if (!cancelled) setJournal(fetched);
+        if (!cancelled) setSessionJournal(fetched);
       } catch (err) {
         console.error("Error loading journal entries:", err);
-        if (!cancelled) setJournal([]);
+        if (!cancelled) setSessionJournal([]);
       } finally {
         if (!cancelled) setLoadingJournal(false);
       }
@@ -282,7 +293,7 @@ export default function EntitiesDashboard() {
       if (selectedEntityId === entityToDelete.id) {
         setSelectedEntityId("");
         setEntity(null);
-        setJournal([]);
+        setSessionJournal([]);
         setAccounts([]);
       }
       setEntityToDelete(null);
@@ -295,10 +306,11 @@ export default function EntitiesDashboard() {
   }, [confirmText, entities, entityToDelete, selectedEntityId, setEntity]);
 
   const handleSaveJournal = useCallback(async () => {
-    if (!user?.uid || !selectedEntity) return;
-    await saveJournalEntries(selectedEntity.id, journal, user.uid);
+    if (!user?.uid || !selectedEntity || sessionJournal.length === 0) return;
+    await saveJournalEntries(selectedEntity.id, sessionJournal, user.uid);
     alert("Journal guardado con éxito.");
-  }, [journal, selectedEntity, user?.uid]);
+    setSessionJournal([]);
+  }, [sessionJournal, selectedEntity, user?.uid]);
 
   const handleEntityCreated = useCallback(
     async ({ ruc, name }: { ruc: string; name: string }) => {
@@ -379,14 +391,18 @@ export default function EntitiesDashboard() {
                 </button>
               )}
 
-              <DevLogResetButton entityId={selectedEntityId} ruc={selectedEntityRUC} />
+              <DevLogResetButton 
+                entityId={selectedEntityId} 
+                ruc={selectedEntityRUC}
+                setSessionJournal={setSessionJournal} 
+              />
 
               {selectedEntity && (
                 <InvoiceLogDropdown
                   key={selectedEntityId}
                   entityId={selectedEntityId}
                   ruc={selectedEntityRUC}
-                  setJournal={setJournal}
+                  setSessionJournal={setSessionJournal}
                 />
               )}
             </div>
@@ -411,7 +427,7 @@ export default function EntitiesDashboard() {
                 entityId={selectedEntityId}
                 userId={auth.currentUser?.uid ?? ""}
                 accounts={accounts}
-                onUploadComplete={(entries) => setJournal((prev) => [...prev, ...entries])}
+                onUploadComplete={(entries) => setSessionJournal((prev) => [...prev, ...entries])}
               />
             ) : (
               <div className="p-6 border rounded text-gray-500">
@@ -430,19 +446,19 @@ export default function EntitiesDashboard() {
       )}
 
       {/* Journal + AR/AP */}
-      {!loadingJournal && journal.length > 0 && (
+      {!loadingJournal && sessionJournal.length > 0 && (
         <>
           <JournalTable
-            entries={journal}
+            entries={sessionJournal}
             entityName={selectedEntity?.name ?? ""}
             onSave={handleSaveJournal}
           />
-          <AccountsReceivablePayable entries={journal} />
+        {/*  <AccountsReceivablePayable entries={journal} /> */}
         </>
       )}
 
       {/* Empty state when no entries */}
-      {!loadingJournal && selectedEntityId && journal.length === 0 && (
+      {!loadingJournal && selectedEntityId && sessionJournal.length === 0 && (
         <div className="max-w-screen-xl mx-auto mt-6 text-center text-gray-500">
           No hay registros aún. Sube PDFs o crea asientos manuales.
         </div>
@@ -484,7 +500,8 @@ export default function EntitiesDashboard() {
         <ChartOfAccountsModal
           onClose={() => setShowAccountsModal(false)}
           entityId={selectedEntityId}
-          accounts={accounts}      // immediate render with merged chart
+          accounts={accounts}
+          onUploadComplete={(entries) => setSessionJournal((prev) => [...prev, ...entries])}     // immediate render with merged chart
         />
       )}
 
@@ -492,8 +509,12 @@ export default function EntitiesDashboard() {
         <ManualEntryModal
           onClose={() => setShowManualModal(false)}
           entityId={selectedEntityId}
+          userId={auth.currentUser?.uid ?? ""}
+          onAddEntries={(entries) =>
+            setSessionJournal((prev) => [...prev, ...entries])
+          }
           // ManualEntryModal can use its own fetch OR use accounts prop if you add it
-          // accounts={accounts}
+          accounts={accounts}
         />
       )}
     <AddEntityModal

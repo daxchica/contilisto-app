@@ -1,6 +1,6 @@
 // src/pages/LedgerPage.tsx
 
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";

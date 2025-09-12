@@ -1,5 +1,5 @@
 // src/services/getEntityChart.ts
-import ECUADOR_COA from "../data/ecuador_coa";
+import ECUADOR_COA from "@coa/ECUADOR_COA";
 import { fetchCustomAccounts } from "./chartOfAccountsService";
 import type { Account } from "../types/AccountTypes";
 

@@ -6,20 +6,16 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@coa': path.resolve(__dirname, 'shared/coa'),
+    },
+  },
   server: {
     port: 5173,
     strictPort: true, // Prevents switching to other ports
-    fs: {
-      allow: ['..'] 
-    }
+    fs: { allow: ['..'] },
   },
-  optimizeDeps: {
-  include: ["pdfjs-dist"]
+  optimizeDeps: { include: ["pdfjs-dist"]
   },
-  resolve: {
-    alias: {
-      '@data': path.resolve(__dirname, 'src/data'),
-      '@backend': path.resolve(__dirname, 'backend'),
-    },
-  },
-})
+});

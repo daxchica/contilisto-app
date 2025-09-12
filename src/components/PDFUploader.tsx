@@ -3,20 +3,21 @@ import { parsePDF } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
 import type { JournalEntry } from "../types/JournalEntry";
 import type { Account } from "../types/AccountTypes";
+import { getAccountsForUI } from "../utils/accountPUCMap";
 
 interface PDFUploaderProps {
-  onUploadComplete: (entries: JournalEntry[], source?: string) => void;
+  onUploadComplete: (journal: JournalEntry[], preview: string) => void;
   userRUC?: string;
   entityId: string;
   userId: string;
-  accounts?: Account[];
+  accounts: Account[];
 }
 
 export default function PDFUploader({
   userRUC,
   entityId,
   userId,
-  accounts = [],
+  accounts,
   onUploadComplete,
 }: PDFUploaderProps) {
   const [dragging, setDragging] = useState(false);

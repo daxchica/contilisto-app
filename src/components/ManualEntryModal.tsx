@@ -1,14 +1,18 @@
 // src/components/ManualEntryModal.tsx
 import React, { useEffect, useRef, useState, useId, useMemo } from "react";
 import { createPortal } from "react-dom";
-import ECUADOR_COA, { Account } from "../data/ecuador_coa";
-import "./ManualEntryModal.css";
+import ECUADOR_COA, { Account } from "@coa/ECUADOR_COA";
 import { getEntityChart } from "../services/getEntityChart";
+import { saveJournalEntries } from "../services/journalService";
+import { JournalEntry } from "../types/JournalEntry";
+import "./ManualEntryModal.css";
 
 interface Props {
   onClose: () => void;
   entityId: string;
+  userId: string;
   accounts?: Account[];
+  onAddEntries: (entries: JournalEntry[]) => void;
 }
 
 interface ManualLine {
@@ -49,12 +53,9 @@ function AccountSearchInput({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
-
   const inputRef = useRef<HTMLInputElement | null>(null);
   const menuRef = useRef<HTMLUListElement | null>(null);
   const listId = useId();
-
-  // fixed-position coords for the portal dropdown
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
     top: 0,
     left: 0,
@@ -80,7 +81,6 @@ function AccountSearchInput({
   useEffect(() => {
     if (!open) return;
     positionMenu();
-
     const onDocDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!inputRef.current?.contains(t) && !menuRef.current?.contains(t)) {
@@ -88,7 +88,6 @@ function AccountSearchInput({
       }
     };
     const onResizeOrScroll = () => positionMenu();
-
     document.addEventListener("mousedown", onDocDown);
     window.addEventListener("resize", onResizeOrScroll);
     // capture = true to listen inside scrollable containers
@@ -120,6 +119,11 @@ function AccountSearchInput({
     setQ(acc.name);
     setOpen(false);
   };
+
+  const [date, setDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split("T")[0];
+  });
 
   return (
     <>
@@ -163,6 +167,20 @@ function AccountSearchInput({
         placeholder={placeholder}
         className="border rounded px-2 py-1 w-full"
       />
+
+      {/* Fecha de la transacción */}
+      <div className="mt-4">
+        <label className="block text-sm font-medium mb-1" htmlFor="entry-date">
+          Fecha de la transacción
+        </label>
+        <input
+          id="entry-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full border rounded px-3 py-2"
+        />
+      </div>
 
       {open &&
         createPortal(
@@ -209,7 +227,7 @@ function AccountSearchInput({
 }
 
 /* -------------------------- Modal -------------------------- */
-export default function ManualEntryModal({ onClose, entityId }: Props) {
+export default function ManualEntryModal({ onClose, entityId, userId, onAddEntries }: Props) {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]); // two lines by default
   const [accounts, setAccounts] = useState<Account[]>(
@@ -234,20 +252,34 @@ export default function ManualEntryModal({ onClose, entityId }: Props) {
   const amountValue = (n: number) => (n === 0 ? "" : String(n));
   const parseAmount = (v: string) => Math.max(0, parseFloat(v || "0") || 0);
 
-  const saveEntries = () => {
-    if (lines.length < 2) return alert("Debes tener al menos dos líneas.");
+  const handleConfirm = async () => {
+    const today = new Date().toISOString().split("T")[0];
+    const entries: JournalEntry[] = lines.map((line) => ({
+      account_code: line.account_code,
+      account_name: line.account_name,
+      debit: line.debit,
+      credit: line.credit,
+      description: line.description,
+      comment: note,
+      type: line.debit > 0 ? "expense" : "income",
+      userId,
+      entityId,
+      manual: true,
+      source: "manual",
+      date: today,
+      createdAt: Date.now(), 
+    }));
 
-    for (const [i, l] of lines.entries()) {
-      if (!l.account_code || !l.account_name)
-        return alert(`Línea ${i + 1}: selecciona la cuenta.`);
-      const count = (l.debit ? 1 : 0) + (l.credit ? 1 : 0);
-      if (count !== 1)
-        return alert(`Línea ${i + 1}: ingresa solo débito o solo crédito.`);
-    }
-    if (!balanced) return alert("El asiento no está cuadrado (Débitos ≠ Créditos).");
-
-    console.log("Asiento manual guardado:", { note, lines });
-    onClose();
+    try {
+      await saveJournalEntries(entityId, entries, userId);
+      onAddEntries(entries);
+      alert("Asiento guardado exitosamente");
+      console.log("Guardado existosamente, cerrando modal");
+      onClose();
+    } catch (err) {
+      console.error("Error al guardar asientos:", err);
+      alert("Error al guardar los asientos. Intenta nuevamente.");
+    } 
   };
 
   // Load merged chart (base + custom) per entity
@@ -452,7 +484,7 @@ export default function ManualEntryModal({ onClose, entityId }: Props) {
             <button onClick={addLine} className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
               ➕ Agregar línea
             </button>
-            <button onClick={saveEntries} className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">
+            <button onClick={handleConfirm} className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">
               💾 Guardar
             </button>
             <button onClick={onClose} className="px-5 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700">

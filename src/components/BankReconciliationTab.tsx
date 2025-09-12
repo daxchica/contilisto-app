@@ -52,6 +52,7 @@ export default function BankReconciliationTab({ journalEntries, bankMovements }:
             {journalEntries.map((entry, i) => (
               <tr key={i} className="border-t even:bg-gray-50">
                 <td>{entry.date}</td>
+                <td>{entry.account_code}</td>
                 <td>{entry.account_name}</td>
                 <td>{formatAmount(entry.debit)}</td>
                 <td>{formatAmount(entry.credit)}</td>

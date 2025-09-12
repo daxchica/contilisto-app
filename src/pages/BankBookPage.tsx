@@ -167,7 +167,7 @@ export default function BankBookPage() {
   const [selectedBankId, setSelectedBankId] = useState<string>("");
   const [entries, setEntries] = useState<BankBookEntry[]>([]);
   const [form, setForm] = useState<FormState>({});
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalEntries, setSessionJournalEntries] = useState<JournalEntry[]>([]);
   const [bankMovements, setBankMovements] = useState<BankMovement[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -226,12 +226,12 @@ export default function BankBookPage() {
   /* ---------------- Load reconciliation sources ------------------- */
   useEffect(() => {
     if (!selectedEntityId) {
-      setJournalEntries([]);
+      setSessionJournalEntries([]);
       setBankMovements([]);
       return;
     }
     fetchJournalEntries(selectedEntityId)
-      .then(setJournalEntries)
+      .then(setSessionJournalEntries)
       .catch(console.error);
     fetchBankMovements(selectedEntityId)
       .then(setBankMovements)
