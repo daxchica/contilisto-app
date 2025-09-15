@@ -1,7 +1,7 @@
 // src/components/ManualEntryModal.tsx
 import React, { useEffect, useRef, useState, useId, useMemo } from "react";
 import { createPortal } from "react-dom";
-import ECUADOR_COA, { Account } from "@coa/ECUADOR_COA";
+import ECUADOR_COA, { Account } from "../../shared/coa/ecuador_coa";
 import { getEntityChart } from "../services/getEntityChart";
 import { saveJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
@@ -264,7 +264,7 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
       type: line.debit > 0 ? "expense" : "income",
       userId,
       entityId,
-      manual: true,
+      isManual: true,
       source: "manual",
       date: today,
       createdAt: Date.now(), 

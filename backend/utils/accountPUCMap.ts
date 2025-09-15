@@ -6,7 +6,7 @@
 // - Bridges legacy 5/7-digit codes you've used to the official COA
 // =======================================================
 
-import { ECUADOR_COA } from "@coa/ECUADOR_COA";
+import { ECUADOR_COA } from "../../shared/coa/ecuador_coa";
 
 // ---------------------------
 // Utilities

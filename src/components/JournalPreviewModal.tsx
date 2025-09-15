@@ -186,7 +186,7 @@ export default function JournalPreviewModal({
         ...merged,
         account_code: canon.account_code,
         account_name: canon.account_name,
-        manual: true,
+        isManual: true,
         source: cur.source === "ai" ? "edited" : cur.source,
         editedAt: Date.now(),
         editedBy: userId,
@@ -231,7 +231,7 @@ export default function JournalPreviewModal({
       transactionId: base?.transactionId,
       userId,
       source: "manual",
-      manual: true,
+      isManual: true,
       createdAt: Date.now(),
     };
     setRows((prev) => {
@@ -251,7 +251,7 @@ export default function JournalPreviewModal({
       next.splice(selectedIdx + 1, 0, {
         ...src,
         _rid: rid(),
-        manual: true,
+        isManual: true,
         source: "edited",
         editedAt: Date.now(),
         editedBy: userId,
@@ -268,7 +268,7 @@ export default function JournalPreviewModal({
 
   /* -------------------- Confirmar + “Aprendizaje” -------------------- */
   const learnFromEdits = async (confirmed: JournalEntry[]) => {
-    const hints = confirmed.filter((r) => r.manual || r.source === "edited");
+    const hints = confirmed.filter((r) => r.isManual || r.source === "edited");
     await Promise.all(
       hints.map((h) =>
         saveAccountHint({
@@ -291,7 +291,7 @@ export default function JournalPreviewModal({
       ...r,
       description: r.description && r.description.trim() !== "" ? r.description : note || r.description,
       userId,
-      editedAt: r.manual ? Date.now() : r.editedAt,
+      editedAt: r.isManual ? Date.now() : r.editedAt,
     }));
 
     await learnFromEdits(withNote);
@@ -378,6 +378,7 @@ export default function JournalPreviewModal({
                         className="w-full rounded border px-2 py-2"
                         value={codeValue}
                         onChange={(e) => applyCode(idx, e.target.value)}
+                        title="Seleccionar codigo contable"
                       >
                         <option value="">-- Seleccionar --</option>
                         {accounts.map((a) => (
@@ -409,6 +410,7 @@ export default function JournalPreviewModal({
                         className="w-full rounded border px-2 py-2 text-right"
                         value={r.debit ?? ""}
                         onChange={(ev) => setAmount(idx, "debit", ev.target.value)}
+                        title="Ingresar valor del debe"
                       />
                     </td>
 
@@ -421,6 +423,7 @@ export default function JournalPreviewModal({
                         className="w-full rounded border px-2 py-2 text-right"
                         value={r.credit ?? ""}
                         onChange={(ev) => setAmount(idx, "credit", ev.target.value)}
+                        title="Ingresar valor del credito"
                       />
                     </td>
 

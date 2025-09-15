@@ -10,7 +10,7 @@ export interface JournalEntry {
     /** ISO date YYYY-MM-DD */
     date: string;
     /** Free text; typically vendor/customer or memo */
-    description?: string;
+    description: string;
     /** PUC code and name chosen for this line */
     account_code: string;
     account_name: string;

@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import ECUADOR_COA from "@coa/ECUADOR_COA";
+import ECUADOR_COA from "../../shared/coa/ecuador_coa";
 import { createSubaccount, fetchCustomAccounts, deleteCustomAccount } from "../services/chartOfAccountsService";
 import type { Account, CustomAccount } from "../types/AccountTypes";
 import { auth } from "../firebase-config";
 import "./ChartOfAccountsModal.css";
+import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
   entityId: string;
   onClose: () => void;
-  accounts?: Account
+  accounts?: Account[]
+  onUploadComplete: (entries: JournalEntry[]) => void;
 }
 
 export default function ChartOfAccountsModal({ entityId, onClose }: Props) {
@@ -166,7 +168,7 @@ export default function ChartOfAccountsModal({ entityId, onClose }: Props) {
               <tr>
                 <th>Código</th>
                 <th>Nombre</th>
-                <th style={{ width: 90 }} />
+                <th className="coa-col-narrow" />
               </tr>
             </thead>
             <tbody>
@@ -178,7 +180,6 @@ export default function ChartOfAccountsModal({ entityId, onClose }: Props) {
                     key={row.code}
                     className={selected ? "is-selected" : undefined}
                     onClick={() => setSelectedCode(row.code)}
-                    role="button"
                   >
                     <td className="mono">{row.code}</td>
                     <td>{row.name}</td>

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { JournalEntry } from "../types/JournalEntry";
 import { BankMovement } from "../types/BankMovement";
 import { getAuth } from "firebase/auth";
-import { getEntities } from "../services/entityService";
+import { fetchEntities } from "../services/entityService";
 import { fetchBankMovements } from "../services/bankMovementService";
 import { fetchJournalEntries } from "../services/journalService";
 

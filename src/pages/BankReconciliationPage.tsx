@@ -23,8 +23,7 @@ export default function BankReconciliationPage() {
   const [bankMovements, setBankMovements] = useState<BankMovement[]>([]);
 
   useEffect(() => {
-    if (!auth.currentUser?.uid) return;
-    fetchEntities(auth.currentUser.uid).then(setEntities);
+    fetchEntities().then(setEntities);
   }, []);
 
   useEffect(() => {

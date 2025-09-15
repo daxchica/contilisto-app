@@ -107,7 +107,6 @@ export default function EntryEditorTable({
                   key={idx}
                   className={`border-t hover:bg-gray-50 ${isSel ? "bg-emerald-50" : ""}`}
                   onClick={() => onSelectRow?.(idx)}
-                  role={editable ? "button" : undefined}
                 >
                   <td className="border p-2">{r.date}</td>
                   <td className="border p-2">{r.invoice_number ?? ""}</td>
@@ -120,6 +119,7 @@ export default function EntryEditorTable({
                         className="w-full rounded border px-1"
                         value={r.description ?? ""}
                         onChange={(e) => setRowPatch(idx, { description: e.target.value })}
+                        aria-label="target value"
                       />
                     ) : (
                       r.description ?? ""
@@ -152,6 +152,7 @@ export default function EntryEditorTable({
                         className="w-24 rounded border px-1 text-right"
                         value={r.debit ?? ""}
                         onChange={(e) => setAmount(idx, "debit", e.target.value)}
+                        aria-label="target value"
                       />
                     ) : (
                       format2(r.debit)
@@ -167,6 +168,7 @@ export default function EntryEditorTable({
                         className="w-24 rounded border px-1 text-right"
                         value={r.credit ?? ""}
                         onChange={(e) => setAmount(idx, "credit", e.target.value)}
+                        aria-label="set amount"
                       />
                     ) : (
                       format2(r.credit)

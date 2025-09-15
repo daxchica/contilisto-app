@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import "../styles/AddEntityModal.css";
 
 type Props = {
   isOpen: boolean;
@@ -12,8 +13,8 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
   const [saving, setSaving] = useState(false);
 
   // ---- Drag state ----
-  const [pos, setPos] = useState<{ x: Number; y: number }>({ x: 0, y: 0 });
-  const startRef = useRef<{ x: Number; y: number } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const startRef = useRef<{ x: number; y: number } | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
 
@@ -124,8 +125,8 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
       {/* Window */}
       <div
         ref={modalRef}
-        className={`absolute w-[480px] max-w-[95vw] rounded-xl bg-white shadow-2xl border border-gray-200`}
-        style={{ left: pos.x, top: pos.y }}
+        className="modal-window"
+        style={{ "--modal-left": `${pos.x}px`, "--modal-top": `${pos.y}px`,} as React.CSSProperties}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >

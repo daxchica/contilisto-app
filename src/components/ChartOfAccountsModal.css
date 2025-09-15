@@ -49,3 +49,4 @@
 .btn--ghost { background: #f3f4f6; }
 .btn--xs { padding: 4px 8px; font-size: 12px; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }
+.coa-col-narrow { width: 90px; }

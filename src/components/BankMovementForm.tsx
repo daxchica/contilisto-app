@@ -29,7 +29,7 @@ export default function BankMovementForm({ entityId }: { entityId: string }) {
             date,
             description, 
             amount: parsedAmount,
-            type,
+            type: "INGRESO",
             reference,
             reconciled: false,
         });
@@ -67,6 +67,7 @@ export default function BankMovementForm({ entityId }: { entityId: string }) {
           onChange={(e) => setDate(e.target.value)}
           className="border p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
           required
+          aria-label="fecha del movimiento"
         />
 
         <label htmlFor="movement-type" className="block text-sm font-medium text-gray-700">
@@ -77,6 +78,7 @@ export default function BankMovementForm({ entityId }: { entityId: string }) {
           value={type}
           onChange={(e) => setType(e.target.value as "ingreso" | "egreso")}
           className="border p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+          aria-label="tipo de movimiento"
         >
           <option value="ingreso">Ingreso</option>
           <option value="egreso">Egreso</option>

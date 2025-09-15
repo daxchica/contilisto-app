@@ -1,0 +1,15 @@
+/* src/styles/AddEntityModal.css */
+.modal-window {
+  position: absolute;
+  width: 480px;
+  max-width: 95vw;
+  border-radius: 0.75rem;
+  background-color: white;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
+  border: 1px solid #e5e7eb; /* gray-200 */
+
+  transition: left 0.1s, top 0.1s;
+  
+  left: var(--modal-left, 100px);
+  top: var(--modal-top, 100px);
+}
