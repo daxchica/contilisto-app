@@ -20,12 +20,15 @@ export const SelectedEntityProvider: React.FC<{ children: React.ReactNode }> = (
     
     useEffect(() => {
         const raw = localStorage.getItem(LS_KEY);
-        if (raw) return;
-        try { 
-            const parsed = JSON.parse(raw);
-            if (parsed && parsed.id) setEntity(parsed);
-        } catch {}
-    }, []);
+        if (raw) {
+          try { 
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.id) setEntity(parsed);
+            } catch {
+              console.warn("Invalid entity in localStorage");
+            }
+          }
+        }, []);
  
     useEffect(() => {
     if (entity) localStorage.setItem(LS_KEY, JSON.stringify(entity));

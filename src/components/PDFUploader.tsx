@@ -1,9 +1,8 @@
 import { useState, DragEvent, ChangeEvent, useRef } from "react";
-import { parsePDF } from "../services/journalService";
+import { parsePDF, saveJournalEntries } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
 import type { JournalEntry } from "../types/JournalEntry";
 import type { Account } from "../types/AccountTypes";
-import { getAccountsForUI } from "../utils/accountPUCMap";
 
 interface PDFUploaderProps {
   onUploadComplete: (journal: JournalEntry[], preview: string) => void;
@@ -11,6 +10,7 @@ interface PDFUploaderProps {
   entityId: string;
   userId: string;
   accounts: Account[];
+  refreshJournal?: () => void;
 }
 
 export default function PDFUploader({
@@ -19,6 +19,7 @@ export default function PDFUploader({
   userId,
   accounts,
   onUploadComplete,
+  refreshJournal,
 }: PDFUploaderProps) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -43,8 +44,7 @@ export default function PDFUploader({
   };
 
   const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
-    const list = e.target.files ? Array.from(e.target.files) : [];
-    const selected = list.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    const selected = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith(".pdf"));
     if (selected.length === 0) {
       setError("Selecciona al menos un archivo PDF.");
       return;
@@ -101,9 +101,31 @@ export default function PDFUploader({
     setPreviewEntries([]);
   };
 
-  const handleConfirm = (confirmed: JournalEntry[]) => {
-    onUploadComplete(confirmed, "preview-confirmed");
-    resetPreviewState();
+  const sanitizeEntry = (entry: JournalEntry): JournalEntry => {
+    const clean: any = { ...entry };
+
+    if (clean.editedAt === undefined) delete clean.editedAt;
+    if (clean.createdAt === undefined) delete clean.createdAt;
+    if (clean.origin === undefined) delete clean.origin;
+    if (clean.note === undefined) delete clean.note;
+
+    return clean;
+  };
+
+  const handleConfirm = async (confirmed: JournalEntry[]) => {
+    try {
+      const sanitizedEntries = confirmed.map(sanitizeEntry);
+
+      await saveJournalEntries(entityId, sanitizedEntries, userId);
+      onUploadComplete(sanitizedEntries, "preview-confirmed");
+
+      if (refreshJournal) refreshJournal();
+    }  catch (err) {
+      console.error(" Error al guardar los asientos confirmados:", err);
+      setError("Error al guardar los asientos confirmados.");
+    } finally {
+      resetPreviewState();
+    }
   };
 
   return (
@@ -130,7 +152,6 @@ export default function PDFUploader({
 
       <input
         ref={fileInputRef}
-        id="pdf-upload-input"
         type="file"
         accept=".pdf"
         multiple
@@ -149,7 +170,7 @@ export default function PDFUploader({
           accounts={accounts}
           entityId={entityId}
           userId={userId}
-          onCancel={() => setShowPreview(false)}
+          onCancel={resetPreviewState}
           onSave={handleConfirm}
         />
       )}

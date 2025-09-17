@@ -1,5 +1,6 @@
 // components/ManualBalanceForm.tsx
 import React, { useState } from "react";
+import { saveInitialBalances } from "../services/initialBalanceService";
 
 interface Entry {
   account_code: string;
@@ -9,10 +10,11 @@ interface Entry {
 }
 
 interface Props {
+  entityId: string;
   onSubmit: (entries: Entry[]) => void;
 }
 
-export default function ManualBalanceForm({ onSubmit }: Props) {
+export default function ManualBalanceForm({ onSubmit, entityId }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [newEntry, setNewEntry] = useState<Entry>({
     account_code: "",
@@ -29,6 +31,25 @@ export default function ManualBalanceForm({ onSubmit }: Props) {
     if (newEntry.account_code && newEntry.account_name) {
       setEntries((prev) => [...prev, newEntry]);
       setNewEntry({ account_code: "", account_name: "", debit: 0, credit: 0 });
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const formatted = entries.map((e) => ({
+        account_code: e.account_code,
+        account_name: e.account_name,
+        initial_balance: (e.debit || 0) - (e.credit || 0),
+      }));
+
+      await saveInitialBalances(entityId, formatted);
+
+      alert("✅ Balance Inicial guardado correctamente");
+
+      onSubmit(entries); // puedes usarlo para cerrar modal o recargar
+    } catch (error) {
+      console.error("❌ Error al guardar el balance inicial:", error);
+      alert("❌ No se pudo guardar el balance inicial.");
     }
   };
 
@@ -71,7 +92,7 @@ export default function ManualBalanceForm({ onSubmit }: Props) {
       </div>
       <button
         className="mt-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-        onClick={() => onSubmit(entries)}
+        onClick={handleSave}
       >
         ✅ Enviar Balance Inicial
       </button>

@@ -3,34 +3,65 @@ import React, { useMemo } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { JournalEntry } from "../types/JournalEntry";
+import { useInitialBalances } from "../hooks/useInitialBalances";
 
 type Props = {
   entries: JournalEntry[];
 };
 
 const fmtUSD = (n: number) =>
-  new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(
-    n || 0
-  );
+  new Intl.NumberFormat("es-EC", { 
+    style: "currency", 
+    currency: "USD",
+    minimumFractionDigits: 2,
+   }).format(n || 0);
 
 export default function TrialBalance({ entries }: Props) {
+  const initialBalances = useInitialBalances();
   // Agrupar por cuenta
   const rows = useMemo(() => {
     const map = new Map<
       string,
-      { account_code: string; account_name: string; debit: number; credit: number; balance: number }
+      { 
+        account_code: string; 
+        account_name: string; 
+        initial: number;
+        debit: number; 
+        credit: number; 
+        balance: number 
+      }
     >();
 
-    for (const e of entries) {
-      const code = (e.account_code || "").trim();
-      const name = (e.account_name || "").trim() || "(Sin nombre)";
-      if (!code) continue;
-
+    // 1. Iniciar con balances iniciales
+    for (const b of initialBalances) {
+      const code = b.account_code.trim();
+      const name = b.account_name.trim() || "(Sin nombre)";
       const key = `${code}||${name}`;
       if (!map.has(key)) {
         map.set(key, {
           account_code: code,
           account_name: name,
+          initial: 0,
+          debit: 0,
+          credit: 0,
+          balance: 0,
+        });
+      }
+      const r = map.get(key)!;
+      r.initial += Number(b.initial_balance || 0);
+    }
+
+    // 2. Sumar movimientos contables
+    for (const e of entries) {
+      const code = (e.account_code || "").trim();
+      const name = (e.account_name || "").trim() || "(Sin nombre)";
+      if (!code) continue;
+      const key = `${code}||${name}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          account_code: code,
+          account_name: name,
+          initial: 0,
           debit: 0,
           credit: 0,
           balance: 0,
@@ -39,25 +70,30 @@ export default function TrialBalance({ entries }: Props) {
       const r = map.get(key)!;
       r.debit += Number(e.debit || 0);
       r.credit += Number(e.credit || 0);
-      r.balance = r.debit - r.credit;
+    }
+
+    // 3. Calcular saldos finales
+    for (const r of map.values()) {
+      r.balance = r.initial + r.debit - r.credit;
     }
 
     return Array.from(map.values()).sort((a, b) =>
       a.account_code.localeCompare(b.account_code, "es")
     );
-  }, [entries]);
+  }, [entries, initialBalances]);
 
   // Totales
   const totals = useMemo(
     () =>
       rows.reduce(
         (acc, r) => {
+          acc.initial += r.initial;
           acc.debit += r.debit;
           acc.credit += r.credit;
           acc.balance += r.balance;
           return acc;
         },
-        { debit: 0, credit: 0, balance: 0 }
+        { initial: 0, debit: 0, credit: 0, balance: 0 }
       ),
     [rows]
   );
@@ -75,10 +111,11 @@ export default function TrialBalance({ entries }: Props) {
 
     (doc as any).autoTable({
       startY: y,
-      head: [["Código", "Cuenta", "Débito", "Crédito", "Saldo"]],
+      head: [["Código", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"]],
       body: rows.map((r) => [
         r.account_code,
         r.account_name,
+        fmtUSD(r.initial),
         fmtUSD(r.debit),
         fmtUSD(r.credit),
         fmtUSD(r.balance),
@@ -89,17 +126,17 @@ export default function TrialBalance({ entries }: Props) {
         2: { halign: "right" },
         3: { halign: "right" },
         4: { halign: "right" },
+        5: { halign: "right" },
       },
       theme: "striped",
       margin: { left: marginX, right: marginX },
-      foot: [
-        [
+      foot: [[
           { content: "Totales", colSpan: 2 },
+          { content: fmtUSD(totals.initial), styles: { halign: "right" } },
           { content: fmtUSD(totals.debit), styles: { halign: "right" } },
           { content: fmtUSD(totals.credit), styles: { halign: "right" } },
           { content: fmtUSD(totals.balance), styles: { halign: "right" } },
-        ],
-      ],
+        ],],
       footStyles: { fillColor: [226, 232, 240], textColor: [0, 0, 0] },
     });
 
@@ -122,6 +159,7 @@ export default function TrialBalance({ entries }: Props) {
                 <tr className="bg-gray-100">
                   <th className="border px-3 py-2 text-left">Código</th>
                   <th className="border px-3 py-2 text-left">Cuenta</th>
+                  <th className="border px-3 py-2 text-right">Balance Inicial</th>
                   <th className="border px-3 py-2 text-right">Débito</th>
                   <th className="border px-3 py-2 text-right">Crédito</th>
                   <th className="border px-3 py-2 text-right">Saldo</th>
@@ -132,6 +170,7 @@ export default function TrialBalance({ entries }: Props) {
                   <tr key={r.account_code + r.account_name}>
                     <td className="border px-3 py-2 font-mono">{r.account_code}</td>
                     <td className="border px-3 py-2">{r.account_name}</td>
+                    <td className="border px-3 py-2 text-right">{fmtUSD(r.initial)}</td>
                     <td className="border px-3 py-2 text-right">{fmtUSD(r.debit)}</td>
                     <td className="border px-3 py-2 text-right">{fmtUSD(r.credit)}</td>
                     <td className="border px-3 py-2 text-right">{fmtUSD(r.balance)}</td>
@@ -141,6 +180,7 @@ export default function TrialBalance({ entries }: Props) {
               <tfoot>
                 <tr className="bg-gray-50 font-semibold">
                   <td className="border px-3 py-2" colSpan={2}>Totales</td>
+                  <td className="border px-3 py-2 text-right">{fmtUSD(totals.initial)}</td>
                   <td className="border px-3 py-2 text-right">{fmtUSD(totals.debit)}</td>
                   <td className="border px-3 py-2 text-right">{fmtUSD(totals.credit)}</td>
                   <td className="border px-3 py-2 text-right">{fmtUSD(totals.balance)}</td>

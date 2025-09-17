@@ -206,7 +206,6 @@ export async function parsePDF(
   entries.forEach(e => logToLocalStorage(userRUC, e.invoice_number!));
 
   console.log("Entradas a guardar:", entries.map(e => ({ invoice: e.invoice_number, userId: userId })));
-  await saveJournalEntries(entityId, entries, userId);
 
   return entries;
 }
