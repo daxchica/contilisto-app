@@ -1,0 +1,37 @@
+// src/ai/extractInvoiceDataWithAI.ts
+import type { JournalEntry } from "../types/JournalEntry";
+import { normalizeEntry } from "../utils/accountPUCMap";
+
+export async function extractInvoiceDataWithAI(
+  fullText: string,
+  entityRUC: string
+): Promise<JournalEntry[]> {
+  try {
+    const res = await fetch("/.netlify/functions/extractInvoice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fullText,
+        entityRUC,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("❌ Error en llamada al backend:", await res.text());
+      return [];
+    }
+
+    const json = await res.json();
+    if (!Array.isArray(json)) {
+      console.warn("⚠️ Respuesta no es un array:", json);
+      return [];
+    }
+
+    return json.map((e: any) => normalizeEntry(e));
+  } catch (err) {
+    console.error("❌ Error en extractInvoiceDataWithAI:", err);
+    return [];
+  }
+}

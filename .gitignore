@@ -33,3 +33,5 @@ goggle_cloud_code.rtf
 *.njsproj
 *.sln
 *.sw?
+# Local Netlify folder
+.netlify
