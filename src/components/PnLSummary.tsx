@@ -8,33 +8,52 @@ interface Props { entries: JournalEntry[]; }
 
 export default function PnLSummary({ entries }: Props) {
   // Totales por código (puedes ajustar el mapeo a tus cuentas reales)
-  const sumByCode = (code: string, side: "debit" | "credit") =>
+  const sumByCode = (codes: string, side: "debit" | "credit") =>
     entries
-      .filter((e) => (e.account_code || "") === code)
+      .filter((e) => codes.includes(e.account_code || ""))
       .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
-  const ventas       = sumByCode("70101", "credit");
-  const compras      = sumByCode("60601", "debit");
-  const ice          = sumByCode("53901", "debit");
-  const ivaCredito   = sumByCode("24301", "debit");
+  const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
+    entries
+      .filter((e) => (e.account_code || "").startsWith(prefix))
+      .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
-  const costoVentas  = compras + ice + ivaCredito;
-  const utilidadBruta = ventas - costoVentas;
-  const gastos = 0; // TODO: integrar mapeo de gastos cuando lo definas
-  const utilidadNeta = utilidadBruta - gastos;
+    const ventas       = sumByCode(["70101"], "credit");
+    const compras      = sumByCode(["60601"], "debit");
+    const ice          = sumByCode(["53901"], "debit");
+    const ivaCredito   = sumByCode(["24301"], "debit");
 
-  const fmt = (n: number) => new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(n);
+    const costoVentas  = compras + ice + ivaCredito;
+    const utilidadBruta = ventas - costoVentas;
+    const gastos = sumByPrefix("5", "debit");  // TODO: integrar mapeo de gastos cuando lo definas
+    const utilidadNeta = utilidadBruta - gastos;
 
-  const exportToPDF = () => {
+    const fmt = (n: number) =>
+    new Intl.NumberFormat("es-EC", {
+      style: "currency",
+      currency: "USD",
+    }).format(n);
+
+    const exportToPDF = () => {
     const doc = new jsPDF();
     let y = 20;
     doc.setFontSize(16);
-    doc.text("📊 Estado de Pérdidas y Ganancias", 14, y); y += 10;
+    doc.text("📊 Estado de Pérdidas y Ganancias", 14, y);
+    y += 10;
 
-    const line = (label: string, value: number, code?: string, bold?: boolean) => {
+    const line = (
+      label: string,
+      value: number,
+      code?: string,
+      bold?: boolean
+    ) => {
       doc.setFont("helvetica", bold ? "bold" : "normal");
       const left = code ? `${code}  ${label}` : label;
-      doc.text(`${left} ....................................... ${fmt(value)}`, 14, y);
+      doc.text(
+        `${left} ....................................... ${fmt(value)}`,
+        14,
+        y
+      );
       y += 8;
     };
 
@@ -50,7 +69,7 @@ export default function PnLSummary({ entries }: Props) {
 
     y += 2;
     line("= Utilidad Bruta", utilidadBruta, undefined, true);
-    line("(-) Gastos Operacionales", gastos);
+    line("(-) Gastos Operacionales", gastos, undefined, true);
     line("= Utilidad Neta del Ejercicio", utilidadNeta, undefined, true);
 
     doc.save("Estado_Perdidas_Ganancias.pdf");
