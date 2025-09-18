@@ -20,7 +20,6 @@ interface ManualLine {
   account_name: string;
   debit: number;
   credit: number;
-  description: string;
 }
 
 const emptyLine = (): ManualLine => ({
@@ -28,7 +27,6 @@ const emptyLine = (): ManualLine => ({
   account_name: "",
   debit: 0,
   credit: 0,
-  description: "",
 });
 
 // Accent-insensitive normalizer
@@ -120,10 +118,7 @@ function AccountSearchInput({
     setOpen(false);
   };
 
-  const [date, setDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
-  });
+  
 
   return (
     <>
@@ -167,20 +162,6 @@ function AccountSearchInput({
         placeholder={placeholder}
         className="border rounded px-2 py-1 w-full"
       />
-
-      {/* Fecha de la transacción */}
-      <div className="mt-4">
-        <label className="block text-sm font-medium mb-1" htmlFor="entry-date">
-          Fecha de la transacción
-        </label>
-        <input
-          id="entry-date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full border rounded px-3 py-2"
-        />
-      </div>
 
       {open &&
         createPortal(
@@ -229,7 +210,10 @@ function AccountSearchInput({
 /* -------------------------- Modal -------------------------- */
 export default function ManualEntryModal({ onClose, entityId, userId, onAddEntries }: Props) {
   const [note, setNote] = useState("");
-  const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]); // two lines by default
+  const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]);
+  const [date, setDate] = useState(() => {
+    new Date().toISOString().split("T")[0];
+  });
   const [accounts, setAccounts] = useState<Account[]>(
     ECUADOR_COA.slice().sort((a, b) => a.code.localeCompare(b.code, "es", { numeric: true }))
   );
@@ -254,12 +238,25 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
 
   const handleConfirm = async () => {
     const today = new Date().toISOString().split("T")[0];
+    // Validar campos
+    const incomplete = lines.some(
+      (l) => !l.account_code || (l.debit === 0 && l.credit === 0)
+    );
+    if (incomplete){
+      alert("Por favor completa todos los campos obligatorios.");
+      return;
+    }
+
+    if (!balanced) {
+      alert("El asiento contable esta descuadrado. Debe estar balanceado para guardar.");
+      return;
+    }
+
     const entries: JournalEntry[] = lines.map((line) => ({
       account_code: line.account_code,
       account_name: line.account_name,
       debit: line.debit,
       credit: line.credit,
-      description: line.description,
       comment: note,
       type: line.debit > 0 ? "expense" : "income",
       userId,
@@ -340,6 +337,20 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
           />
         </div>
 
+        {/* Fecha de la transacción */}
+        <div className="mt-4">
+          <label className="block text-sm font-medium mb-1" htmlFor="entry-date">
+            Fecha de la transacción
+          </label>
+          <input
+            id="entry-date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          />
+        </div>
+
         {/* Tabla */}
         <div className="px-6 py-4">
           <div className="overflow-x-auto overflow-visible">
@@ -347,12 +358,11 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
             <table className="w-full text-sm border rounded overflow-visible">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="p-3 border text-left w-44">Código</th>
-                  <th className="p-3 border text-left">Cuenta</th>
-                  <th className="p-3 border text-right w-40">Débito</th>
-                  <th className="p-3 border text-right w-40">Crédito</th>
-                  <th className="p-3 border text-left">Descripción</th>
-                  <th className="p-3 border w-14" />
+                  <th className="p-2 border text-left w-44">Código</th>
+                  <th className="p-2 border text-left">Cuenta</th>
+                  <th className="p-2 border text-right w-40">Débito</th>
+                  <th className="p-2 border text-right w-40">Crédito</th>
+                  <th className="p-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -424,21 +434,6 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
                         onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
                         className="border rounded px-2 py-1 w-full text-right"
                         placeholder="0.00"
-                      />
-                    </td>
-
-                    {/* Descripción */}
-                    <td className="p-2 border">
-                      <label className="sr-only" htmlFor={`desc-${i}`}>
-                        Descripción
-                      </label>
-                      <input
-                        id={`desc-${i}`}
-                        type="text"
-                        value={line.description}
-                        onChange={(e) => setLine(i, { description: e.target.value })}
-                        className="border rounded px-2 py-1 w-full"
-                        placeholder="Detalle de la línea (opcional)"
                       />
                     </td>
 
