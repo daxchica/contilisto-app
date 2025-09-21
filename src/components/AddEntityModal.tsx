@@ -124,9 +124,8 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
 
       {/* Window */}
       <div
-        ref={modalRef}
-        className="modal-window"
-        style={{ "--modal-left": `${pos.x}px`, "--modal-top": `${pos.y}px`,} as React.CSSProperties}
+        className={`fixed z-50 bg-white p-6 shadow-lg rounded-md`}
+        style={{ left: `${pos.x}px`, top: `${pos.y}px`}}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >

@@ -1,4 +1,4 @@
-import { useState, DragEvent, ChangeEvent, useRef } from "react";
+import { useState, useEffect,DragEvent, ChangeEvent, useRef } from "react";
 import { parsePDF, saveJournalEntries } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
 import type { JournalEntry } from "../types/JournalEntry";
@@ -24,11 +24,41 @@ export default function PDFUploader({
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
   const [processedFiles, setProcessedFiles] = useState<string[]>([]); // (optional)
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resetPreviewState = () => {
+    setShowPreview(false);
+    setPreviewEntries([]);
+  };
+
+  const sanitizeEntry = (entry: JournalEntry): JournalEntry => {
+    const clean = { ...entry };
+    delete clean.editedAt;
+    delete clean.createdAt;
+    delete clean.origin;
+    delete clean.note;
+    return clean;
+  };
+
+  const handleConfirm = async (confirmed: JournalEntry[]) => {
+    try {
+      const sanitized = confirmed.map(sanitizeEntry);
+      await saveJournalEntries(entityId, sanitized, userId);
+      onUploadComplete(sanitized, "preview-confirmed");
+      if (refreshJournal) refreshJournal();
+      setSuccessMessage(`✅ ${sanitized.length} asientos guardados exitosamente.`);
+    } catch (err) {
+      console.error("Error al guardar los asientos confirmados:", err);
+      setError("❌ Hubo un error al guardar los asientos.");
+    } finally {
+      resetPreviewState();
+    }
+  };
 
   const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -80,14 +110,12 @@ export default function PDFUploader({
       }
     }
 
-    if (allEntries.length === 0) {
+    if (allEntries.length > 0) {
+      setPreviewEntries(allEntries);
+      setShowPreview(true);
+    } else {
       setError("Ningún archivo nuevo fue procesado. Posiblemente ya fueron procesados antes.");
-      setLoading(false);
-      return;
     }
-
-    setPreviewEntries(allEntries);
-    setShowPreview(true);
 
     if (ignored.length > 0) {
       setError(`Se ignoraron archivos ya procesados: ${ignored.join(", ")}`);
@@ -96,37 +124,19 @@ export default function PDFUploader({
     setLoading(false);
   };
 
-  const resetPreviewState = () => {
-    setShowPreview(false);
-    setPreviewEntries([]);
+  const handleSelectClick = () => {
+    fileInputRef.current?.click();
   };
 
-  const sanitizeEntry = (entry: JournalEntry): JournalEntry => {
-    const clean: any = { ...entry };
-
-    if (clean.editedAt === undefined) delete clean.editedAt;
-    if (clean.createdAt === undefined) delete clean.createdAt;
-    if (clean.origin === undefined) delete clean.origin;
-    if (clean.note === undefined) delete clean.note;
-
-    return clean;
-  };
-
-  const handleConfirm = async (confirmed: JournalEntry[]) => {
-    try {
-      const sanitizedEntries = confirmed.map(sanitizeEntry);
-
-      await saveJournalEntries(entityId, sanitizedEntries, userId);
-      onUploadComplete(sanitizedEntries, "preview-confirmed");
-
-      if (refreshJournal) refreshJournal();
-    }  catch (err) {
-      console.error(" Error al guardar los asientos confirmados:", err);
-      setError("Error al guardar los asientos confirmados.");
-    } finally {
-      resetPreviewState();
+  useEffect(() => {
+    if (successMessage || error) {
+      const timeout = setTimeout(() => {
+        setSuccessMessage("");
+        setError("");
+      }, 6000);
+      return () => clearTimeout(timeout);
     }
-  };
+  }, [successMessage, error]);
 
   return (
     <div
@@ -144,7 +154,7 @@ export default function PDFUploader({
 
       <button
         type="button"
-        onClick={() => fileInputRef.current?.click()}
+        onClick={handleSelectClick}
         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
       >
         Seleccionar archivos
@@ -161,7 +171,11 @@ export default function PDFUploader({
         placeholder="Selecciona tus archivos PDF"
       />
 
-      {loading && <p className="mt-2 text-blue-600">Procesando archivos…</p>}
+      {loading && <p className="mt-2 text-blue-600">⏳ Procesando archivos…</p>}
+      {successMessage && <p className="mt-2 text-green-700">{successMessage}</p>}
+      {processedFiles.length > 0 && (
+        <p className="mt-2 text-sm text-green-600">✅ Archivos procesados: {processedFiles.join(", ")}</p>
+      )}
       {error && <p className="mt-2 whitespace-pre-line text-red-600">{error}</p>}
 
       {showPreview && (
@@ -170,7 +184,7 @@ export default function PDFUploader({
           accounts={accounts}
           entityId={entityId}
           userId={userId}
-          onCancel={resetPreviewState}
+          onClose={resetPreviewState}
           onSave={handleConfirm}
         />
       )}

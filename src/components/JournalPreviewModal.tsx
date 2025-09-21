@@ -4,13 +4,13 @@ import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import AccountPicker from "./AccountPicker";
 import { saveAccountHint } from "../services/aiLearningService";
+import MovableModal from "./ui/MovableModal";
 
 // 👇 Usamos el PUC unificado
 import {
   canonicalCodeFrom,
   canonicalPair,
   normalizeEntry,
-  getAccountsForUI,
 } from "../utils/accountPUCMap";
 
 /* ====================== Types ====================== */
@@ -19,8 +19,8 @@ interface Props {
   accounts: Account[]; // Catálogo canónico (7 dígitos) que alimenta los selects
   entityId: string;
   userId: string;
-  onCancel: () => void;
-  onSave: (confirmed: JournalEntry[], comment: string) => void;
+  onClose: () => void;
+  onSave: (withNote: JournalEntry[], note: string) => void;
 }
 
 type Row = JournalEntry & { _rid: string };
@@ -36,7 +36,6 @@ const normKey = (s?: string) =>
 
 function extractLeadingCodeFromLabel(label?: string): string | null {
   if (!label) return null;
-  // “60601 — Compras …” ó “60601 - …”
   const m = label.trim().match(/^(\d{2,})\s*[—-]\s*/);
   return m ? m[1] : null;
 }
@@ -61,7 +60,7 @@ export default function JournalPreviewModal({
   accounts,
   entityId,
   userId,
-  onCancel,
+  onClose,
   onSave,
 }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -140,7 +139,6 @@ export default function JournalPreviewModal({
       prev.map((r) => {
         // Vuelve a canónizar por si cambió el catálogo/alias
         const n = normalizeEntry({ account_code: r.account_code, account_name: r.account_name });
-
         let out = { ...r, account_code: n.account_code, account_name: n.account_name };
 
         // Hidratar faltantes contra catálogo
@@ -300,10 +298,19 @@ export default function JournalPreviewModal({
 
   /* -------------------- UI -------------------- */
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-6">
-      <div className="w-full max-w-6xl rounded-lg bg-white p-6 shadow-xl">
+    <MovableModal
+      title="🧾 Previsualización de Asientos Contables"
+      isOpen={true}
+      onClose={onClose}
+      onConfirm={canConfirm ? onConfirm : undefined}
+      confirmLabel="✅ Confirmar Asientos"
+      cancelLabel="Cancelar"
+      confirmDisabled={!canConfirm}
+    >
+    <div className="fixed inset-0 z-50 bg-black/50">
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-full max-w-6xl rounded-lg bg-white p-6 shadow-xl">
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between draggable-header cursor-move">
           <h2 className="text-2xl font-bold text-slate-900">🧾 Previsualización de Asientos Contables</h2>
 
           <div className="flex items-center gap-2">
@@ -463,7 +470,7 @@ export default function JournalPreviewModal({
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-end gap-3">
-          <button onClick={onCancel} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
+          <button onClick={onClose} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
             Cancelar
           </button>
           <button
@@ -479,5 +486,6 @@ export default function JournalPreviewModal({
         </div>
       </div>
     </div>
+    </MovableModal>
   );
 }

@@ -1,5 +1,4 @@
-// ✅ Mejorada para arquitectura con Netlify (sin exponer API key en frontend)
-// Archivo destino: src/services/extractInvoiceFromAPI.ts
+// src/services/extractInvoiceFromAPI.ts
 
 import type { JournalEntry } from "../types/JournalEntry";
 import { normalizeEntry, canonicalPair } from "../utils/accountPUCMap";
@@ -19,11 +18,11 @@ export async function extractInvoiceFromAPI(fullText: string, entityRUC: string)
 
     if (!Array.isArray(parsed)) return [];
 
-    const entries: JournalEntry[] = parsed
-      .map((r) => coerceOne(r, "expense", today))
-      .filter(Boolean) as JournalEntry[];
+    const raw = parsed
+      .map((r) => coerceOne(r, "expense", today, entityRUC))
+      .filter((e): e is JournalEntry => e !== null); // 👈 Tipado fuerte
 
-    return entries.map((e) => normalizeEntry(e));
+    return raw.map(normalizeEntry);
   } catch (err) {
     console.error("❌ Error calling extract-invoice:", err);
     return [];
@@ -38,22 +37,28 @@ function toNum(x: any): number | undefined {
 function coerceOne(
   r: any,
   fallbackType: "expense" | "income",
-  fallbackDate: string
+  fallbackDate: string,
+  entityRUC: string
 ): JournalEntry | null {
   const debit = toNum(r?.debit);
   const credit = toNum(r?.credit);
   if (!debit && !credit) return null;
 
   const description = String(r?.description ?? "").slice(0, 300);
-  const pair = canonicalPair({
-    code: String(r?.account_code ?? ""),
-    name: String(r?.account_name ?? ""),
-  });
 
-  const type: "expense" | "income" =
-    r?.type === "expense" || r?.type === "income" ? r.type : fallbackType;
+  const rawCode = String(r?.account_code ?? "");
+  const rawName = String(r?.account_name ?? "");
+  const pair = canonicalPair({ code: rawCode, name: rawName });
 
-  const date = r?.date && typeof r.date === "string" ? r.date.slice(0, 10) : fallbackDate;
+  const date = typeof r?.date === "string" ? r.date.slice(0, 10) : fallbackDate;
+
+  // Detectar tipo de asiento: si el emisor es distinto al RUC de la entidad => compra (expense)
+  const tipoDetectado: "expense" | "income" =
+    r?.type === "expense" || r?.type === "income"
+      ? r.type
+      : r?.issuerRUC && r?.issuerRUC !== entityRUC
+      ? "expense"
+      : "income";
 
   const je: JournalEntry = {
     date,
@@ -62,9 +67,10 @@ function coerceOne(
     account_name: (pair as any).name || "",
     debit: debit && !credit ? debit : debit && credit && debit >= credit ? debit : undefined,
     credit: credit && !debit ? credit : debit && credit && credit > debit ? credit : undefined,
-    type,
+    type: tipoDetectado,
     invoice_number: r?.invoice_number ? String(r.invoice_number) : "",
     source: "ai",
   };
+
   return je;
 }

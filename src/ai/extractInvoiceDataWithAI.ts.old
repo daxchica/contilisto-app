@@ -1,37 +1,128 @@
 // src/ai/extractInvoiceDataWithAI.ts
+import { OpenAI } from "openai";
 import type { JournalEntry } from "../types/JournalEntry";
-import { normalizeEntry } from "../utils/accountPUCMap";
+import {
+  getAccountsForUI,
+  PUCExpenseStructure,
+  canonicalPair,
+  normalizeEntry,
+} from "../utils/accountPUCMap";
+
+const openai = new OpenAI({
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true,
+});
+
+const INCLUDE_ICE_IN_EXPENSE = true;
 
 export async function extractInvoiceDataWithAI(
   fullText: string,
   entityRUC: string
 ): Promise<JournalEntry[]> {
-  try {
-    const res = await fetch("/.netlify/functions/extractInvoice", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullText,
-        entityRUC,
-      }),
-    });
+  const today = new Date().toISOString().slice(0, 10);
+  const uiAccounts = getAccountsForUI();
+  const allow = uiAccounts.map((a) => `${a.code} — ${a.name}`).slice(0, 400); // keep prompt small
 
-    if (!res.ok) {
-      console.error("❌ Error en llamada al backend:", await res.text());
-      return [];
-    }
+  // Soft guess for expense vs income
+  const probableExpense =
+    new RegExp(`(?:(identificaci[oó]n|comprador|cliente)[^\\d]{0,40})${escapeRegExp(entityRUC)}`, "i").test(fullText) ||
+    (fullText.includes(entityRUC) && /comprador|cliente|adquirente/i.test(fullText));
+  const targetType: "expense" | "income" = probableExpense ? "expense" : "income";
 
-    const json = await res.json();
-    if (!Array.isArray(json)) {
-      console.warn("⚠️ Respuesta no es un array:", json);
-      return [];
-    }
+  const E = PUCExpenseStructure;
+  const iceLine = INCLUDE_ICE_IN_EXPENSE
+    ? `- ICE → Débito "${E.ice.code}" (${E.ice.name})`
+    : `- ICE → omitir si no aplica.`;
 
-    return json.map((e: any) => normalizeEntry(e));
-  } catch (err) {
-    console.error("❌ Error en extractInvoiceDataWithAI:", err);
-    return [];
-  }
+  const systemPrompt = `
+Eres un asistente contable (Ecuador). Devuelve SOLO un arreglo JSON de líneas contables.
+Usa UNICAMENTE estos códigos permitidos:
+${allow.join("\n")}
+
+Estructura sugerida para GASTOS:
+- Subtotal (sin IVA ni ICE) → Débito "${E.subtotal.code}" (${E.subtotal.name})
+${iceLine}
+- IVA compras (crédito tributario) → Débito "${E.iva.code}" (${E.iva.name})
+- Total a pagar al proveedor → Crédito "${E.total.code}" (${E.total.name})
+
+Reglas:
+- Cada objeto: { "date","description","account_code","account_name","debit","credit","type","invoice_number" }
+- Solo uno de {debit,credit} debe ser numérico (>0)
+- Sumas Debe == Haber (redondeo a 2 decimales)
+- Nada de texto fuera del JSON
+  `.trim();
+
+  const userPrompt = `
+RUC entidad: ${entityRUC}
+Tipo esperado: ${targetType}
+Texto OCR:
+"""${fullText}"""
+Hoy: ${today}
+`.trim();
+
+  const raw = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+
+  const text = (raw.choices?.[0]?.message?.content || "").trim();
+  const json = stripCodeFences(text);
+  let arr: any[] = [];
+  try { arr = JSON.parse(json); } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+
+  const entries: JournalEntry[] = arr
+    .map((r) => coerceOne(r, targetType, today))
+    .filter(Boolean) as JournalEntry[];
+
+  // Final normalization so <select> always has a code
+  return entries.map((e) => normalizeEntry(e));
+}
+
+function stripCodeFences(s: string) {
+  return s.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toNum(x: any): number | undefined {
+  const n = typeof x === "string" ? parseFloat(x) : x;
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : undefined;
+}
+
+function coerceOne(r: any, fallbackType: "expense" | "income", fallbackDate: string): JournalEntry | null {
+  const debit = toNum(r?.debit);
+  const credit = toNum(r?.credit);
+  if (!debit && !credit) return null;
+
+  const description = String(r?.description ?? "").slice(0, 300);
+  const pair = canonicalPair({
+    code: String(r?.account_code ?? ""),
+    name: String(r?.account_name ?? ""),
+  });
+
+  const type: "expense" | "income" =
+    r?.type === "expense" || r?.type === "income" ? r.type : fallbackType;
+
+  const date = r?.date && typeof r.date === "string" ? r.date.slice(0, 10) : fallbackDate;
+
+  const je: JournalEntry = {
+    date,
+    description,
+    account_code: (pair as any).code || "",
+    account_name: (pair as any).name || "",
+    debit: debit && !credit ? debit : debit && credit && debit >= credit ? debit : undefined,
+    credit: credit && !debit ? credit : debit && credit && credit > debit ? credit : undefined,
+    type,
+    invoice_number: r?.invoice_number ? String(r.invoice_number) : "",
+    source: "ai",
+  };
+  return je;
 }

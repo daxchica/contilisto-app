@@ -33,6 +33,8 @@ export interface JournalEntry {
   createdAt?: number;
   editedAt?: number;
   editedBy?: string;
+  origin?: string;
+  note?: string;
   /** Optional vendor/customer RUC to aid learning */
   counterpartyRUC?: string;
 }

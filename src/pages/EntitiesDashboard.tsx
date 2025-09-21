@@ -11,6 +11,7 @@ import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
 import ManualEntryModal from "../components/ManualEntryModal";
 import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
 import AddEntityModal from "../components/AddEntityModal";
+import JournalPreviewModal from "../components/JournalPreviewModal";
 
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
@@ -176,6 +177,9 @@ export default function EntitiesDashboard() {
     [selectedEntityId, entities]
   );
   const selectedEntityRUC = selectedEntity?.ruc ?? "";
+
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
 
   /* 1) Load user entities */
   useEffect(() => {
@@ -427,7 +431,10 @@ export default function EntitiesDashboard() {
                 entityId={selectedEntityId}
                 userId={auth.currentUser?.uid ?? ""}
                 accounts={accounts}
-                onUploadComplete={(entries) => setSessionJournal((prev) => [...prev, ...entries])}
+                onUploadComplete={(entries) => {
+                  setPreviewEntries(entries);
+                  setShowPreviewModal(true);
+                }}
               />
             ) : (
               <div className="p-6 border rounded text-gray-500">
@@ -522,6 +529,17 @@ export default function EntitiesDashboard() {
       onClose={() => setShowAddEntity(false)}
       onCreate={handleEntityCreated}
     />
+    {showPreviewModal && (
+      <JournalPreviewModal
+        entries={previewEntries}
+        entityId={selectedEntityId}
+        onClose={() => setShowPreviewModal(false)}
+        onSave={(withNote, note) => {
+          setSessionJournal((prev) => [...prev, ...withNote]);
+          setShowPreviewModal(false);
+        }}
+      />
+    )}
     </>
   );
 }

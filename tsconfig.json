@@ -1,3 +1,5 @@
+// ..tsconfig.json
+
 {
   "compilerOptions": {
     "target": "ESNext",
@@ -10,7 +12,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["@netlify/functions"]
+    "types": ["@netlify/functions"],
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"]
+    }
   },
   "include": [
     "src",

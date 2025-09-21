@@ -8,40 +8,42 @@ const openai = new OpenAI({
 });
 
 const SYSTEM_PROMPT = `
-Eres un experto contable ecuatoriano con dominio del Plan Único de Cuentas (PUC). Tu tarea es analizar el contenido de una factura en texto plano y devolver las partidas contables estructuradas según el PUC.
+Eres un contador ecuatoriano experto en análisis de facturas electrónicas escaneadas por OCR. Tu tarea es generar los asientos contables correctamente utilizando el Plan Único de Cuentas (PUC) del Ecuador.
 
-Genera un arreglo de objetos JSON, donde cada objeto representa un asiento contable con los siguientes campos obligatorios:
+🧠 INSTRUCCIONES CLAVE:
 
-- date: fecha del asiento (usa la fecha de hoy en formato YYYY-MM-DD)
-- description: descripción del concepto contable
-- account_code: código exacto del PUC según el tipo de gasto
-- account_name: nombre de la cuenta según el PUC
-- debit: monto a debitar (usa \`debit\` solo si aplica)
-- credit: monto a acreditar (usa \`credit\` solo si aplica)
-- type: "expense" si es factura de compra, "income" si es factura de venta
-- invoice_number: número de factura en formato ###-###-#########
+1. Analiza el cuadro resumen de la factura. Si contiene líneas como:
 
-Usa estas cuentas contables cuando correspondan:
+- "SUBTOTAL 12%", "SUBTOTAL 15%" → base gravada
+- "SUBTOTAL 0%" → base no gravada
+- "IVA 12%", "IVA 15%" → impuesto
+- "VALOR TOTAL" → valor total facturado
 
-🔹 Gastos:
-- Subtotal o valor neto de compra:  
-  - account_code: "60601", account_name: "Compras locales"
-- Impuesto ICE:  
-  - account_code: "53901", account_name: "Otros tributos"
-- IVA crédito tributario:  
-  - account_code: "24301", account_name: "IVA crédito tributario"
-- Total por pagar:  
-  - account_code: "21101", account_name: "Cuentas por pagar comerciales locales"
+2. Si existe un "SUBTOTAL 12%" o "SUBTOTAL 15%", regístralo con cuenta de compras locales.
+3. Si existe un "SUBTOTAL 0%", regístralo como gasto no gravado (también en compras locales).
+4. Si hay "IVA", regístralo con cuenta de IVA crédito tributario.
+5. El total debe acreditarse a proveedores.
 
-🔹 Ventas (para ingresos):
-- Subtotal o ingreso neto:  
-  - account_code: "70101", account_name: "Ventas locales"
-- IVA por pagar:  
-  - account_code: "24302", account_name: "IVA débito tributario"
-- Total recibido:  
-  - account_code: "11101", account_name: "Caja"
+📘 CUENTAS CONTABLES A UTILIZAR:
 
-Devuelve únicamente el JSON sin explicación ni texto adicional. No uses formato Markdown (no pongas "\`\`\`json").
+🔹 Compras:
+- Base imponible (12% o 15%) → "60601", "Compras locales"
+- Base no gravada (0%)       → "60601", "Compras locales"
+- IVA crédito tributario     → "24301", "IVA crédito tributario"
+- ICE (si aplica)            → "53901", "Otros Tributos"
+- Total a pagar              → "21101", "Cuentas por pagar comerciales locales"
+
+🔹 Ventas:
+- Subtotal ingreso neto      → "70101", "Ventas locales"
+- IVA débito tributario      → "24302", "IVA débito tributario"
+- Total recibido (efectivo)  → "11101", "Caja"
+
+🎯 OBJETIVO:
+- El asiento debe estar cuadrado (total débitos = total créditos).
+- Usa máximo 4 líneas.
+- Incluye: date, description, account_code, account_name, debit, credit, type, invoice_number
+- Devuelve SOLO el arreglo JSON (sin explicación, sin encabezados, sin código markdown).
+- Muestra valores con máximo 2 decimales, como números (no strings).
 `;
 
 const handler: Handler = async (event) => {
@@ -94,7 +96,7 @@ Fecha actual: ${today}
       parsed = JSON.parse(cleaned);
       if (!Array.isArray(parsed)) throw new Error('Expected JSON array');
     } catch (parseError) {
-      console.error('❌ JSON parse error:', parseError, '\nRaw response:\n', raw);
+      console.error('❌ JSON parse error:', parseError, 'Texto OCR:', fullText,'\nRaw response:\n', raw);
       return {
         statusCode: 422,
         body: JSON.stringify({
