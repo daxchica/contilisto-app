@@ -1,7 +1,7 @@
 // src/types/JournalEntry.ts
 
 export type EntryKind = "income" | "expense" | "asset" | "liability" | "equity";
-export type EntrySource = "ai" | "manual" | "edited";
+export type EntrySource = "ai" | "ai-layout" | "manual" | "edited";
 
 /** Journal line stored in cents for perfect math */
 export interface JournalEntry {
@@ -27,7 +27,7 @@ export interface JournalEntry {
     uid?: string; // legacy alias; prefer userId
     userId?: string;
     /** Provenance and manual edit flags */
-  source?: EntrySource;     // "ai" | "manual" | "edited"
+  source: "ai" | "ai-layout" | "manual" | "edited";
   isManual?: boolean;         // true when user added/edited the line
   /** Audit fields (epoch ms) */
   createdAt?: number;

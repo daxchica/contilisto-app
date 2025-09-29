@@ -1,0 +1,45 @@
+// src/utils/extractTextBlocksFromPDF.ts
+import * as pdfjsLib from "pdfjs-dist";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.js",
+  import.meta.url
+).toString();
+
+export async function extractTextBlocksFromPDF(file: File) {
+  const typedArray = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+
+  const blocks: {
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    page: number;
+  }[] = [];
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.0 });
+    const textContent = await page.getTextContent();
+
+    for (const item of textContent.items) {
+      if ("str" in item && item.transform) {
+        const [a, b, c, d, x, y] = item.transform;
+        const width = item.width || 0;
+        const height = item.height || 0;
+        blocks.push({
+          text: item.str,
+          x,
+          y: viewport.height - y,
+          width,
+          height,
+          page: pageNum,
+        });
+      }
+    }
+  }
+
+  return blocks;
+}

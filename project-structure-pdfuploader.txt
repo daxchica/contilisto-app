@@ -1,0 +1,41 @@
+/contilisto-app
+├── netlify/
+│   └── functions/
+│       ├── extract-invoice.ts              # [✅] OCR simple: extrae texto de PDF y devuelve texto plano
+│       └── extract-invoice-layout.ts       # [🧪] (opcional) OCR con layout visual: bloques con posición
+│
+├── public/
+│   └── pdfWorker.js                        # [✅] Worker de pdfjs-dist para OCR en el cliente
+│
+├── src/
+│   ├── ai/
+│   │   ├── extractInvoiceDataWithAI.ts         # [✅] Extrae asientos contables desde texto plano usando GPT
+│   │   ├── extractInvoiceDataWithLayoutAI.ts   # [🧪] (opcional) Extrae desde bloques visuales (GPT + layout)
+│   │   └── extractTextBlocksFromPDF.ts         # [🧪] Extrae bloques con posición desde PDF (para layout)
+│
+│   ├── components/
+│   │   ├── PDFUploader.tsx                  # [✅] Componente drag & drop para subir PDF y lanzar parsePDF
+│   │   └── JournalPreviewModal.tsx          # [✅] Modal para revisar y confirmar los asientos contables
+│
+│   ├── pages/
+│   │   └── EntitiesDashboard.tsx            # [✅] Vista principal de entidades, integra PDFUploader y tabla
+│
+│   ├── services/
+│   │   ├── journalService.ts                # [✅] Procesamiento y guardado de asientos contables
+│   │   ├── extractInvoiceFromAPI.ts         # [✅] Cliente para llamar a /api/extract-invoice (OCR simple)
+│   │   ├── extractInvoiceFromLayoutAPI.ts   # [🧪] (opcional) Cliente para llamar a layout API (layout OCR)
+│   │   ├── firestoreLogService.ts           # [✅] Registro de facturas procesadas en Firestore
+│   │   └── localLogService.ts               # [✅] Registro local en localStorage de facturas ya procesadas
+│
+│   ├── types/
+│   │   ├── JournalEntry.ts                  # [✅] Tipado principal de los asientos contables
+│   │   ├── AccountTypes.ts                  # [✅] Estructura del plan contable (PUC)
+│   │   └── TextBlock.ts                     # [🧪] Tipo para bloques con posición (layout visual)
+│
+│   ├── utils/
+│   │   └── accountPUCMap.ts                 # [✅] Lógica de normalización contable según PUC Ecuador
+│
+├── .env                                     # [✅] Contiene VITE_OPENAI_API_KEY y demás secretos
+├── tsconfig.json                            # [✅] Soporte para módulos ESNext + Firebase + Netlify
+├── tailwind.config.js                       # [✅] Tailwind configurado para analizar todo src/
+├── vite.config.ts                           # [✅] Incluye plugin React, puerto 5173, acceso a /netlify/functions/

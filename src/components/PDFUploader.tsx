@@ -1,3 +1,5 @@
+// ARCHIVO: src/components/PDFUploader.tsx
+
 import { useState, useEffect,DragEvent, ChangeEvent, useRef } from "react";
 import { parsePDF, saveJournalEntries } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
