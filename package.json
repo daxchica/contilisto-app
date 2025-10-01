@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve: functions": "netlify functions: serve",
+    "dev:netlify": "netlify dev"
   },
   "dependencies": {
     "@netlify/functions": "^4.2.5",
@@ -52,9 +54,9 @@
     "globals": "^16.0.0",
     "vite": "^6.3.5"
   },
-  "description": "This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.",
+  "description": "Sistema contable automático para PYMES: Contilisto",
   "main": "eslint.config.js",
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "MIT"
 }

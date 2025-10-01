@@ -4,24 +4,30 @@ interface LocalLog {
   [entityRUC: string]: string[];
 }
 
+// Cargar log desde localStorage
 function loadLog(): LocalLog {
   const raw = localStorage.getItem(LOCAL_LOG_KEY);
   return raw ? JSON.parse(raw) : {};
 }
 
-function saveLog(log: LocalLog) {
+// Guardar log en localStorage
+function saveLog(log: LocalLog): void {
   localStorage.setItem(LOCAL_LOG_KEY, JSON.stringify(log));
 }
 
 // ✅ Registrar número de factura
-export function logProcessedInvoice(entityRUC: string, invoiceNumber: string) {
+export function logProcessedInvoice(entityRUC: string, invoiceNumber: string): void {
   const log = loadLog();
   if (!log[entityRUC]) log[entityRUC] = [];
+
   if (!log[entityRUC].includes(invoiceNumber)) {
     log[entityRUC].push(invoiceNumber);
     saveLog(log);
   }
 }
+
+// Alias publico compatible
+export const saveInvoiceToLocalLog = logProcessedInvoice;
 
 // ✅ Obtener facturas como Set
 export function getProcessedInvoices(entityRUC: string): Set<string> {
@@ -35,7 +41,7 @@ export function getAllInvoicesForEntity(entityRUC: string): string[] {
 }
 
 // ✅ Limpiar todos los logs
-export function clearLocalLog() {
+export function clearLocalLog(): void {
   localStorage.removeItem(LOCAL_LOG_KEY);
 }
 

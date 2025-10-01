@@ -1,0 +1,23 @@
+# netlify.toml
+
+[build]
+  publish = "dist"                         # Carpeta de salida del build (vite build)
+  functions = "netlify/functions"          # Directorio donde están tus serverless functions
+
+[dev]
+  framework = "vite"                       # Asegura que Netlify detecte y use Vite para dev server
+  command = "npm run dev"
+  targetPort = 5173                        # Puerto donde corre Vite normalmente
+  port = 8888                              # Puerto donde correrá netlify dev (frontend + backend)
+  publish = "dist"
+  functions = "netlify/functions"
+  autoLaunch = true                        # Abre automáticamente en el navegador
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["openai"]

@@ -13,7 +13,7 @@ import {
 import * as pdfjsLib from "pdfjs-dist";
 import "../pdfWorker";
 
-import { extractInvoiceDataWithAI_gpt4o } from "../ai/extractInvoiceDataWithAI_gpt4o";
+import { extractInvoiceFromAPI } from "../ai/extractInvoiceFromAPI";
 import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
 import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
@@ -35,13 +35,22 @@ export async function saveJournalEntries(
   if (!userId) throw new Error("Missing userId for journal entry");
 
   const journalRef = collection(db, "entities", entityId, "journalEntries");
-
+ 
   for (const { userId: _ignored, ...rest } of entries) {
     const fullEntry = {
       ...rest,
       entityId,
       userId,
       createdAt: serverTimestamp(),
+
+      // 🔐 Garantiza valores válidos
+      debit: typeof rest.debit === "number" ? rest.debit : 0,
+      credit: typeof rest.credit === "number" ? rest.credit : 0,
+      description: rest.description || "",
+      invoice_number: rest.invoice_number || "",
+      account_code: rest.account_code || "",
+      account_name: rest.account_name || "",
+      date: rest.date || new Date().toISOString().slice(0, 10),
     };
     await addDoc(journalRef, fullEntry);
   }
@@ -106,7 +115,7 @@ export async function parsePDF(
         fullText += " " + (content.items as any[]).map((item: any) => item.str).join(" ");
       }
 
-      const aiEntries = await extractInvoiceDataWithAI_gpt4o(fullText, userRUC);
+      const aiEntries = await extractInvoiceFromAPI(fullText, userRUC);
       const newOnly = aiEntries.filter(e => e.invoice_number && !allProcessed.has(e.invoice_number));
       if (newOnly.length > 0) entries.push(...newOnly.map(e => ({ ...e, transactionId, userId })));
       else return [];

@@ -7,6 +7,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Prompt para GPT-4o
 const SYSTEM_PROMPT = `
 Eres un contador ecuatoriano experto en análisis de facturas escaneadas.
 
@@ -42,7 +43,7 @@ Ejemplo de cuentas:
   },
   ...
 ]
-`;
+`.trim();
 
 function filterVisualBlocks(blocks: any[]): any[] {
   return blocks.filter((b) =>

@@ -1,14 +1,18 @@
-// netlify/functions/extractInvoice.ts
-
-import { Handler } from '@netlify/functions';
+import { Handler, HandlerCallback, HandlerContext, HandlerEvent } from '@netlify/functions';
 import { OpenAI } from 'openai';
 
+if (!process.env.OPENAI_API_KEY) {
+  console.error('Falta OPENAI_API_KEY en variables de entorno');
+  throw new Error("Missing OpenAI API Key");
+}
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY, // 🔒 Solo en el backend
 });
 
 const SYSTEM_PROMPT = `
-Eres un contador ecuatoriano experto en análisis de facturas electrónicas escaneadas por OCR. Tu tarea es generar los asientos contables correctamente utilizando el Plan Único de Cuentas (PUC) del Ecuador.
+Eres un contador ecuatoriano experto en análisis de facturas electrónicas escaneadas por OCR. 
+Tu tarea es generar los asientos contables correctamente utilizando el Plan Único de Cuentas (PUC) del Ecuador.
 
 🧠 INSTRUCCIONES CLAVE:
 
@@ -46,32 +50,37 @@ Eres un contador ecuatoriano experto en análisis de facturas electrónicas esca
 - Muestra valores con máximo 2 decimales, como números (no strings).
 `;
 
-const handler: Handler = async (event) => {
+const handler: Handler = async (event: HandlerEvent) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      body: 'Method Not Allowed',
+      body: JSON.stringify({ error: 'Method Not Allowed' }),
     };
   }
 
   try {
-    const { fullText, entityRUC } = JSON.parse(event.body || '{}');
+    const { fullText, entityRUC, userRUC } = JSON.parse(event.body || '{}');
 
-    if (!fullText || !entityRUC) {
+    const ruc = entityRUC?.trim() || userRUC?.trim();
+
+    if (!fullText?.trim() || !ruc) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'Missing fullText or entityRUC in request body' }),
       };
     }
 
+    console.log('📥 fullText:', fullText.slice(0, 150));
+    console.log('🏢 entityRUC:', entityRUC);
+
     const today = new Date().toISOString().split('T')[0];
 
     const userPrompt = `
-RUC de la empresa del usuario: ${entityRUC}
+RUC de la empresa del usuario: ${ruc}
 Texto extraído de la factura por OCR:
 """${fullText}"""
 Fecha actual: ${today}
-`;
+`.trim();
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -83,11 +92,11 @@ Fecha actual: ${today}
     });
 
     const raw = response.choices?.[0]?.message?.content ?? '';
+    console.log('🧾 Raw GPT:', raw.slice(0, 500));
 
     const cleaned = raw
-      .replace(/^```json/, '')
-      .replace(/^```/, '')
-      .replace(/```$/, '')
+      .replace(/```json[\s\S]*?```/gi, (match) => match.replace(/```json|```/gi, "").trim())
+      .replace(/^```|```$/g, '')
       .trim();
 
     let parsed: any;
@@ -96,7 +105,7 @@ Fecha actual: ${today}
       parsed = JSON.parse(cleaned);
       if (!Array.isArray(parsed)) throw new Error('Expected JSON array');
     } catch (parseError) {
-      console.error('❌ JSON parse error:', parseError, 'Texto OCR:', fullText,'\nRaw response:\n', raw);
+      console.error('❌ JSON parse error:', parseError, 'Texto OCR:', fullText, '\nRaw response:\n', raw);
       return {
         statusCode: 422,
         body: JSON.stringify({

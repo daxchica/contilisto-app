@@ -7,7 +7,6 @@ import { useSelectedEntity } from "../context/SelectedEntityContext";
 
 import PDFUploader from "../components/PDFUploader";
 import JournalTable from "../components/JournalTable";
-import AccountsReceivablePayable from "../components/AccountsReceivablePayable";
 import ManualEntryModal from "../components/ManualEntryModal";
 import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
 import AddEntityModal from "../components/AddEntityModal";
@@ -25,31 +24,29 @@ import {
 import {
   fetchJournalEntries,
   deleteJournalEntriesByInvoiceNumber,
+  deleteJournalEntriesByTransactionId,
   saveJournalEntries,
 } from "../services/journalService";
 import {
   deleteInvoicesFromFirestoreLog,
   clearFirestoreLogForEntity,
+  fetchProcessedInvoices,
 } from "../services/firestoreLogService";
 import {
+  logProcessedInvoice,
+  clearLocalLog,
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
   getProcessedInvoices,
+  getAllInvoicesForEntity,
+  saveInvoiceToLocalLog,
 } from "../services/localLogService";
 
 // merged chart loader
 import { getEntityChart } from "../services/getEntityChart";
 
 /* ---------------- Dev helper (only in DEV) ---------------- */
-function DevLogResetButton({ 
-  entityId, 
-  ruc,
-  setSessionJournal,
-}: { 
-  entityId: string; 
-  ruc: string;
-  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>; 
-}) {
+function DevLogResetButton({ entityId, ruc, setSessionJournal, }: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
   if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
 
   const handleReset = async () => {
@@ -60,27 +57,15 @@ function DevLogResetButton({
     setSessionJournal([]);
     alert("✔️ Logs borrados.");
   };
-
   return (
-    <button
-      onClick={handleReset}
-      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded w-fit"
-    >
+    <button onClick={handleReset} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded w-fit">
       🧹 Borrar logs de facturas procesadas (DEV)
     </button>
   );
 }
 
 /* ---------------- Facturas procesadas ---------------- */
-function InvoiceLogDropdown({
-  entityId,
-  ruc,
-  setSessionJournal,
-}: {
-  entityId: string;
-  ruc: string;
-  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>;
-}) {
+function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -101,49 +86,31 @@ function InvoiceLogDropdown({
       return next;
     });
   }, []);
-
   const handleDeleteSelected = useCallback(async () => {
     if (!selected.size) return;
     if (!window.confirm("¿Borrar las facturas seleccionadas del log?")) return;
-
     const toDelete = Array.from(selected);
-
     await deleteInvoicesFromFirestoreLog(entityId, toDelete);
     deleteInvoicesFromLocalLog(ruc, toDelete);
     await deleteJournalEntriesByInvoiceNumber(entityId, toDelete);
-
     setInvoices((prev) => prev.filter((inv) => !toDelete.includes(inv)));
     setSelected(new Set());
-
-    setSessionJournal((prev) =>
-      prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim()))
-    );
+    setSessionJournal((prev) => prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
     alert("🗑️ Facturas eliminadas del log.");
   }, [entityId, ruc, selected, setSessionJournal]);
-
   if (!invoices.length) return null;
-
   return (
     <div className="mt-4 p-4 bg-white border rounded shadow">
       <h3 className="font-bold mb-2">🧾 Facturas procesadas</h3>
       <ul className="max-h-40 overflow-y-auto">
         {invoices.map((inv) => (
           <li key={inv} className="flex items-center gap-2 mb-1">
-            <input
-              type="checkbox"
-              aria-label={`Seleccionar factura ${inv}`}
-              checked={selected.has(inv)}
-              onChange={() => toggleInvoice(inv)}
-            />
+            <input type="checkbox" checked={selected.has(inv)} onChange={() => toggleInvoice(inv)} aria-label={`Seleccionar factura ${inv}`}/>
             <span className="text-sm text-gray-700">{inv}</span>
           </li>
         ))}
       </ul>
-      <button
-        disabled={selected.size === 0}
-        onClick={handleDeleteSelected}
-        className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit disabled:opacity-50"
-      >
+      <button disabled={selected.size === 0} onClick={handleDeleteSelected} className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit disabled:opacity-50">
         🗑️ Borrar seleccionadas
       </button>
     </div>
@@ -153,12 +120,17 @@ function InvoiceLogDropdown({
 /* =========================== Page =========================== */
 export default function EntitiesDashboard() {
   const [user] = useAuthState(auth);
-
-  type Entity = { id: string; ruc: string; name: string };
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
   const [historicalJournal, setHistoricalJournal] = useState<JournalEntry[]>([]);
   const [sessionJournal, setSessionJournal] = useState<JournalEntry[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
+  const { entity: globalEntity, setEntity } = useSelectedEntity();
+  const selectedEntity = useMemo(() => entities.find((e) => e.id === selectedEntityId) ?? null, [selectedEntityId, entities]);
+  const selectedEntityRUC = selectedEntity?.ruc ?? "";
+
   const [loadingJournal, setLoadingJournal] = useState(false);
   const [entityToDelete, setEntityToDelete] =
     useState<{ id: string; ruc: string; name: string } | null>(null);
@@ -166,41 +138,18 @@ export default function EntitiesDashboard() {
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAddEntity, setShowAddEntity] = useState(false);
-
-  // merged chart state (base + custom)
-  const [accounts, setAccounts] = useState<Account[]>([]);
-
-  const { entity: globalEntity, setEntity } = useSelectedEntity();
-
-  const selectedEntity = useMemo(
-    () => entities.find((e) => e.id === selectedEntityId) ?? null,
-    [selectedEntityId, entities]
-  );
-  const selectedEntityRUC = selectedEntity?.ruc ?? "";
-
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
+  type Entity = { id: string; ruc: string; name: string };
 
   /* 1) Load user entities */
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!user?.uid) {
-        if (!cancelled) {
-          setEntities([]);
-          setSelectedEntityId("");
-          setEntity(null);
-          setSessionJournal([]);
-          setAccounts([]);
-        }
-        return;
-      }
+      if (!user?.uid) return;
       try {
-        const list = await fetchEntities();
+        const list = await fetchEntities(user.uid);
         if (!cancelled) {
           setEntities(list);
-          // keep selection only if it still exists
-          if (selectedEntityId && !list.some((e) => e.id === selectedEntityId)) {
+          if (selectedEntity && !list.some(e => e.id === selectedEntityId)) {
             setSelectedEntityId("");
             setEntity(null);
             setSessionJournal([]);
@@ -218,14 +167,11 @@ export default function EntitiesDashboard() {
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]);
+    return () => { cancelled = true; };
+    }, [user?.uid]);
 
   /* 2) Hydrate selection from global context */
-  useEffect(() => {
+  useEffect(() => { 
     setSelectedEntityId(globalEntity?.id ?? "");
   }, [globalEntity?.id]);
 
@@ -258,8 +204,7 @@ export default function EntitiesDashboard() {
       }
     })();
     return () => {
-      cancelled = true;
-    };
+      cancelled = true; };
   }, [selectedEntityId]);
 
   /* 5) Load merged Chart of Accounts on entity change */
@@ -316,20 +261,33 @@ export default function EntitiesDashboard() {
     setSessionJournal([]);
   }, [sessionJournal, selectedEntity, user?.uid]);
 
+  // ✅ FUNCION CORREGIDA: guarda, registra facturas y cierra modal
+  const handlePreviewSave = async (entries: JournalEntry[], note: string) => {
+    if (!user?.uid || !selectedEntityId) return;
+    try {
+      await saveJournalEntries(selectedEntityId, entries, user.uid);
+      entries.forEach((e) => {
+        if (e.invoice_number) saveInvoiceToLocalLog(selectedEntityId, e.invoice_number);
+      });
+      setShowPreviewModal(false); // cerrar modal inmediatamente
+      fetchJournalEntries(selectedEntityId).then(setSessionJournal); // actualizar
+    } catch (err) {
+      console.error("Error al guardar asientos desde preview:", err);
+    }
+  };
+
   const handleEntityCreated = useCallback(
     async ({ ruc, name }: { ruc: string; name: string }) => {
       await createEntity({ ruc: ruc.trim(), name: name.trim() });
-      const updated = await fetchEntities();
+      const updated = await fetchEntities(user.uid);
       setEntities(updated);
-
       // Try to select the one we just created
       const newlyCreated =
         updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
       if (newlyCreated) setSelectedEntityId(newlyCreated.id);
-
       alert("✅ Entidad creada.");
     },
-    []
+    [user?.uid]
   );
 
   /* ------------------------------ UI ------------------------------ */
@@ -532,7 +490,9 @@ export default function EntitiesDashboard() {
     {showPreviewModal && (
       <JournalPreviewModal
         entries={previewEntries}
+        accounts={accounts}
         entityId={selectedEntityId}
+        userId={user?.uid ?? ""}
         onClose={() => setShowPreviewModal(false)}
         onSave={(withNote, note) => {
           setSessionJournal((prev) => [...prev, ...withNote]);

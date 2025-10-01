@@ -15,7 +15,7 @@ import {
 
 /* ====================== Types ====================== */
 interface Props {
-  entries: JournalEntry[];
+  entries?: JournalEntry[];
   accounts: Account[]; // Catálogo canónico (7 dígitos) que alimenta los selects
   entityId: string;
   userId: string;
@@ -56,7 +56,7 @@ function rid() {
 
 /* ====================== Component ====================== */
 export default function JournalPreviewModal({
-  entries,
+  entries = [],
   accounts,
   entityId,
   userId,
@@ -69,6 +69,14 @@ export default function JournalPreviewModal({
     const inv = entries.find((e) => e.invoice_number)?.invoice_number;
     return inv ? `Factura No. ${inv}` : "";
   });
+
+  /** 
+  const handleConfirm = () => {
+    if (entries.length === 0) return;
+    onSave(entries, note);
+    onClose();
+  };
+  */
 
   /* --------- Indexes para resolución código<->nombre --------- */
   const codeToName = useMemo(() => {
@@ -87,9 +95,10 @@ export default function JournalPreviewModal({
 
   /* --------- Carga inicial + auto-fixes + normalización IA --------- */
   useEffect(() => {
+
     const updated: Row[] = entries.map((e) => {
       let u: JournalEntry = { ...e };
-
+      
       // Auto-fixes de negocio (si aplican a tus flujos)
       if (u.type === "income" && u.account_code === "11101" && u.account_name === "Caja") {
         u.account_code = "14301";
@@ -294,7 +303,8 @@ export default function JournalPreviewModal({
 
     await learnFromEdits(withNote);
     onSave(withNote, note);
-  }, [rows, note, userId, canConfirm, onSave]);
+    onClose();
+  }, [rows, note, userId, canConfirm, onSave, onClose]);
 
   /* -------------------- UI -------------------- */
   return (

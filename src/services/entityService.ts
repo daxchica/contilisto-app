@@ -1,52 +1,29 @@
-// src/services/entityService.ts
+// src/services/journalService.ts
 
-import { 
-  addDoc, 
-  collection, 
-  deleteDoc, 
-  doc, 
-  getDoc,
-  getDocs, 
-  query, 
-  setDoc,
-  where,
-} from "firebase/firestore";
 import { db } from "../firebase-config";
-import { getAuth } from "firebase/auth";
+import {
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  where,
+  setDoc,
+} from "firebase/firestore";
 
-export type Entity = { 
-  id: string; 
-  ruc: string; 
-  name: string;
-  uid: string;
-  createdAt?: string;
-};
+import type { Entity } from "../types/Entity";
+import type { JournalEntry } from "@/types/JournalEntry";
+import { uidOrThrow } from "../utils/auth";
+// import type { JournalEntry } from "../types/JournalEntry";
 
-/** Ensure we have a signed-in user and return uid */
-function uidOrThrow(): string {
-  const uid = getAuth().currentUser?.uid || "";
-  if (!uid) throw new Error("Not signed in");
-  return uid;
-}
+/**
+ * Guarda múltiples entradas contables en Firestore, validando campos requeridos.
+ */
 
-/** List entities owned by the signed-in user (reads from /entities) */
-export async function fetchEntities(): Promise<Entity[]> {
+export async function createEntity(params: { id?: string; ruc: string; name: string }): Promise<string> {
   const uid = uidOrThrow();
-  try {
-    const colRef = collection(db, "entities");
-    const q = query(colRef, where("uid", "==", uid));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Entity, "id">) }));
-  } catch (err) {
-    console.error("fetchEntities failed:", err);
-    return [];
-  }
-}
-
-/** Create a new entity (at /entities) */
-export async function createEntity(params: { id?: string, ruc: string, name: string }) {
-  const uid = uidOrThrow();
-  const data = {
+  const data: Entity = {
     uid,
     name: params.name.trim(),
     ruc: params.ruc.trim(),
@@ -54,35 +31,73 @@ export async function createEntity(params: { id?: string, ruc: string, name: str
   };
 
   if (params.id) {
-    // Create with a specific id
     await setDoc(doc(db, "entities", params.id), data);
     return params.id;
   } else {
-    // Let Firestore auto-id
     const ref = await addDoc(collection(db, "entities"), data);
     return ref.id;
   }
 }
 
-
-/** (Optional) Read a single entity (verifies it exists & you own it) */
-export async function getEntity(entityId: string): Promise<Entity | null> {
-  const uid = uidOrThrow();
-  const ref = doc(db, "entities", entityId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-
-  const data = snap.data() as Omit<Entity, "id">;
-  // Optional local ownership check (rules already enforce this in prod)
-  if (data.uid !== uid) {
-    console.warn("getEntity: current user does not own this entity");
-    return null;
-  }
-  return { id: snap.id, ...data };
+/**
+ * Elimina una entidad por ID
+ */
+export async function deleteEntity(entityId: string): Promise<void> {
+  await deleteDoc(doc(db, "entities", entityId));
 }
 
-/** Delete an entity you own (rules enforce ownership) */
-export async function deleteEntity(entityId: string) {
-  uidOrThrow();
-  await deleteDoc (doc(db, "entities", entityId));
+/**
+ * Obtiene las entidades asociadas a un usuario por UID
+ */
+export async function fetchEntities(uid: string): Promise<Entity[]> {
+  const q = query(collection(db, "entities"), where("uid", "==", uid));
+  const snap = await getDocs(q);
+  return snap.docs.map((doc) => ({
+    ...(doc.data() as Entity),
+    id: doc.id,
+  }));
+}
+
+export async function saveJournalEntries(entries: JournalEntry[]) {
+  const batch = entries.map(async (entry) => {
+    // Validar y asegurar campos requeridos
+    if (!entry.entityId || !entry.account_code || !entry.date || !entry.userId) {
+      console.warn("Entrada contable inválida, se omitirá:", entry);
+      return;
+    }
+
+    const sanitizedEntry: JournalEntry = {
+      ...entry,
+      debit: typeof entry.debit === "number" ? entry.debit : 0,
+      credit: typeof entry.credit === "number" ? entry.credit : 0,
+      createdAt: entry.createdAt ?? new Date().toISOString(),
+    };
+
+    await addDoc(collection(db, "journalEntries"), sanitizedEntry);
+  });
+
+  await Promise.all(batch);
+}
+
+/**
+ * Obtiene las entradas contables asociadas a una entidad específica.
+ */
+export async function fetchJournalEntries(entityId: string): Promise<JournalEntry[]> {
+  const q = query(collection(db, "journalEntries"), where("entityId", "==", entityId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as JournalEntry) }));
+}
+
+/**
+ * Elimina las entradas contables asociadas a una factura por su número.
+ */
+export async function deleteJournalEntriesByInvoiceNumber(invoiceNumber: string, entityId: string) {
+  const q = query(
+    collection(db, "journalEntries"),
+    where("invoice_number", "==", invoiceNumber),
+    where("entityId", "==", entityId)
+  );
+  const snap = await getDocs(q);
+  const deletions = snap.docs.map((docRef) => deleteDoc(doc(docRef.ref.path)));
+  await Promise.all(deletions);
 }

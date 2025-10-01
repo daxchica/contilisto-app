@@ -22,7 +22,7 @@
 │
 │   ├── services/
 │   │   ├── journalService.ts                # [✅] Procesamiento y guardado de asientos contables
-│   │   ├── extractInvoiceFromAPI.ts         # [✅] Cliente para llamar a /api/extract-invoice (OCR simple)
+│   │   ├── extractInvoiceFromAPI.ts         # [✅] Cliente para llamar a /api/extractinvoice (OCR simple)
 │   │   ├── extractInvoiceFromLayoutAPI.ts   # [🧪] (opcional) Cliente para llamar a layout API (layout OCR)
 │   │   ├── firestoreLogService.ts           # [✅] Registro de facturas procesadas en Firestore
 │   │   └── localLogService.ts               # [✅] Registro local en localStorage de facturas ya procesadas

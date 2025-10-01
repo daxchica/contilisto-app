@@ -26,7 +26,7 @@ export async function extractInvoiceDataWithAI(
 
     return raw.map(normalizeEntry);
   } catch (err) {
-    console.error("❌ Error calling extract-invoice:", err);
+    console.error("❌ Error calling extractinvoice:", err);
     return [];
   }
 }

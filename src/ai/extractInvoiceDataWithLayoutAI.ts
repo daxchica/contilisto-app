@@ -31,7 +31,7 @@ export async function extractInvoiceDataWithLayoutAI(
 
     return raw.map(normalizeEntry);
   } catch (err) {
-    console.error("❌ Error calling extract-invoice-layout:", err);
+    console.error("❌ Error calling extractinvoice-layout:", err);
     return [];
   }
 }
