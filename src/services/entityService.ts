@@ -24,7 +24,7 @@ import { uidOrThrow } from "../utils/auth";
 export async function createEntity(params: { id?: string; ruc: string; name: string }): Promise<string> {
   const uid = uidOrThrow();
   const data: Entity = {
-    uid,
+    uid: uid,
     name: params.name.trim(),
     ruc: params.ruc.trim(),
     createdAt: new Date().toISOString(),
