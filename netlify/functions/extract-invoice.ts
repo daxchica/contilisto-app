@@ -82,6 +82,9 @@ Texto extraído de la factura por OCR:
 Fecha actual: ${today}
 `.trim();
 
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20000);
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0,

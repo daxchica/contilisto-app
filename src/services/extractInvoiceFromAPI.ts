@@ -22,7 +22,7 @@ export async function extractInvoiceFromAPI(
     const response = await fetch("/.netlify/functions/extract-invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullText, entityRUC }),
+      body: JSON.stringify({ fullText, entityRUC}),
     });
 
     if (!response.ok) {
