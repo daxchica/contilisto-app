@@ -27,7 +27,7 @@ export async function createEntity(params: { id?: string; ruc: string; name: str
     uid: uid,
     name: params.name.trim(),
     ruc: params.ruc.trim(),
-    createdAt: new Date().toISOString(),
+    createdAt: Date.now(),
   };
 
   if (params.id) {
@@ -59,24 +59,35 @@ export async function fetchEntities(uid: string): Promise<Entity[]> {
 }
 
 export async function saveJournalEntries(entries: JournalEntry[]) {
-  const batch = entries.map(async (entry) => {
+  if (!entries || entries.length === 0) {
+    console.warn("No journal entries provided to save.");
+    return;
+  }
+  const promises = entries.map(async (entry) => {
     // Validar y asegurar campos requeridos
     if (!entry.entityId || !entry.account_code || !entry.date || !entry.userId) {
       console.warn("Entrada contable inválida, se omitirá:", entry);
       return;
     }
 
+    // referencia correcta a subcoleccion de la entidad
+    const journalRef = collection(db, "entities", entry.entityId, "journalEntries");
+
+    // normalizar
     const sanitizedEntry: JournalEntry = {
       ...entry,
-      debit: typeof entry.debit === "number" ? entry.debit : 0,
-      credit: typeof entry.credit === "number" ? entry.credit : 0,
-      createdAt: entry.createdAt ?? new Date().toISOString(),
+      debit: typeof entry.debit === "number" ? entry.debit : parseFloat(entry.debit || "0"),
+      credit: typeof entry.credit === "number" ? entry.credit : parseFloat(entry.credit || "0"),
+      createdAt: typeof entry.createdAt === "string" 
+        ? entry.createdAt 
+        : Date.now(),
     };
 
-    await addDoc(collection(db, "journalEntries"), sanitizedEntry);
+    await addDoc(journalRef, sanitizedEntry);
   });
 
-  await Promise.all(batch);
+  await Promise.all(promises);
+  console.log(`[✅] ${entries.length} journal entries saved.`);
 }
 
 /**

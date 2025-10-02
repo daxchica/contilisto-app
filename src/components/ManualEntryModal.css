@@ -11,3 +11,19 @@
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); /* tailwind shadow-2xl */
   padding: .25rem 0;
 }
+.account-dropdown.dropdown-absolute {
+  position: absolute;
+  z-index: 9999;
+}
+
+.account-dropdown.dropdown-absolute[data-top][data-left][data-width] {
+  top: attr(data-top px);
+  left: attr(data-left px);
+  width: attr(data-width px);
+}
+/* fallback for browsers that do not support attr() for layout */
+@supports not (top: attr(data-top px)) {
+  .account-dropdown.dropdown-absolute {
+    position: fixed;
+  }
+}

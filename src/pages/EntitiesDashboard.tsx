@@ -30,7 +30,7 @@ import {
 import {
   deleteInvoicesFromFirestoreLog,
   clearFirestoreLogForEntity,
-  fetchProcessedInvoices,
+  fetchProcessedInvoice,
 } from "../services/firestoreLogService";
 import {
   logProcessedInvoice,
@@ -142,9 +142,9 @@ export default function EntitiesDashboard() {
 
   /* 1) Load user entities */
   useEffect(() => {
+    if (!user?.uid) return;
     let cancelled = false;
     (async () => {
-      if (!user?.uid) return;
       try {
         const list = await fetchEntities(user.uid);
         if (!cancelled) {
@@ -278,6 +278,7 @@ export default function EntitiesDashboard() {
 
   const handleEntityCreated = useCallback(
     async ({ ruc, name }: { ruc: string; name: string }) => {
+      if (!user?.uid) return;
       await createEntity({ ruc: ruc.trim(), name: name.trim() });
       const updated = await fetchEntities(user.uid);
       setEntities(updated);

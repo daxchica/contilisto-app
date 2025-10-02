@@ -28,10 +28,7 @@ async function commitInBatches(refs: Array<QueryDocumentSnapshot["ref"] | Return
 /**
  * Guarda el número de factura procesada en Firestore para evitar duplicados.
  */
-export async function logProcessedInvoice(
-  entityId: string,
-  invoiceNumber: string,
-): Promise<void> {
+export async function fetchProcessedInvoice(entityId: string, invoiceNumber: string,): Promise<void> {
   const auth = getAuth();
   const uid = auth.currentUser?.uid;
 

@@ -1,4 +1,4 @@
-// netlify.toml
+# netlify.toml
 
 [build]
   publish = "dist"                         # Carpeta de salida del build (vite build)

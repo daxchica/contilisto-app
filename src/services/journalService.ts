@@ -17,7 +17,7 @@ import { extractInvoiceFromAPI } from "../ai/extractInvoiceFromAPI";
 import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
 import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
-import { logProcessedInvoice as logToFirestore } from "./firestoreLogService";
+import { ProcessedInvoice as logToFirestore } from "./firestoreLogService";
 import {
   logProcessedInvoice as logToLocalStorage,
   getProcessedInvoices as getLocalProcessed,

@@ -169,12 +169,10 @@ function AccountSearchInput({
             id={listId}
             ref={menuRef}
             role="listbox"
-            className="account-dropdown"
-            style={{
-              top: `${pos.top}px`,
-              left: `${pos.left}px`,
-              width: `${pos.width}px`,
-            }}
+            className="account-dropdown dropdown-absolute"
+            data-top={pos.top}
+            data-left={pos.left}
+            data-width={pos.width}
           >
             {filtered.length === 0 ? (
               <li role="option" aria-disabled="true" className="px-3 py-2 text-sm text-gray-500">
@@ -211,9 +209,7 @@ function AccountSearchInput({
 export default function ManualEntryModal({ onClose, entityId, userId, onAddEntries }: Props) {
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]);
-  const [date, setDate] = useState(() => {
-    new Date().toISOString().split("T")[0];
-  });
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [accounts, setAccounts] = useState<Account[]>(
     ECUADOR_COA.slice().sort((a, b) => a.code.localeCompare(b.code, "es", { numeric: true }))
   );
@@ -258,6 +254,7 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
       debit: line.debit,
       credit: line.credit,
       comment: note,
+      description: note || "Asiento manual",
       type: line.debit > 0 ? "expense" : "income",
       userId,
       entityId,

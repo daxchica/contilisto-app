@@ -303,6 +303,9 @@ export default function BankBookPage() {
           newEntry.relatedTo === "accountsPayable" ? newEntry.amount : 0,
         type: newEntry.relatedTo === "expense" ? "expense" : "liability",
         userId,
+        source: "ai",
+        isManual: false,
+        invoice_number: ","
       };
       await saveJournalEntries(selectedEntityId, [journalEntry], userId);
 

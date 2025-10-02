@@ -2,6 +2,7 @@
 
 {
   "compilerOptions": {
+    "forceConsistentCasingInFileNames": true,
     "target": "ESNext",
     "lib": ["DOM", "ESNext"],
     "module": "ESNext",
