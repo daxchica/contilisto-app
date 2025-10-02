@@ -8,11 +8,12 @@ import { saveJournalEntries } from "../../services/journalService";
 interface Props {
   entries: JournalEntry[];
   entityId: string;
+  entityName: string;
   userId: string;
   onSaved: () => void;
 }
 
-export default function JournalSection({ entries, entityId, userId, onSaved }: Props) {
+export default function JournalSection({ entries, entityId, entityName, userId, onSaved }: Props) {
   const isBalanced = (): boolean => {
     const debit = entries.reduce((sum, e) => sum + (e.debit ?? 0), 0);
     const credit = entries.reduce((sum, e) => sum + (e.credit ?? 0), 0);
@@ -32,7 +33,7 @@ export default function JournalSection({ entries, entityId, userId, onSaved }: P
         createdAt: Date.now(),
         source: e.source ?? "manual",
       }));
-      await saveJournalEntries(withMeta);
+      await saveJournalEntries(entityId, withMeta, userId);
       onSaved();
     } catch (err) {
       console.error("Error al guardar asientos:", err);
@@ -59,7 +60,7 @@ export default function JournalSection({ entries, entityId, userId, onSaved }: P
           </button>
         </div>
       </div>
-      <JournalTable entries={entries} />
+      <JournalTable entries={entries} entityName={entityName} onSave={() => {}} />
     </div>
   );
 }

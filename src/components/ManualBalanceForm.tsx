@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { saveInitialBalances } from "../services/initialBalanceService";
 
-interface Entry {
+export interface Entry {
   account_code: string;
   account_name: string;
   debit?: number;
@@ -10,8 +10,8 @@ interface Entry {
 }
 
 interface Props {
-  entityId: string;
   onSubmit: (entries: Entry[]) => void;
+  entityId: string;
 }
 
 export default function ManualBalanceForm({ onSubmit, entityId }: Props) {

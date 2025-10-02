@@ -17,7 +17,7 @@ import { extractInvoiceFromAPI } from "../ai/extractInvoiceFromAPI";
 import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
 import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
-import { ProcessedInvoice as logToFirestore } from "./firestoreLogService";
+import { fetchProcessedInvoice } from "./firestoreLogService";
 import {
   logProcessedInvoice as logToLocalStorage,
   getProcessedInvoices as getLocalProcessed,
@@ -41,7 +41,7 @@ export async function saveJournalEntries(
       ...rest,
       entityId,
       userId,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
 
       // 🔐 Garantiza valores válidos
       debit: typeof rest.debit === "number" ? rest.debit : 0,
@@ -127,7 +127,7 @@ export async function parsePDF(
 
   await Promise.all(
     entries.map(e =>
-      logToFirestore(entityId, e.invoice_number!).catch(err =>
+      fetchProcessedInvoice(entityId, e.invoice_number!).catch(err =>
         console.error(`Error logging invoice ${e.invoice_number}`, err)
       )
     )

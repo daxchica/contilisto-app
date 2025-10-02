@@ -150,3 +150,10 @@ export async function testInvoiceLogWrite(entityId: string): Promise<void> {
     throw error;
   }
 }
+
+export type ProcessedInvoice = {
+  entityId: string;
+  userId: string;
+  invoice_number: string;
+  createdAt: any;
+};

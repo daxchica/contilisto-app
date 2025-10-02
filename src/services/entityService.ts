@@ -109,6 +109,6 @@ export async function deleteJournalEntriesByInvoiceNumber(invoiceNumber: string,
     where("entityId", "==", entityId)
   );
   const snap = await getDocs(q);
-  const deletions = snap.docs.map((docRef) => deleteDoc(doc(docRef.ref.path)));
+  const deletions = snap.docs.map((docRef) => deleteDoc(docRef.ref));
   await Promise.all(deletions);
 }
