@@ -6,7 +6,7 @@ import { getAuth, onAuthStateChanged,signOut } from "firebase/auth";
 export default function NavBar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const isLanding = location.pathname === "/";
+  const isLanding = location.pathname === "/" || location.hash === "#/" || location.hash === "";
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -38,6 +38,7 @@ export default function NavBar() {
   return (
     <nav className="fixed top-0 left-0 w-full bg-blue-700 text-white px-6 py-3 flex shadow-md z-50">
       <div className="max-w-7x1 mx-auto flex items-center justify-between w-full">
+
         {/* Logo */}
         <div className="text-xl font-bold">
           <Link to="/" className="hover:underline">
@@ -45,45 +46,31 @@ export default function NavBar() {
           </Link>
         </div>
 
-        {/* Main navigation links */}
+        {/* Navigation links (only if logged in and not on landing) */}
         {isLoggedIn && !isLanding && (
           <div className="flex space-x-6 text-sm">
-            <Link to="/dashboard" className="text-white hover:text-blue-300">
-              Tablero
-            </Link>
+            <Link to="/dashboard" className="text-white hover:text-blue-300">Tablero</Link>
             <Link to="/libro-mayor" className="text-white hover:text-blue-300">Libro Mayor</Link>
-            <Link to="/libroBancos" className="text-white hover:text-blue-300">
-              Libro Bancos
-            </Link>
-            <Link to="/estados-financieros" className="text-white hover:text-blue-300">
-              Estados Financieros
-            </Link>
+            <Link to="/libroBancos" className="text-white hover:text-blue-300">Libro Bancos</Link>
+            <Link to="/estados-financieros" className="text-white hover:text-blue-300">Estados Financieros</Link>
           </div>
         )}
 
-        {/* Autenticacion */}
+        {/* Autenticacion actions */}
         {!loading && (
           <div className="flex items-center text-sm space-x-4">
-            {!isLanding && (
-              <Link to="/dashboard" className="hover:underline">
-                Home
-              </Link>
-            )}
 
-          {!isLoggedIn ? (
-            <>
-              <Link to="/login" className="hover:underline">
-                Login
-              </Link>
-              <Link to="/register" className="hover:underline">
-                Registrarse
-              </Link>
-            </>
-          ) : (
-            <button 
-              onClick={handleLogout} 
-              className="hover:underline"
-              >
+            {/* Show Login/Register if not logged in AND not on landing */}
+            {!isLoggedIn && (
+              <>
+                <Link to="/login" className="hover:underline">Login</Link>
+                <Link to="/register" className="hover:underline">Registrarse</Link>
+              </>
+            )} 
+
+            {/* Show Logout if logged in and NOT on landing */}
+            {isLoggedIn && !isLanding && (
+              <button onClick={handleLogout} className="hover:underline">
                 Logout
               </button>
             )}

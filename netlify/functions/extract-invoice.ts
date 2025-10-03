@@ -1,3 +1,5 @@
+// ../netlify/functions/extract-invoice.ts
+
 import { Handler, HandlerCallback, HandlerContext, HandlerEvent } from '@netlify/functions';
 import { OpenAI } from 'openai';
 
