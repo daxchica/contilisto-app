@@ -6,6 +6,7 @@ import { getEntityChart } from "../services/getEntityChart";
 import { saveJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
 import "./ManualEntryModal.css";
+import { Rnd } from "react-rnd";
 
 interface Props {
   onClose: () => void;
@@ -117,8 +118,6 @@ function AccountSearchInput({
     setQ(acc.name);
     setOpen(false);
   };
-
-  
 
   return (
     <>
@@ -242,7 +241,6 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
       alert("Por favor completa todos los campos obligatorios.");
       return;
     }
-
     if (!balanced) {
       alert("El asiento contable esta descuadrado. Debe estar balanceado para guardar.");
       return;
@@ -260,7 +258,7 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
       entityId,
       isManual: true,
       source: "manual",
-      date: today,
+      date: date,
       createdAt: Date.now(), 
     }));
 
@@ -309,182 +307,195 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
   }, [entityId]);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/40 z-50">
+      <Rnd
+        default={{
+          x: (window.innerWidth - 800) / 2,
+          y: (window.innerHeight - 600) / 2,
+          width: 800,
+          height: "auto",
+        }}
+        bounds="window"
+        minWidth={600}
+        dragHandleClassName="modal-drag-handle"
+        className="absolute z-50"
+      >
       <div className="bg-white rounded-2xl shadow-xl w-[92vw] max-w-5xl max-h-[92vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-2xl font-bold text-blue-700">✍️ Carga Manual de Asientos</h2>
-          <button onClick={onClose} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">
-            Cerrar
-          </button>
-        </div>
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b cursor-move modal-drag-handle">
+            <h2 className="text-2xl font-bold text-blue-700">✍️ Carga Manual de Asientos</h2>
+            <button onClick={onClose} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">
+              Cerrar
+            </button>
+          </div>
 
-        {/* Nota opcional */}
-        <div className="px-6 pt-4">
-          <label className="block text-sm font-medium mb-1" htmlFor="asiento-note">
-            Anotación del asiento (opcional)
-          </label>
-          <input
-            id="asiento-note"
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ej: Ajuste por depreciación, reclasificación, etc."
-            className="w-full border rounded px-3 py-2"
-          />
-        </div>
+          {/* Nota opcional */}
+          <div className="px-6 pt-4">
+            <label className="block text-sm font-medium mb-1" htmlFor="asiento-note">
+              Anotación del asiento (opcional)
+            </label>
+            <input
+              id="asiento-note"
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ej: Ajuste por depreciación, reclasificación, etc."
+              className="w-full border rounded px-3 py-2"
+              />
+          </div>
 
-        {/* Fecha de la transacción */}
-        <div className="mt-4">
-          <label className="block text-sm font-medium mb-1" htmlFor="entry-date">
-            Fecha de la transacción
-          </label>
-          <input
-            id="entry-date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-          />
-        </div>
+          {/* Fecha de la transacción */}
+          <div className="px-6 mt-4 mb-2 w-full">
+            <label className="block text-sm font-medium mb-1" htmlFor="entry-date">
+              Fecha de la transacción
+            </label>
+            <input
+              id="entry-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full border rounded-md p-2"
+            />
+          </div>
 
-        {/* Tabla */}
-        <div className="px-6 py-4">
-          <div className="overflow-x-auto overflow-visible">
-            {/* allow visible overflow so portal menus won't clip */}
-            <table className="w-full text-sm border rounded overflow-visible">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="p-2 border text-left w-44">Código</th>
-                  <th className="p-2 border text-left">Cuenta</th>
-                  <th className="p-2 border text-right w-40">Débito</th>
-                  <th className="p-2 border text-right w-40">Crédito</th>
-                  <th className="p-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
-                    {/* Código */}
-                    <td className="p-2 border">
-                      <label className="sr-only" htmlFor={`code-${i}`}>
-                        Código de cuenta
-                      </label>
-                      <select
-                        id={`code-${i}`}
-                        value={line.account_code}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          const acc = accounts.find((a) => a.code === code);
-                          setLine(i, { account_code: code, account_name: acc ? acc.name : "" });
-                        }}
-                        className="border rounded px-2 py-1 w-full"
-                      >
-                        <option value="">-- Seleccionar --</option>
-                        {accounts.map((acc) => (
-                          <option key={acc.code} value={acc.code}>
-                            {acc.code}
-                          </option>
-                        ))}
-                      </select>
+          {/* Tabla */}
+          <div className="px-6 py-4">
+            <div className="overflow-x-auto overflow-visible">
+              {/* allow visible overflow so portal menus won't clip */}
+              <table className="w-full text-sm border rounded overflow-visible">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="p-2 border text-left w-44">Código</th>
+                    <th className="p-2 border text-left">Cuenta</th>
+                    <th className="p-2 border text-right w-40">Débito</th>
+                    <th className="p-2 border text-right w-40">Crédito</th>
+                    <th className="p-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      {/* Código */}
+                      <td className="p-2 border">
+                        <label className="sr-only" htmlFor={`code-${i}`}>
+                          Código de cuenta
+                        </label>
+                        <select
+                          id={`code-${i}`}
+                          value={line.account_code}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            const acc = accounts.find((a) => a.code === code);
+                            setLine(i, { account_code: code, account_name: acc ? acc.name : "" });
+                          }}
+                          className="border rounded px-2 py-1 w-full"
+                        >
+                          <option value="">-- Seleccionar --</option>
+                          {accounts.map((acc) => (
+                            <option key={acc.code} value={acc.code}>
+                              {acc.code}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Cuenta (searchable) */}
+                      <td className="p-2 border">
+                        <AccountSearchInput
+                          value={line.account_name}
+                          accounts={accounts}
+                          onPick={(acc) => setLine(i, { account_code: acc.code, account_name: acc.name })}
+                        />
+                      </td>
+
+                      {/* Débito */}
+                      <td className="p-2 border text-right">
+                        <label className="sr-only" htmlFor={`debit-${i}`}>
+                          Débito
+                        </label>
+                        <input
+                          id={`debit-${i}`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={amountValue(line.debit)}
+                          onChange={(e) => setLine(i, { debit: parseAmount(e.target.value), credit: 0 })}
+                          onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                          className="border rounded px-2 py-1 w-full text-right"
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Crédito */}
+                      <td className="p-2 border text-right">
+                        <label className="sr-only" htmlFor={`credit-${i}`}>
+                          Crédito
+                        </label>
+                        <input
+                          id={`credit-${i}`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={amountValue(line.credit)}
+                          onChange={(e) => setLine(i, { credit: parseAmount(e.target.value), debit: 0 })}
+                          onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                          className="border rounded px-2 py-1 w-full text-right"
+                          placeholder="0.00"
+                        />
+                      </td>
+
+                      {/* Remove */}
+                      <td className="p-2 border text-center">
+                        <button
+                          onClick={() => removeLine(i)}
+                          className={`px-2 py-1 text-white rounded ${
+                            lines.length <= 2 ? "bg-gray-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+                          }`}
+                          title={lines.length <= 2 ? "Debe haber al menos dos líneas" : "Eliminar línea"}
+                          disabled={lines.length <= 2}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Totales */}
+                  <tr className="bg-gray-50 font-semibold">
+                    <td className="p-2 border" colSpan={2}>
+                      Totales
                     </td>
-
-                    {/* Cuenta (searchable) */}
-                    <td className="p-2 border">
-                      <AccountSearchInput
-                        value={line.account_name}
-                        accounts={accounts}
-                        onPick={(acc) => setLine(i, { account_code: acc.code, account_name: acc.name })}
-                      />
-                    </td>
-
-                    {/* Débito */}
-                    <td className="p-2 border text-right">
-                      <label className="sr-only" htmlFor={`debit-${i}`}>
-                        Débito
-                      </label>
-                      <input
-                        id={`debit-${i}`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={amountValue(line.debit)}
-                        onChange={(e) => setLine(i, { debit: parseAmount(e.target.value), credit: 0 })}
-                        onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-                        className="border rounded px-2 py-1 w-full text-right"
-                        placeholder="0.00"
-                      />
-                    </td>
-
-                    {/* Crédito */}
-                    <td className="p-2 border text-right">
-                      <label className="sr-only" htmlFor={`credit-${i}`}>
-                        Crédito
-                      </label>
-                      <input
-                        id={`credit-${i}`}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={amountValue(line.credit)}
-                        onChange={(e) => setLine(i, { credit: parseAmount(e.target.value), debit: 0 })}
-                        onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-                        className="border rounded px-2 py-1 w-full text-right"
-                        placeholder="0.00"
-                      />
-                    </td>
-
-                    {/* Remove */}
-                    <td className="p-2 border text-center">
-                      <button
-                        onClick={() => removeLine(i)}
-                        className={`px-2 py-1 text-white rounded ${
-                          lines.length <= 2 ? "bg-gray-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
-                        }`}
-                        title={lines.length <= 2 ? "Debe haber al menos dos líneas" : "Eliminar línea"}
-                        disabled={lines.length <= 2}
-                      >
-                        ✕
-                      </button>
+                    <td className="p-2 border text-right">{totalDebit.toFixed(2)}</td>
+                    <td className="p-2 border text-right">{totalCredit.toFixed(2)}</td>
+                    <td className="p-2 border text-left" colSpan={2}>
+                      {balanced ? (
+                        <span className="text-green-600">Asiento cuadrado</span>
+                      ) : (
+                        <span className="text-red-600">
+                          Descuadrado: {Math.abs(totalDebit - totalCredit).toFixed(2)}
+                        </span>
+                      )}
                     </td>
                   </tr>
-                ))}
+                </tbody>
+              </table>
+            </div>
 
-                {/* Totales */}
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="p-2 border" colSpan={2}>
-                    Totales
-                  </td>
-                  <td className="p-2 border text-right">{totalDebit.toFixed(2)}</td>
-                  <td className="p-2 border text-right">{totalCredit.toFixed(2)}</td>
-                  <td className="p-2 border text-left" colSpan={2}>
-                    {balanced ? (
-                      <span className="text-green-600">Asiento cuadrado</span>
-                    ) : (
-                      <span className="text-red-600">
-                        Descuadrado: {Math.abs(totalDebit - totalCredit).toFixed(2)}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Acciones */}
-          <div className="flex justify-end gap-3 mt-4 pb-6">
-            <button onClick={addLine} className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
-              ➕ Agregar línea
-            </button>
-            <button onClick={handleConfirm} className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">
-              💾 Guardar
-            </button>
-            <button onClick={onClose} className="px-5 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700">
-              ✖️ Cancelar
-            </button>
+            {/* Acciones */}
+            <div className="flex justify-end gap-3 mt-4 pb-6">
+              <button onClick={addLine} className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700">
+                ➕ Agregar línea
+              </button>
+              <button onClick={handleConfirm} className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">
+                💾 Guardar
+              </button>
+              <button onClick={onClose} className="px-5 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700">
+                ✖️ Cancelar
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Rnd>
     </div>
   );
 }

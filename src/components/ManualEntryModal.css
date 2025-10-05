@@ -15,6 +15,9 @@
   position: absolute;
   z-index: 9999;
 }
+.modal-drag-handle {
+  cursor: move;
+}
 
 .account-dropdown.dropdown-absolute[data-top][data-left][data-width] {
   top: attr(data-top px);
