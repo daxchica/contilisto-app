@@ -1,4 +1,5 @@
 // src/components/ManualEntryModal.tsx
+import { v4 as uuidv4 } from "uuid";
 import React, { useEffect, useRef, useState, useId, useMemo } from "react";
 import { createPortal } from "react-dom";
 import ECUADOR_COA, { Account } from "../../shared/coa/ecuador_coa";
@@ -247,6 +248,7 @@ export default function ManualEntryModal({ onClose, entityId, userId, onAddEntri
     }
 
     const entries: JournalEntry[] = lines.map((line) => ({
+      id: uuidv4(),
       account_code: line.account_code,
       account_name: line.account_name,
       debit: line.debit,

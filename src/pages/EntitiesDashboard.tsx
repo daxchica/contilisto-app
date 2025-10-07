@@ -24,17 +24,14 @@ import {
 import {
   fetchJournalEntries,
   deleteJournalEntriesByInvoiceNumber,
-  deleteJournalEntriesByTransactionId,
   saveJournalEntries,
+  deleteJournalEntriesByIds,
 } from "../services/journalService";
 import {
   deleteInvoicesFromFirestoreLog,
   clearFirestoreLogForEntity,
-  fetchProcessedInvoice,
 } from "../services/firestoreLogService";
 import {
-  logProcessedInvoice,
-  clearLocalLog,
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
   getProcessedInvoices,
@@ -99,6 +96,7 @@ function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,}: { entityId: st
     alert("🗑️ Facturas eliminadas del log.");
   }, [entityId, ruc, selected, setSessionJournal]);
   if (!invoices.length) return null;
+
   return (
     <div className="mt-4 p-4 bg-white border rounded shadow">
       <h3 className="font-bold mb-2">🧾 Facturas procesadas</h3>
@@ -276,6 +274,23 @@ export default function EntitiesDashboard() {
     }
   };
 
+    // 🆕 Función para borrar entradas seleccionadas del diario (en Firestore y localmente)
+  const handleDeleteSelected = async (ids: string[]) => {
+    if (!user?.uid || !selectedEntityId || ids.length === 0) return;
+
+    const confirm = window.confirm("¿Deseas eliminar los registros seleccionados?");
+    if (!confirm) return;
+
+    try {
+      await deleteJournalEntriesByIds(ids, selectedEntityId, user.uid);
+      setSessionJournal((prev) => prev.filter((entry) => !ids.includes(entry.id)));
+      alert("🗑️ Registros eliminados correctamente.");
+    } catch (err) {
+      console.error("❌ Error al eliminar registros:", err);
+      alert("Error al eliminar registros.");
+    }
+  };
+
   const handleEntityCreated = useCallback(
     async ({ ruc, name }: { ruc: string; name: string }) => {
       if (!user?.uid) return;
@@ -291,6 +306,7 @@ export default function EntitiesDashboard() {
     [user?.uid]
   );
 
+  
   /* ------------------------------ UI ------------------------------ */
   return (
     <>
@@ -417,6 +433,7 @@ export default function EntitiesDashboard() {
           <JournalTable
             entries={sessionJournal}
             entityName={selectedEntity?.name ?? ""}
+            onDeleteSelected={handleDeleteSelected}
             onSave={handleSaveJournal}
           />
         {/*  <AccountsReceivablePayable entries={journal} /> */}

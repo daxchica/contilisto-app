@@ -4,19 +4,16 @@ import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import AccountPicker from "./AccountPicker";
 import { saveAccountHint } from "../services/aiLearningService";
-import MovableModal from "./ui/MovableModal";
-
-// 👇 Usamos el PUC unificado
+import { Rnd } from "react-rnd";
 import {
   canonicalCodeFrom,
   canonicalPair,
   normalizeEntry,
 } from "../utils/accountPUCMap";
 
-/* ====================== Types ====================== */
 interface Props {
   entries?: JournalEntry[];
-  accounts: Account[]; // Catálogo canónico (7 dígitos) que alimenta los selects
+  accounts: Account[];
   entityId: string;
   userId: string;
   onClose: () => void;
@@ -24,15 +21,6 @@ interface Props {
 }
 
 type Row = JournalEntry & { _rid: string };
-
-/* ====================== Helpers ====================== */
-const normKey = (s?: string) =>
-  (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
 
 function extractLeadingCodeFromLabel(label?: string): string | null {
   if (!label) return null;
@@ -54,7 +42,6 @@ function rid() {
   return Math.random().toString(36).slice(2);
 }
 
-/* ====================== Component ====================== */
 export default function JournalPreviewModal({
   entries = [],
   accounts,
@@ -69,23 +56,14 @@ export default function JournalPreviewModal({
     const inv = entries.find((e) => e.invoice_number)?.invoice_number;
     return inv ? `Factura No. ${inv}` : "";
   });
+  const [isSaving, setIsSaving] = useState(false);
 
-  /** 
-  const handleConfirm = () => {
-    if (entries.length === 0) return;
-    onSave(entries, note);
-    onClose();
-  };
-  */
-
-  /* --------- Indexes para resolución código<->nombre --------- */
   const codeToName = useMemo(() => {
     const m = new Map<string, string>();
     accounts.forEach((a) => m.set(a.code, a.name));
     return m;
   }, [accounts]);
 
-  // Usa el resolutor canónico (alias + 5→7) para obtener código desde un nombre/etiqueta
   const inferCodeFromName = (name?: string): string | "" => {
     if (!name) return "";
     const fromLabel = extractLeadingCodeFromLabel(name);
@@ -93,13 +71,10 @@ export default function JournalPreviewModal({
     return canonicalCodeFrom(candidate) || "";
   };
 
-  /* --------- Carga inicial + auto-fixes + normalización IA --------- */
   useEffect(() => {
-
     const updated: Row[] = entries.map((e) => {
       let u: JournalEntry = { ...e };
-      
-      // Auto-fixes de negocio (si aplican a tus flujos)
+
       if (u.type === "income" && u.account_code === "11101" && u.account_name === "Caja") {
         u.account_code = "14301";
         u.account_name = "Cuentas por cobrar comerciales locales";
@@ -111,10 +86,8 @@ export default function JournalPreviewModal({
         u.debit = undefined;
       }
 
-      // 🔒 Normalización fuerte a PUC canónico (maneja 5→7, alias, etc.)
       u = normalizeEntry(u);
 
-      // Completar código si vino sólo el nombre (post-normalización)
       if (!u.account_code && u.account_name) {
         const code = inferCodeFromName(u.account_name);
         if (code) {
@@ -123,7 +96,6 @@ export default function JournalPreviewModal({
         }
       }
 
-      // Completar nombre si vino sólo el código
       if (u.account_code && !u.account_name) {
         const nm = codeToName.get(u.account_code);
         if (nm) u.account_name = nm;
@@ -132,43 +104,14 @@ export default function JournalPreviewModal({
       return {
         ...u,
         source: u.source ?? "ai",
+        entityId,
         _rid: rid(),
       };
     });
 
     setRows(updated);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, codeToName]);
+  }, [entries, codeToName, entityId]);
 
-  /* --------- Rehidratación si cambia PUC --------- */
-  useEffect(() => {
-    if (rows.length === 0) return;
-
-    setRows((prev) =>
-      prev.map((r) => {
-        // Vuelve a canónizar por si cambió el catálogo/alias
-        const n = normalizeEntry({ account_code: r.account_code, account_name: r.account_name });
-        let out = { ...r, account_code: n.account_code, account_name: n.account_name };
-
-        // Hidratar faltantes contra catálogo
-        if (!out.account_code && out.account_name) {
-          const code = inferCodeFromName(out.account_name);
-          if (code) {
-            out.account_code = code;
-            out.account_name = codeToName.get(code) || out.account_name;
-          }
-        }
-        if (out.account_code && !out.account_name) {
-          const nm = codeToName.get(out.account_code);
-          if (nm) out.account_name = nm;
-        }
-        return out;
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]); // ← rehidrata sólo cuando cambian las cuentas
-
-  /* -------------------- Totales -------------------- */
   const totals = useMemo(() => {
     const debit = rows.reduce((s, r) => s + (toNum(r.debit) ?? 0), 0);
     const credit = rows.reduce((s, r) => s + (toNum(r.credit) ?? 0), 0);
@@ -179,13 +122,10 @@ export default function JournalPreviewModal({
   const isBalanced = Math.abs(totals.diff) < 0.01;
   const canConfirm = totals.debit > 0 && totals.credit > 0 && isBalanced;
 
-  /* -------------------- Edición -------------------- */
   const patchRow = (idx: number, patch: Partial<JournalEntry>) => {
     setRows((prev) => {
       const next = [...prev];
       const cur = next[idx];
-
-      // Si el patch trae cuenta, normaliza antes de guardar
       const merged = { ...cur, ...patch };
       const canon = normalizeEntry({ account_code: merged.account_code, account_name: merged.account_name });
 
@@ -197,6 +137,7 @@ export default function JournalPreviewModal({
         source: cur.source === "ai" ? "edited" : cur.source,
         editedAt: Date.now(),
         editedBy: userId,
+        entityId,
       };
       return next;
     });
@@ -218,7 +159,6 @@ export default function JournalPreviewModal({
 
   const applyAccount = (idx: number, acc: { code: string; name: string } | null) => {
     if (!acc) return;
-    // Canoniza por si el picker trae label con código o nombre con alias
     const canon = canonicalPair(acc);
     patchRow(idx, { account_code: canon.code || "", account_name: canon.name || "" });
   };
@@ -240,6 +180,7 @@ export default function JournalPreviewModal({
       source: "manual",
       isManual: true,
       createdAt: Date.now(),
+      entityId,
     };
     setRows((prev) => {
       const next = [...prev];
@@ -273,7 +214,6 @@ export default function JournalPreviewModal({
     if (selectedIdx === idx) setSelectedIdx(null);
   };
 
-  /* -------------------- Confirmar + “Aprendizaje” -------------------- */
   const learnFromEdits = async (confirmed: JournalEntry[]) => {
     const hints = confirmed.filter((r) => r.isManual || r.source === "edited");
     await Promise.all(
@@ -281,7 +221,7 @@ export default function JournalPreviewModal({
         saveAccountHint({
           entityId,
           userId,
-          hintKey: h.counterpartyRUC || h.invoice_number || (h.description ?? "general"),
+          hintKey: h.counterpartyRUC || h.invoice_number || h.description || "general",
           account_code: h.account_code,
           account_name: h.account_name,
           type: h.type,
@@ -290,212 +230,137 @@ export default function JournalPreviewModal({
     );
   };
 
-  const onConfirm = useCallback(async () => {
-    if (!canConfirm) return;
+  const handleConfirm = useCallback(async () => {
+    if (!canConfirm || isSaving) return;
 
-    // Usa la nota como descripción en líneas vacías
-    const withNote = rows.map<Row>((r) => ({
-      ...r,
-      description: r.description && r.description.trim() !== "" ? r.description : note || r.description,
-      userId,
-      editedAt: r.isManual ? Date.now() : r.editedAt,
-    }));
+    // Force blur to commit last input value
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
 
-    await learnFromEdits(withNote);
-    onSave(withNote, note);
-    onClose();
-  }, [rows, note, userId, canConfirm, onSave, onClose]);
+    setIsSaving(true);
 
-  /* -------------------- UI -------------------- */
+    setTimeout(async() => {
+      const withNote = rows.map<Row>((r) => ({
+        ...r,
+        description: r.description?.trim() ? r.description : note || r.description,
+        userId,
+        entityId,
+        editedAt: r.isManual ? Date.now() : r.editedAt,
+      }));
+      await learnFromEdits(withNote);
+      onSave(withNote, note);
+      onClose();
+    }, 0);
+  }, [rows, note, userId, entityId, canConfirm, isSaving, onSave, onClose]);
+
   return (
-    <MovableModal
-      title="🧾 Previsualización de Asientos Contables"
-      isOpen={true}
-      onClose={onClose}
-      onConfirm={canConfirm ? onConfirm : undefined}
-      confirmLabel="✅ Confirmar Asientos"
-      cancelLabel="Cancelar"
-      confirmDisabled={!canConfirm}
-    >
-    <div className="fixed inset-0 z-50 bg-black/50">
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-full max-w-6xl rounded-lg bg-white p-6 shadow-xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between draggable-header cursor-move">
-          <h2 className="text-2xl font-bold text-slate-900">🧾 Previsualización de Asientos Contables</h2>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <Rnd
+        default={{
+          x: window.innerWidth / 2 - 500,
+          y: window.innerHeight / 2 - 300,
+          width: 1000,
+          height: "auto",
+        }}
+        bounds="window"
+        minWidth={800}
+        dragHandleClassName="drag-header"
+        enableResizing={false}
+        className="bg-white rounded-xl shadow-xl border border-gray-300"
+      >
+        <div className="bg-white rounded-xl shadow-lg w-full p-6 mx-4">
+          <div className="drag-header cursor-move mb-4 border-b pb-3 flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-800">
+              🧾 Previsualización de Asientos Contables
+            </h2>
+            <div className="flex gap-2">
+              <button onClick={() => insertLine(selectedIdx ?? undefined)} className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700">
+                ➕ Agregar línea
+              </button>
+              <button onClick={duplicateSelected} disabled={selectedIdx == null} className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+                ⧉ Duplicar
+              </button>
+              <button onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))} disabled={selectedIdx == null} className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50">
+                ✖ Eliminar
+              </button>
+            </div>
+          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => insertLine(selectedIdx ?? undefined)}
-              className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700"
-              title="Agregar línea (debajo de la seleccionada)"
-            >
-              ➕ Agregar línea
+          <div className="mb-3">
+            <input className="w-full rounded border px-3 py-3 text-slate-700" placeholder="Ej: Factura No. XXX-XXX-000123, ajuste por depreciación, reclasificación, etc." aria-label="Anotación del asiento (opcional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+
+          <div className="max-h-[60vh] overflow-auto rounded border">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
+                <tr className="border-b">
+                  <th className="border p-2 w-[220px]">Código</th>
+                  <th className="border p-2 min-w-[520px]">Cuenta</th>
+                  <th className="border p-2 text-right w-[140px]">Débito</th>
+                  <th className="border p-2 text-right w-[140px]">Crédito</th>
+                  <th className="border p-2 w-[60px]" aria-label="acciones" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => {
+                  const selected = selectedIdx === idx;
+                  const codeValue = canonicalCodeFrom(r.account_code || r.account_name || "") || inferCodeFromName(r.account_name) || "";
+                  return (
+                    <tr key={r._rid} className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`} onClick={() => setSelectedIdx(idx)}>
+                      <td className="border p-2">
+                        <select className="w-full rounded border px-2 py-2" value={codeValue} onChange={(e) => applyCode(idx, e.target.value)}>
+                          <option value="">-- Seleccionar --</option>
+                          {accounts.map((a) => (
+                            <option key={a.code} value={a.code}>{a.code}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border p-2">
+                        <AccountPicker accounts={accounts} value={codeValue ? { code: codeValue, name: codeToName.get(codeValue) ?? r.account_name } : null} onChange={(acc) => applyAccount(idx, acc)} placeholder="Buscar cuenta por nombre o código…" displayMode="name" inputClassName="w-full rounded border px-2 py-2" />
+                      </td>
+                      <td className="border p-2 text-right">
+                        <input inputMode="decimal" type="number" step="0.01" className="w-full rounded border px-2 py-2 text-right" value={r.debit ?? ""} onChange={(ev) => setAmount(idx, "debit", ev.target.value)} />
+                      </td>
+                      <td className="border p-2 text-right">
+                        <input inputMode="decimal" type="number" step="0.01" className="w-full rounded border px-2 py-2 text-right" value={r.credit ?? ""} onChange={(ev) => setAmount(idx, "credit", ev.target.value)} />
+                      </td>
+                      <td className="border p-2 text-center">
+                        <button className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700" onClick={() => removeRow(idx)}>
+                          ✖
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 font-medium">
+                  <td className="border p-2" colSpan={2}>Totales</td>
+                  <td className="border p-2 text-right">{totals.debit.toFixed(2)}</td>
+                  <td className="border p-2 text-right">{totals.credit.toFixed(2)}</td>
+                  <td className="border p-2 text-center">
+                    {isBalanced ? (
+                      <span className="text-emerald-700">Asiento balanceado</span>
+                    ) : (
+                      <span className="text-rose-700">Dif: {totals.diff.toFixed(2)}</span>
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button onClick={onClose} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
+              Cancelar
             </button>
-            <button
-              onClick={duplicateSelected}
-              disabled={selectedIdx == null}
-              className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Duplicar fila seleccionada"
-            >
-              ⧉ Duplicar
-            </button>
-            <button
-              onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))}
-              disabled={selectedIdx == null}
-              className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Eliminar fila seleccionada"
-            >
-              ✖ Eliminar
+            <button onClick={handleConfirm} disabled={!canConfirm} className={`rounded px-4 py-2 text-white ${canConfirm ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300 cursor-not-allowed"}`}>
+              {isSaving ? "Guardando..." : "  ✅ Confirmar Asientos"}
             </button>
           </div>
         </div>
-
-        {/* Nota */}
-        <div className="mb-3">
-          <input
-            className="w-full rounded border px-3 py-3 text-slate-700"
-            placeholder="Ej: Factura No. XXX-XXX-000123, ajuste por depreciación, reclasificación, etc."
-            aria-label="Anotación del asiento (opcional)"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </div>
-
-        {/* Tabla */}
-        <div className="max-h-[60vh] overflow-auto rounded border">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
-              <tr className="border-b">
-                <th className="border p-2 w-[220px]">Código</th>
-                <th className="border p-2 min-w-[520px]">Cuenta</th>
-                <th className="border p-2 text-right w-[140px]">Débito</th>
-                <th className="border p-2 text-right w-[140px]">Crédito</th>
-                <th className="border p-2 w-[60px]" aria-label="acciones" />
-              </tr>
-            </thead>
-
-            <tbody>
-              {rows.map((r, idx) => {
-                const selected = selectedIdx === idx;
-                // Siempre intenta tener el código canónico para el select
-                const codeValue =
-                  canonicalCodeFrom(r.account_code || r.account_name || "") ||
-                  inferCodeFromName(r.account_name) ||
-                  "";
-
-                return (
-                  <tr
-                    key={r._rid}
-                    className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`}
-                    onClick={() => setSelectedIdx(idx)}
-                  >
-                    {/* CÓDIGO */}
-                    <td className="border p-2">
-                      <select
-                        className="w-full rounded border px-2 py-2"
-                        value={codeValue}
-                        onChange={(e) => applyCode(idx, e.target.value)}
-                        title="Seleccionar codigo contable"
-                      >
-                        <option value="">-- Seleccionar --</option>
-                        {accounts.map((a) => (
-                          <option key={a.code} value={a.code}>
-                            {a.code}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* CUENTA */}
-                    <td className="border p-2">
-                      <AccountPicker
-                        accounts={accounts}
-                        value={codeValue ? { code: codeValue, name: codeToName.get(codeValue) ?? r.account_name } : null}
-                        onChange={(acc) => applyAccount(idx, acc)}
-                        placeholder="Buscar cuenta por nombre o código…"
-                        displayMode="name"
-                        inputClassName="w-full rounded border px-2 py-2"
-                      />
-                    </td>
-
-                    {/* DÉBITO */}
-                    <td className="border p-2 text-right">
-                      <input
-                        inputMode="decimal"
-                        type="number"
-                        step="0.01"
-                        className="w-full rounded border px-2 py-2 text-right"
-                        value={r.debit ?? ""}
-                        onChange={(ev) => setAmount(idx, "debit", ev.target.value)}
-                        title="Ingresar valor del debe"
-                      />
-                    </td>
-
-                    {/* CRÉDITO */}
-                    <td className="border p-2 text-right">
-                      <input
-                        inputMode="decimal"
-                        type="number"
-                        step="0.01"
-                        className="w-full rounded border px-2 py-2 text-right"
-                        value={r.credit ?? ""}
-                        onChange={(ev) => setAmount(idx, "credit", ev.target.value)}
-                        title="Ingresar valor del credito"
-                      />
-                    </td>
-
-                    {/* Acciones */}
-                    <td className="border p-2 text-center">
-                      <button
-                        className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700"
-                        onClick={() => removeRow(idx)}
-                        title="Eliminar línea"
-                      >
-                        ✖
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-
-            <tfoot>
-              <tr className="bg-slate-50 font-medium">
-                <td className="border p-2" colSpan={2}>
-                  Totales
-                </td>
-                <td className="border p-2 text-right">{totals.debit.toFixed(2)}</td>
-                <td className="border p-2 text-right">{totals.credit.toFixed(2)}</td>
-                <td className="border p-2 text-center">
-                  {isBalanced ? (
-                    <span className="text-emerald-700">Asiento balanceado</span>
-                  ) : (
-                    <span className="text-rose-700">Dif: {totals.diff.toFixed(2)}</span>
-                  )}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-4 flex items-center justify-end gap-3">
-          <button onClick={onClose} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
-            Cancelar
-          </button>
-          <button
-            disabled={!canConfirm}
-            onClick={onConfirm}
-            className={`rounded px-4 py-2 text-white ${
-              canConfirm ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300 cursor-not-allowed"
-            }`}
-            title={canConfirm ? "Confirmar (asiento balanceado)" : "El asiento debe estar balanceado"}
-          >
-            ✅ Confirmar Asientos
-          </button>
-        </div>
-      </div>
+      </Rnd>
     </div>
-    </MovableModal>
   );
 }

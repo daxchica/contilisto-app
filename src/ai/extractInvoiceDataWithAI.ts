@@ -1,5 +1,6 @@
 // src/services/extractInvoiceDataWithAI.ts
 
+import { v4 as uuidv4 } from "uuid";
 import type { JournalEntry } from "../types/JournalEntry";
 import { normalizeEntry, canonicalPair } from "../utils/accountPUCMap";
 
@@ -24,7 +25,10 @@ export async function extractInvoiceDataWithAI(
       .map((r) => coerceOne(r, "expense", today, entityRUC))
       .filter((e): e is JournalEntry => e !== null);
 
-    return raw.map(normalizeEntry);
+    return raw.map((e) => ({
+      ...normalizeEntry(e),
+      id: uuidv4(),
+    }));
   } catch (err) {
     console.error("❌ Error calling extractinvoice:", err);
     return [];

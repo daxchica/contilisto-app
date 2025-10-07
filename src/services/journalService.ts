@@ -3,6 +3,7 @@ import { db } from "../firebase-config";
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
   query,
   where,
@@ -61,7 +62,7 @@ export async function fetchJournalEntries(
 ): Promise<JournalEntry[]> {
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const snapshot = await getDocs(journalRef);
-  return snapshot.docs.map((doc) => doc.data() as JournalEntry);
+  return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data(), })) as JournalEntry[];
 }
 
 export async function getAlreadyProcessedInvoiceNumbers(
@@ -143,7 +144,7 @@ export async function deleteJournalEntriesByTransactionId(
 ) {
   const qy = query(collection(db, "entities", entityId, "journalEntries"), where("transactionId", "==", transactionId));
   const snapshot = await getDocs(qy);
-  await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+  await Promise.all(snapshot.docs.map(docSnap => deleteDoc(docSnap.ref)));
 }
 
 /** 🔧 Batch deletes using IN (chunks of 10) to be efficient and avoid many roundtrips */
@@ -170,4 +171,23 @@ export async function deleteJournalEntriesByInvoiceNumber(
 
 export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
   await saveJournalEntries(entry.entityId, [entry], entry.userId);
+}
+
+export async function deleteJournalEntriesByIds(
+  entryIds: string[], 
+  entityId: string) : Promise<void> {
+    if (!entityId || entryIds.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      entryIds.forEach(id => {
+        const entryRef = doc(db, `entities/${entityId}/journalEntries/${id}`);
+        batch.delete(entryRef);
+      });
+      await batch.commit();
+      console.log(`${entryIds.length} asientos eliminados de Firestore.`);
+    } catch (err) {
+      console.error("Error al eliminar entradas:", err);
+      throw err;
+    }
 }
