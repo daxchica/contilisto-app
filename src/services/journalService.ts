@@ -175,19 +175,28 @@ export async function createJournalEntry(entry: JournalEntry & { entityId: strin
 
 export async function deleteJournalEntriesByIds(
   entryIds: string[], 
-  entityId: string) : Promise<void> {
-    if (!entityId || entryIds.length === 0) return;
+  entityId: string,
+  uid: string,
+) : Promise<void> {
+    if (!entityId) throw new Error("Missing entityId for deleteJournalEntriesByIds");
+    if (!uid) throw new Error("Missing user uid for deleteJournalEntriesByIds");
+    if (!entryIds || entryIds.length === 0) return;
 
     try {
-      const batch = writeBatch(db);
-      entryIds.forEach(id => {
-        const entryRef = doc(db, `entities/${entityId}/journalEntries/${id}`);
-        batch.delete(entryRef);
-      });
-      await batch.commit();
+      const BATCH_SIZE = 450;
+      for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
+        const chunk = entryIds.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((id) => {
+          if (!id) return;
+          const entryRef = doc(db, "entities", entityId, "journalEntries", id);
+          batch.delete(entryRef);
+        });
+        await batch.commit();
+      }
       console.log(`${entryIds.length} asientos eliminados de Firestore.`);
     } catch (err) {
       console.error("Error al eliminar entradas:", err);
       throw err;
     }
-}
+  }

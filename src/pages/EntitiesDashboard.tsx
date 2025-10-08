@@ -35,7 +35,6 @@ import {
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
   getProcessedInvoices,
-  getAllInvoicesForEntity,
   saveInvoiceToLocalLog,
 } from "../services/localLogService";
 
@@ -43,14 +42,14 @@ import {
 import { getEntityChart } from "../services/getEntityChart";
 
 /* ---------------- Dev helper (only in DEV) ---------------- */
-function DevLogResetButton({ entityId, ruc, setSessionJournal, }: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
-  if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
+function DevLogResetButton({ entityId, ruc, setSessionJournal, 
 
+}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
+  if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
   const handleReset = async () => {
     if (!window.confirm("¿Borrar todos los logs procesados?")) return;
     await clearFirestoreLogForEntity(entityId);
     clearLocalLogForEntity(ruc);
-    await clearFirestoreLogForEntity(entityId);
     setSessionJournal([]);
     alert("✔️ Logs borrados.");
   };
@@ -62,7 +61,9 @@ function DevLogResetButton({ entityId, ruc, setSessionJournal, }: { entityId: st
 }
 
 /* ---------------- Facturas procesadas ---------------- */
-function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
+function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,
+
+}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -95,6 +96,7 @@ function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,}: { entityId: st
     setSessionJournal((prev) => prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
     alert("🗑️ Facturas eliminadas del log.");
   }, [entityId, ruc, selected, setSessionJournal]);
+
   if (!invoices.length) return null;
 
   return (
@@ -120,23 +122,22 @@ export default function EntitiesDashboard() {
   const [user] = useAuthState(auth);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
-  const [historicalJournal, setHistoricalJournal] = useState<JournalEntry[]>([]);
   const [sessionJournal, setSessionJournal] = useState<JournalEntry[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
+  const [selectedEntries, setSelectedEntries] = useState<JournalEntry[]>([]);
+
   const { entity: globalEntity, setEntity } = useSelectedEntity();
   const selectedEntity = useMemo(() => entities.find((e) => e.id === selectedEntityId) ?? null, [selectedEntityId, entities]);
   const selectedEntityRUC = selectedEntity?.ruc ?? "";
-
+  
   const [loadingJournal, setLoadingJournal] = useState(false);
-  const [entityToDelete, setEntityToDelete] =
-    useState<{ id: string; ruc: string; name: string } | null>(null);
+  const [entityToDelete, setEntityToDelete] = useState<{ id: string; ruc: string; name: string } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAddEntity, setShowAddEntity] = useState(false);
-  type Entity = { id: string; ruc: string; name: string };
 
   /* 1) Load user entities */
   useEffect(() => {
@@ -177,9 +178,13 @@ export default function EntitiesDashboard() {
   useEffect(() => {
     if (!selectedEntity) {
       setEntity(null);
-      return;
+    } else {
+      setEntity ({
+        id: selectedEntity.id ?? "",
+        ruc: selectedEntity.ruc ?? "",
+        name: selectedEntity.name ?? "",
+      });
     }
-    setEntity({ id: selectedEntity.id, ruc: selectedEntity.ruc, name: selectedEntity.name });
   }, [selectedEntity, setEntity]);
 
   /* 4) Load journal for selected entity */
@@ -221,9 +226,7 @@ export default function EntitiesDashboard() {
         if (!cancelled) setAccounts([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [selectedEntityId]);
 
   /* ---- Actions ---- */
@@ -236,7 +239,6 @@ export default function EntitiesDashboard() {
       await deleteEntity(entityToDelete.id);
       const remaining = entities.filter((e) => e.id !== entityToDelete.id);
       setEntities(remaining);
-
       if (selectedEntityId === entityToDelete.id) {
         setSelectedEntityId("");
         setEntity(null);
@@ -275,15 +277,14 @@ export default function EntitiesDashboard() {
   };
 
     // 🆕 Función para borrar entradas seleccionadas del diario (en Firestore y localmente)
-  const handleDeleteSelected = async (ids: string[]) => {
-    if (!user?.uid || !selectedEntityId || ids.length === 0) return;
-
+  const handleDeleteSelected = async () => {
+    if (!user?.uid || !selectedEntityId || selectedEntries.length === 0) return;
     const confirm = window.confirm("¿Deseas eliminar los registros seleccionados?");
     if (!confirm) return;
-
     try {
-      await deleteJournalEntriesByIds(ids, selectedEntityId, user.uid);
-      setSessionJournal((prev) => prev.filter((entry) => !ids.includes(entry.id)));
+      const ids = selectedEntries.map((e) => e.id).filter((id): id is string => Boolean(id));
+      await deleteJournalEntriesByIds(ids, selectedEntityId!, user.uid);
+      setSessionJournal((prev) => prev.filter((entry) => !ids.includes(entry.id!)));
       alert("🗑️ Registros eliminados correctamente.");
     } catch (err) {
       console.error("❌ Error al eliminar registros:", err);
@@ -291,22 +292,18 @@ export default function EntitiesDashboard() {
     }
   };
 
-  const handleEntityCreated = useCallback(
-    async ({ ruc, name }: { ruc: string; name: string }) => {
+  const handleEntityCreated = useCallback(async ({ ruc, name }: { ruc: string; name: string }) => {
       if (!user?.uid) return;
       await createEntity({ ruc: ruc.trim(), name: name.trim() });
       const updated = await fetchEntities(user.uid);
       setEntities(updated);
       // Try to select the one we just created
-      const newlyCreated =
-        updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
-      if (newlyCreated) setSelectedEntityId(newlyCreated.id);
+      const newlyCreated =  updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
+      if (newlyCreated) setSelectedEntityId(newlyCreated.id ?? "");
       alert("✅ Entidad creada.");
-    },
-    [user?.uid]
+    }, [user?.uid]
   );
 
-  
   /* ------------------------------ UI ------------------------------ */
   return (
     <>
@@ -316,7 +313,6 @@ export default function EntitiesDashboard() {
           <h1 className="text-2xl font-bold text-blue-900 flex items-center">
             <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
           </h1>
-
           <button
             onClick={() => setShowAccountsModal(true)}
             disabled={!selectedEntityId}
@@ -332,10 +328,7 @@ export default function EntitiesDashboard() {
           {/* Left column: entities & actions */}
           <div>
             <div className="flex flex-wrap gap-2 mb-3">
-              <button
-                onClick={() => setShowAddEntity(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-              >
+              <button onClick={() => setShowAddEntity(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                 ➕ Agregar Entidad
               </button>
             </div>
@@ -361,20 +354,13 @@ export default function EntitiesDashboard() {
             <div className="flex flex-col gap-2 mt-3">
               {selectedEntity && (
                 <button
-                  onClick={() =>
-                    setEntityToDelete(entities.find((e) => e.id === selectedEntityId) || null)
-                  }
-                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded w-fit"
-                >
+                  onClick={() => setEntityToDelete(entities.find((e) => e.id === selectedEntityId) || null)}
+                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded w-fit">
                   ⚠️ Eliminar Entidad
                 </button>
               )}
 
-              <DevLogResetButton 
-                entityId={selectedEntityId} 
-                ruc={selectedEntityRUC}
-                setSessionJournal={setSessionJournal} 
-              />
+              <DevLogResetButton entityId={selectedEntityId} ruc={selectedEntityRUC} setSessionJournal={setSessionJournal} />
 
               {selectedEntity && (
                 <InvoiceLogDropdown
@@ -435,7 +421,7 @@ export default function EntitiesDashboard() {
             entityName={selectedEntity?.name ?? ""}
             onDeleteSelected={handleDeleteSelected}
             onSave={handleSaveJournal}
-          />
+            onSelectEntries={setSelectedEntries} />
         {/*  <AccountsReceivablePayable entries={journal} /> */}
         </>
       )}

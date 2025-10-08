@@ -87,7 +87,9 @@ export default function LedgerPage() {
         <p className="text-gray-500 italic">No hay asientos para esta entidad.</p>
       )}
 
-      {Object.entries(groupedByAccount).map(([code, accountEntries]) => {
+      {Object.entries(groupedByAccount)
+      .sort(([codeA], [codeB]) => codeA.localeCompare(codeB))
+      .map(([code, accountEntries]) => {
         const nombreCuenta = accountEntries[0]?.account_name || "";
         const totalDebits = accountEntries.reduce((s, e) => s + (e.debit || 0), 0);
         const totalCredits = accountEntries.reduce((s, e) => s + (e.credit || 0), 0);

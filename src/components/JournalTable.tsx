@@ -8,6 +8,7 @@ interface Props {
   entityName: string;
   onSave: (entries: JournalEntry[]) => void;
   onDeleteSelected?: (ids: string[]) => void;
+  onSelectEntries?: (selected: JournalEntry[]) => void;
 }
 
 type SortKey = "date" | "invoice_number" | "account_code" | "account_name" | "debit" | "credit";
