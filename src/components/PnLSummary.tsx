@@ -5,7 +5,7 @@ import "jspdf-autotable";
 import { JournalEntry } from "../types/JournalEntry";
 import { PUCExpenseStructure } from "../utils/accountPUCMap";
 
-interface Props { entries: JournalEntry[]; }
+interface Props { entries: JournalEntry[]; result: number }
 
 const EXPENSE_CODES = Object.values(PUCExpenseStructure)
   .map(({ code }) => code)
@@ -13,7 +13,19 @@ const EXPENSE_CODES = Object.values(PUCExpenseStructure)
 
 const NON_PREFIX_EXPENSE_CODES = EXPENSE_CODES.filter((code) => !code.startsWith("5"));
 
+
 export default function PnLSummary({ entries }: Props) {
+  // Totales por código (puedes ajustar el mapeo a tus cuentas reales)
+  const sumByCode = (codes: string[], side: "debit" | "credit") =>
+    entries
+      .filter((e) => codes.includes(e.account_code || ""))
+      .reduce((acc, e) => acc + Number(e[side] || 0), 0);
+
+  const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
+    entries
+      .filter((e) => (e.account_code || "").startsWith(prefix))
+      .reduce((acc, e) => acc + Number(e[side] || 0), 0);
+
   const formatter = useMemo(
     () =>
       new Intl.NumberFormat("es-EC", {
@@ -24,53 +36,17 @@ export default function PnLSummary({ entries }: Props) {
   );
 
   const summary = useMemo(() => {
-    const nonPrefixExpenses = new Set(NON_PREFIX_EXPENSE_CODES);
-
-    let ventas = 0;
-    let compras = 0;
-    let ice = 0;
-    let ivaCredito = 0;
-    let gastos = 0;
-    let patrimonioDebitos = 0;
-    let patrimonioCreditos = 0;
-
-    entries.forEach((entry) => {
-      const code = entry.account_code || "";
-      if (!code) return;
-
-      const debit = Number(entry.debit ?? 0);
-      const credit = Number(entry.credit ?? 0);
-
-      switch (code) {
-        case "70101":
-          ventas += credit;
-          break;
-        case "60601":
-          compras += debit;
-          break;
-        case "53901":
-          ice += debit;
-          break;
-        case "24301":
-          ivaCredito += debit;
-          break;
-        default:
-          break;
-      }
-
-      if (code.startsWith("5") || nonPrefixExpenses.has(code)) {
-        gastos += debit;
-      }
-
-      if (code.startsWith("3")) {
-        patrimonioDebitos += debit;
-        patrimonioCreditos += credit;
-      }
-    });
-
+    const ventas = sumByCode(["70101"], "credit");
+    const compras = sumByCode(["60601"], "debit");
+    const ice = sumByCode(["53901"], "debit");
+    const ivaCredito = sumByCode(["24301"], "debit");
     const costoVentas = compras + ice + ivaCredito;
+    const gastos =
+      sumByPrefix("5", "debit") + sumByCode(NON_PREFIX_EXPENSE_CODES, "debit");
     const utilidadBruta = ventas - costoVentas;
     const utilidadNeta = utilidadBruta - gastos;
+    const patrimonioDebitos = sumByPrefix("3", "debit");
+    const patrimonioCreditos = sumByPrefix("3", "credit");
     const patrimonioRegistrado = patrimonioCreditos - patrimonioDebitos;
     const patrimonioTotal = patrimonioRegistrado + utilidadNeta;
 
@@ -93,24 +69,22 @@ export default function PnLSummary({ entries }: Props) {
   const exportToPDF = () => {
     const doc = new jsPDF();
     let y = 20;
+    
     doc.setFontSize(16);
-    doc.text("📊 Estado de Pérdidas y Ganancias", 14, y);
+    doc.getStringUnitWidth("Estado de Perdidas y Ganancias", 20, y);  
     y += 10;
 
-    const line = (
-      label: string,
-      value: number,
-      code?: string,
-      bold?: boolean
-    ) => {
-      doc.setFont("helvetica", bold ? "bold" : "normal");
-      const left = code ? `${code}  ${label}` : label;
-      doc.text(
-        `${left} ....................................... ${fmt(value)}`,
-        14,
-        y
-      );
-      y += 8;
+    const line = (label: string, value?: number, code?: string, bold?: boolean) => {
+      doc.setFontSize(bold ? 12 : 10);
+      if (bold) doc.setFont(undefined, "bold");
+      else doc.setFont(undefined, "normal");
+
+      const text = code ? `${code} ${label}` : label;
+      doc.text(text, 20, y);
+      if (value !== undefined) {
+        doc.text(fmt(value), 160, y, { align: "right" });
+      }
+      y += 7;
     };
 
     line("Ingresos operacionales", 0, undefined, true);
@@ -179,23 +153,8 @@ export default function PnLSummary({ entries }: Props) {
         </div>
 
         <div className="flex justify-between font-bold border-t mt-2 pt-1 text-green-600">
-          <span>Utilidad Neta del Ejercicio</span>
+          <span>Resultados del Ejercicio</span>
           <span>{fmt(summary.utilidadNeta)}</span>
-        </div>
-
-        <div className="border-t mt-4 pt-3 space-y-1 text-sm">
-          <div className="flex justify-between font-semibold text-blue-800">
-            <span>Patrimonio (cód. 3)</span>
-            <span>{fmt(summary.patrimonioRegistrado)}</span>
-          </div>
-          <div className="flex justify-between text-blue-700">
-            <span>Cuenta de resultados del ejercicio</span>
-            <span>{fmt(summary.utilidadNeta)}</span>
-          </div>
-          <div className="flex justify-between font-bold border-t pt-1 text-blue-900">
-            <span>Patrimonio total con resultado</span>
-            <span>{fmt(summary.patrimonioTotal)}</span>
-          </div>
         </div>
       </div>
 

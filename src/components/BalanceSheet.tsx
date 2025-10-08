@@ -1,162 +1,149 @@
-// src/components/BalanceSheet.tsx
-
-import React from "react";
+import React, { useMemo } from "react";
 import { JournalEntry } from "../types/JournalEntry";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
-import autoTable from "jspdf-autotable";
 
 interface Props {
   entries: JournalEntry[];
 }
 
-function groupEntries(entries: JournalEntry[]) {
-  const groups: Record<string, { account_name: string; debit: number; credit: number }> = {};
-
-  for (const entry of entries) {
-    const code = entry.account_code || "000";
-    if (!groups[code]) {
-      groups[code] = {
-        account_name: entry.account_name || "",
-        debit: 0,
-        credit: 0,
-      };
-    }
-
-    groups[code].debit += entry.debit || 0;
-    groups[code].credit += entry.credit || 0;
-  }
-
-  return groups;
-}
-
 export default function BalanceSheet({ entries }: Props) {
+  const formatter = useMemo(
+    () =>
+      new Intl.NumberFormat("es-EC", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+      }),
+    []
+  );
 
-  const assets = entries.filter(e => e.account_code?.startsWith("1"));
-  const liabilities = entries.filter(e => e.account_code?.startsWith("2"));
-  const equity = entries.filter(e => e.account_code?.startsWith("3"));
+  const fmt = (n: number) => formatter.format(n);
 
-  const groupedAssets = groupEntries(assets);
-  const groupedLiabilities = groupEntries(liabilities);
-  const groupedEquity = groupEntries(equity);
-
-  const totalAssets = Object.values(groupedAssets).reduce((acc, e) => acc + (e.debit - e.credit), 0);
-  const totalLiabilities = Object.values(groupedLiabilities).reduce((acc, e) => acc + (e.credit - e.debit), 0);
-  const totalEquity = Object.values(groupedEquity).reduce((acc, e) => acc + (e.credit - e.debit), 0);
-  const totalLiabilitiesEquity = totalLiabilities + totalEquity;
-  
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("Balance General", 14, 16);
-
-    // Activos
-    autoTable(doc, {
-      startY: 22,
-      head: [["Cuenta", "Nombre", "Valor"]],
-      body: Object.entries(groupedAssets).map(([code, group]) => [
-        code,
-        group.account_name,
-        `$${(group.debit - group.credit).toFixed(2)}`,
-      ]),
-    });
-
-    // Pasivo y Patrimonio
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 10 || 40,
-      head: [["Cuenta", "Nombre", "Valor"]],
-      body: [
-        ...Object.entries(groupedLiabilities).map(([code, group]) => [
-        code,
-        group.account_name,
-        `$${(group.credit - group.debit).toFixed(2)}`,
-      ]),
-      ["", "Total Pasivo", `$${totalLiabilities.toFixed(2)}`],
-        ...Object.entries(groupedEquity).map(([code, group]) => [
-          code,
-          group.account_name,
-          `$${(group.credit - group.debit).toFixed(2)}`,
-        ]),
-        ["", "Total Patrimonio", `$${totalEquity.toFixed(2)}`],
-        ["", "Total Pasivo + Patrimonio", `$${totalLiabilitiesEquity.toFixed(2)}`],
-      ],
-    });
-
-    // Totales
-    doc.setFontSize(12);
-    doc.text(
-      `Total Activo: $${totalAssets.toFixed(2)}`,
-      14,
-      (doc as any).lastAutoTable.finalY + 10 || 60
-    );
-    doc.text(
-      `Total Pasivo + Patrimonio: $${totalLiabilities.toFixed(2)}`,
-      14,
-      (doc as any).lastAutoTable.previous.finalY + 18 || 70
-    );
-
-    doc.save("balance_general.pdf");
+  const groupAndSumAccounts = (prefix: string, type: "debit" | "credit") => {
+    const map = new Map<string, { code: string; name: string; value: number }>();
+    entries
+      .filter((e) => (e.account_code || "").startsWith(prefix))
+      .forEach((e) => {
+        const code = e.account_code || "";
+        const name = e.account_name || "";
+        const key = `${code} - ${name}`;
+        const amount = type === "debit"
+          ? (e.debit || 0) - (e.credit || 0)
+          : (e.credit || 0) - (e.debit || 0);
+        if (!map.has(key)) {
+          map.set(key, { code, name, value: amount});
+        } else {
+          const prev = map.get(key)!;
+          prev.value += amount;
+        }
+      });
+      return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
   };
-  
-  return (
-    <div>
-      <h2 className="text-xl font-semibold text-blue-600 mb-4">Balance General</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+  const getUtilidadDelEjercicio = () => {
+    const ventas = entries
+      .filter((e) => e.account_code === "70101")
+      .reduce((acc, e) => acc + Number(e.credit || 0), 0);
+
+    const compras = entries
+      .filter((e) => e.account_code === "60601")
+      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
+
+    const ice = entries
+      .filter((e) => e.account_code === "53901")
+      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
+
+    const ivaCredito = entries
+      .filter((e) => e.account_code === "24301")
+      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
+
+    const gastos = entries
+      .filter((e) => (e.account_code || "").startsWith("5"))
+      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
+
+    return ventas - compras - ice -ivaCredito - gastos;
+  };
+
+  const utilidadNeta = getUtilidadDelEjercicio();
+
+  const activos = groupAndSumAccounts("1", "debit");
+  const pasivos = groupAndSumAccounts("2", "credit");
+  const patrimonio = groupAndSumAccounts("3", "credit");
+
+  const totalActivo = activos.reduce((sum, c) => sum + c.value, 0);
+  const totalPasivo = pasivos.reduce((sum, c) => sum + c.value, 0);
+  const totalPatrimonio = patrimonio.reduce((sum, c) => sum + c.value, 0) + utilidadNeta;
+
+  return (
+    <div className="bg-white p-4 rounded shadow border">
+      <h2 className="text-xl font-bold text-blue-800 mb-4">📊 Balance General</h2>
+
+      <div className="grid grid-cols-2 gap-8 font-mono text-sm">
         <div>
-          <h3 className="font-bold text-gray-700 mb-2">Activo</h3>
-          <ul className="space-y-1">
-            {Object.entries(groupedAssets).map(([code, group]) => (
-              <li key={code} className="flex justify-between text-sm text-gray-600">
-                <span>{code} - {group.account_name}</span>
-                <span>${(group.debit - group.credit).toFixed(2)}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="font-bold mt-2 border-t pt-2">
-            Total Activo: ${totalAssets.toFixed(2)}
-          </div>
+          <h3 className="text-lg font-semibold text-green-700 mb-2">ACTIVO</h3>
+          {activos.map((a, i) => (
+            <div key={i} className="flex justify-between">
+              <span>
+                <span className="text-gray-500 mr-1">{a.code}</span>
+                {a.name}
+              </span>
+              <span>{fmt(a.value)}</span>
+            </div>
+          ))}
         </div>
 
+        {/* PASIVO + PATRIMONIO */}
         <div>
-          <h3 className="font-bold text-gray-700 mb-2">Pasivo y Patrimonio</h3>
-          <ul className="space-y-1">
-            {Object.entries(groupedLiabilities).map(([code, group]) => (
-              <li key={code} className="flex justify-between text-sm text-gray-600">
-                <span>{code} - {group.account_name}</span>
-                <span>${(group.credit - group.debit).toFixed(2)}</span>
-              </li>
-            ))}
-             <li className="flex justify-between font-bold border-t pt-2">
-              <span>Total Pasivo</span>
-              <span>${totalLiabilities.toFixed(2)}</span>
-            </li>
-            {Object.entries(groupedEquity).map(([code, group]) => (
-              <li key={code} className="flex justify-between text-sm text-gray-600">
-                <span>{code} - {group.account_name}</span>
-                <span>${(group.credit - group.debit).toFixed(2)}</span>
-              </li>
-            ))}
-            <li className="flex justify-between font-bold">
-              <span>Total Patrimonio</span>
-              <span>${totalEquity.toFixed(2)}</span>
-            </li>
-            <li className="flex justify-between font-bold border-t pt-2">
-              <span>Total Pasivo + Patrimonio</span>
-              <span>${totalLiabilitiesEquity.toFixed(2)}</span>
-            </li>
-          </ul>
+          <h3 className="text-lg font-semibold text-red-700 mb-2">PASIVO</h3>
+          {pasivos.map((p, i) => (
+            <div key={i} className="flex justify-between">
+              <span>
+                <span className="text-gray-500 mr-1">{p.code}</span>
+                {p.name}
+              </span>
+              <span>{fmt(p.value)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-bold border-t mt-2 pt-1">
+            <span>Total Pasivo</span>
+            <span>{fmt(totalPasivo)}</span>
+          </div>
+
+          <h3 className="text-lg font-semibold text-purple-700 mt-4 mb-2">PATRIMONIO</h3>
+          {patrimonio.map((p, i) => (
+            <div key={i} className="flex justify-between">
+              <span>
+                <span className="text-gray-500 mr-1">{p.code}</span>
+                {p.name}
+              </span>
+              <span>{fmt(p.value)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-bold mt-2 text-green-700">
+            <span>Resultado del Ejercicio</span>
+            <span>{fmt(utilidadNeta)}</span>
+          </div>
+          <div className="flex justify-between font-bold border-t pt-1">
+            <span>Total Patrimonio</span>
+            <span>{fmt(totalPatrimonio)}</span>
+          </div>
         </div>
       </div>
 
-      {/* Boton Exportar PDF */}
-      <div className="mt-6 flex justify-center">
-        <button
-          onClick={handleExportPDF}
-          className="px-6 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
-        >
-          📄 Exportar PDF
-        </button>
+        {/* Linea horizontal final */}
+        <hr className="my-4 border-t border-gray-300 col-span-2" />
+
+        <div className="grid grid-cols-2 font-bold text-lg">
+        {/* Activo: Total en misma linea */}
+        <div className="flex justify-between pr-6 text-green-900">
+          <span>Total Activo</span>
+          <span>{fmt(totalActivo)}</span>
+        </div>
+        
+        {/* Total Pasivo + Patrimonio debajo del Total Patrimonio */}
+        <div className="flex flex-col items-end">
+          <span>Total Pasivo + Patrimonio</span>
+          <span>{fmt(totalPasivo + totalPatrimonio)}</span>
+        </div>
       </div>
     </div>
   );
