@@ -23,4 +23,5 @@ export default defineConfig({
   },
   optimizeDeps: { include: ["pdfjs-dist"]
   },
+  assetsInclude: ['**/*.old'],
 });

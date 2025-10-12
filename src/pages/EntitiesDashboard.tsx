@@ -61,9 +61,15 @@ function DevLogResetButton({ entityId, ruc, setSessionJournal,
 }
 
 /* ---------------- Facturas procesadas ---------------- */
-function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,
-
-}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
+function InvoiceLogDropdown({ 
+  entityId, 
+  ruc, 
+  setSessionJournal,
+}: { 
+  entityId: string; 
+  ruc: string; 
+  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>; 
+}) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -84,17 +90,26 @@ function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,
       return next;
     });
   }, []);
+  
   const handleDeleteSelected = useCallback(async () => {
     if (!selected.size) return;
     if (!window.confirm("¿Borrar las facturas seleccionadas del log?")) return;
     const toDelete = Array.from(selected);
-    await deleteInvoicesFromFirestoreLog(entityId, toDelete);
-    deleteInvoicesFromLocalLog(ruc, toDelete);
-    await deleteJournalEntriesByInvoiceNumber(entityId, toDelete);
-    setInvoices((prev) => prev.filter((inv) => !toDelete.includes(inv)));
-    setSelected(new Set());
-    setSessionJournal((prev) => prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
-    alert("🗑️ Facturas eliminadas del log.");
+    
+    try {
+      await deleteInvoicesFromFirestoreLog(entityId, toDelete);
+      deleteInvoicesFromLocalLog(ruc, toDelete);
+      await deleteJournalEntriesByInvoiceNumber(entityId, toDelete);
+  
+      setInvoices((prev) => prev.filter((inv) => !toDelete.includes(inv)));
+      setSelected(new Set());
+      setSessionJournal((prev) => 
+        prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
+      alert("🗑️ Facturas eliminadas del log.");
+    } catch (err) {
+      console.error("Error deleting invoices and journal entries:", err);
+      alert("Error al eliminar registros.");
+    }
   }, [entityId, ruc, selected, setSessionJournal]);
 
   if (!invoices.length) return null;
@@ -105,12 +120,21 @@ function InvoiceLogDropdown({ entityId, ruc, setSessionJournal,
       <ul className="max-h-40 overflow-y-auto">
         {invoices.map((inv) => (
           <li key={inv} className="flex items-center gap-2 mb-1">
-            <input type="checkbox" checked={selected.has(inv)} onChange={() => toggleInvoice(inv)} aria-label={`Seleccionar factura ${inv}`}/>
+            <input 
+              type="checkbox" 
+              checked={selected.has(inv)} 
+              onChange={() => toggleInvoice(inv)} 
+              aria-label={`Seleccionar factura ${inv}`}
+            />
             <span className="text-sm text-gray-700">{inv}</span>
           </li>
         ))}
       </ul>
-      <button disabled={selected.size === 0} onClick={handleDeleteSelected} className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit disabled:opacity-50">
+      <button 
+        disabled={selected.size === 0} 
+        onClick={handleDeleteSelected} 
+        className="mt-2 bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 w-fit disabled:opacity-50"
+      >
         🗑️ Borrar seleccionadas
       </button>
     </div>
@@ -278,17 +302,42 @@ export default function EntitiesDashboard() {
 
     // 🆕 Función para borrar entradas seleccionadas del diario (en Firestore y localmente)
   const handleDeleteSelected = async () => {
-    if (!user?.uid || !selectedEntityId || selectedEntries.length === 0) return;
-    const confirm = window.confirm("¿Deseas eliminar los registros seleccionados?");
-    if (!confirm) return;
+    if (!user?.uid || !selectedEntityId || selectedEntries.length === 0) {
+      alert("No hay registros seleccionados para eliminar.");
+      return;
+    }
+
+    const confirmDelete = window.confirm("¿Deseas eliminar los registros seleccionados?");
+    if (!confirmDelete) return;
+    
     try {
-      const ids = selectedEntries.map((e) => e.id).filter((id): id is string => Boolean(id));
+      const ids = selectedEntries
+        .map((e) => e.id)
+        .filter((id): id is string => Boolean(id));
+
+      if (ids.length === 0) {
+        alert("Los registros seleccionados no tienen ID valid.");
+        return;
+      }
+      
+      console.log("Eliminando registros:", ids, "de la entidad:", selectedEntityId);
+
+      // Eliminar en Firestore
       await deleteJournalEntriesByIds(ids, selectedEntityId!, user.uid);
-      setSessionJournal((prev) => prev.filter((entry) => !ids.includes(entry.id!)));
-      alert("🗑️ Registros eliminados correctamente.");
+
+      try {
+        const refreshed = await fetchJournalEntries(selectedEntityId);
+        console.log("Recarga completada:", refreshed.length, "asientos");
+        setSessionJournal(refreshed);
+      } catch (error) {
+        console.error("❌ Error al eliminar registros:", error);
+        alert("Error al recargar registros despues de eliminar.");
+      }
+
+      alert("Registros eliminados correctamente.");
     } catch (err) {
-      console.error("❌ Error al eliminar registros:", err);
-      alert("Error al eliminar registros.");
+      console.error("Error al aliminar registros:", err);
+      alert("Error al eliminar registros.")
     }
   };
 

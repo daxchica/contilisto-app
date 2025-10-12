@@ -54,13 +54,25 @@ export default function FinancialStatements() {
     });
   }, [entries, startDate, endDate]);
 
+  const resultadoDelEjercicio = useMemo(() => {
+  const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
+    entries
+      .filter((e) => (e.account_code || "").startsWith(prefix))
+      .reduce((acc, e) => acc + Number(e[side] || 0), 0);
+
+  const ventas = sumByPrefix("7", "credit");
+  const gastos = sumByPrefix("5", "debit");
+  const utilidadNeta = ventas - gastos;
+  return utilidadNeta;
+}, [entries]);
+
   const renderContent = () => {
     if (loading) return <p className="text-blue-600 animate-pulse">⏳ Cargando registros contables...</p>;
     if (!filteredEntries.length) return <p className="text-gray-500 italic">No hay registros en el rango seleccionado.</p>;
 
     if (activeTab === "comprobacion") return <TrialBalance entries={filteredEntries} />;
     if (activeTab === "estado")       return <PnLSummary   entries={filteredEntries} />;
-    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} />;
+    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} result={resultadoDelEjercicio} />;
 
     return null;
   };
@@ -78,6 +90,8 @@ export default function FinancialStatements() {
       </div>
     );
   }
+
+  
 
   return (
     <div className="pt-24 px-4 min-h-screen flex justify-center">

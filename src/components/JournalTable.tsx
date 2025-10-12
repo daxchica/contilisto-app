@@ -13,14 +13,30 @@ interface Props {
 
 type SortKey = "date" | "invoice_number" | "account_code" | "account_name" | "debit" | "credit";
 
-export default function JournalTable({ entries, entityName, onSave, onDeleteSelected }: Props) {
+export default function JournalTable({
+  entries,
+  entityName,
+  onSave,
+  onDeleteSelected,
+  onSelectEntries,
+}: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
+  // 🔄 Notificar cambios en selección al componente padre
+  useEffect(() => {
+    if (onSelectEntries) {
+      const selected = entries.filter((entry, idx) =>
+        selectedIds.includes(entry.id || idx.toString())
+      );
+      onSelectEntries(selected);
+    }
+  }, [selectedIds, entries, onSelectEntries]);
+
   const toggleSelect = (id: string) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
   };
 
@@ -59,16 +75,17 @@ export default function JournalTable({ entries, entityName, onSave, onDeleteSele
       alert("No hay registros seleccionados.");
       return;
     }
+
     const confirmDelete = window.confirm("¿Deseas eliminar los registros seleccionados?");
     if (!confirmDelete) return;
-    
+
     if (onDeleteSelected) {
-      onDeleteSelected(selectedIds);
+      onDeleteSelected(selectedIds); // 🔥 Borrado externo
     } else {
       const remaining = entries.filter(
         (entry) => !selectedIds.includes(entry.id || "")
       );
-      onSave(remaining);
+      onSave(remaining); // 🧼 Borrado local
     }
 
     setSelectedIds([]);

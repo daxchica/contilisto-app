@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import PnLSummary from "../components/PnLSummary";
-import BalanceSheet from "../components/BalanceSheet";
+import { BalanceSheetDisplay } from "../components/BalanceSheetDisplay";
 import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
@@ -42,7 +42,7 @@ export default function FinancialsPage({ entries }: Props) {
       </div>
       <div>
         <h2 className="text-lg font-bold">Balance General</h2>
-        <BalanceSheet entries={entries} result={resultadoDelEjercicio} />
+        <BalanceSheetDisplay entries={entries} result={resultadoDelEjercicio} />
       </div>
     </div>
   );

@@ -1,103 +1,116 @@
 import React from "react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
-
-interface Entry {
-  account_code: string;
-  account_name: string;
-  debit?: number;
-  credit?: number;
-}
+import { JournalEntry } from "@/types/JournalEntry";
 
 interface Props {
-  entries: Entry[];
+  entries: JournalEntry[];
+  result: number;
 }
 
-export default function BalanceSheetDisplay({ entries }: Props) {
-  const assets = entries.filter(e => e.account_code.startsWith("1"));
-  const liabilities = entries.filter(e => e.account_code.startsWith("2"));
-  const equity = entries.filter(e => e.account_code.startsWith("3"));
+export default function BalanceSheetDisplay({ entries, result }: Props) {
+  const filtrarPorGrupo = (grupo: string) =>
+    entries.filter((e) =>
+      typeof e.account_code === "string" &&
+      e.account_code.startsWith(grupo) &&
+      e.account_code.length <= 5 &&
+      /^\d{1,5}$/.test(e.account_code)
+    );
 
-  const totalDebits = assets.reduce((sum, e) => sum + (e.debit || 0), 0);
-  const totalCredits = [...liabilities, ...equity].reduce((sum, e) => sum + (e.credit || 0), 0);
+  const activos = filtrarPorGrupo("1");
+  const pasivos = filtrarPorGrupo("2");
+  const patrimonios = filtrarPorGrupo("3");
 
-  const formatAmount = (amount?: number) =>
-    typeof amount === "number" ? amount.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$0.00";
+  console.log("Activos filtrados:", activos.map(e => e.account_code));
+  console.log("Pasivos filtrados:", pasivos.map(e => e.account_code));
+  console.log("Patrimonios filtrados:", patrimonios.map(e => e.account_code));
 
-  const exportToPDF = () => {
-    const doc = new jsPDF();
-    const now = new Date().toLocaleDateString();
+  const sumar = (list: JournalEntry[]) =>
+    list.reduce(
+      (acc, e) => ({
+        debito: acc.debito + (e.debit || 0),
+        credito: acc.credito + (e.credit || 0),
+        saldo: acc.saldo + ((e.debit || 0) - (e.credit || 0)),
+      }),
+      { debito: 0, credito: 0, saldo: 0 }
+    );
 
-    doc.setFontSize(16);
-    doc.text("Balance Sheet", 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${now}`, 14, 28);
+  const totalActivos = sumar(activos);
+  const totalPasivos = sumar(pasivos);
+  const totalPatrimonios = sumar(patrimonios);
+  const totalPatrimonioFinal = totalPatrimonios.saldo + result;
 
-    let y = 36;
+  const format = (n: number) =>
+    n.toLocaleString("es-EC", { style: "currency", currency: "USD" });
 
-    const section = (title: string, entries: Entry[]) => {
-      doc.setFont("helvetica", "bold");
-      doc.text(title, 14, y);
-      y += 6;
-      doc.setFont("helvetica", "normal");
-      entries.forEach((e) => {
-        const amount = e.debit ?? e.credit ?? 0;
-        doc.text(`${e.account_code} - ${e.account_name}`, 14, y);
-        doc.text(formatAmount(amount), 160, y, { align: "right" });
-        y += 6;
-      });
-      y += 6;
-    };
-
-    section("Assets", assets);
-    section("Liabilities", liabilities);
-    section("Equity", equity);
-
-    doc.setFont("helvetica", "bold");
-    doc.text(`Total Assets: ${formatAmount(totalDebits)}`, 14, y);
-    y += 6;
-    doc.text(`Total Liabilities + Equity: ${formatAmount(totalCredits)}`, 14, y);
-
-    doc.save("Balance_Sheet.pdf");
-  };
+  const renderGrupo = (titulo: string, cuentas: JournalEntry[]) => (
+    <>
+      <tr className="bg-gray-100 text-left font-bold">
+        <td colSpan={6} className={
+          titulo === "ACTIVO"
+            ? "text-green-700 px-4 py-2"
+            : titulo === "PASIVO"
+            ? "text-red-700 px-4 py-2"
+            : "text-purple-700 px-4 py-2"
+        }>
+          {titulo}
+        </td>
+      </tr>
+      {cuentas.map((e) => (
+        <tr key={e.account_code} className="border-t text-sm">
+          <td className="px-4 py-1 font-bold">{e.account_code}</td>
+          <td className="px-4 py-1">{e.account_name}</td>
+          <td className="px-4 py-1 text-right">$0,00</td>
+          <td className="px-4 py-1 text-right">{format(e.debit || 0)}</td>
+          <td className="px-4 py-1 text-right">{format(e.credit || 0)}</td>
+          <td className="px-4 py-1 text-right">{format((e.debit || 0) - (e.credit || 0))}</td>
+        </tr>
+      ))}
+    </>
+  );
 
   return (
-    <div className="bg-white shadow rounded p-4 mt-6 border">
-      <h2 className="text-xl font-bold text-blue-800 mb-4">📋 Hoja de Balance </h2>
+    <div className="p-4 bg-white rounded shadow mt-4">
+      <h2 className="text-lg font-bold mb-3">📘 Balance General</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <h3 className="text-green-700 font-bold mb-2">Activos</h3>
-          {assets.map((e, i) => (
-            <div key={i} className="text-sm">
-              {e.account_code} - {e.account_name}: {formatAmount(e.debit)}
-            </div>
-          ))}
-        </div>
+      <table className="min-w-full border border-gray-300 text-sm">
+        <thead className="bg-gray-200">
+          <tr>
+            <th className="px-4 py-2 text-left">Código</th>
+            <th className="px-4 py-2 text-left">Cuenta</th>
+            <th className="px-4 py-2 text-right">Balance Inicial</th>
+            <th className="px-4 py-2 text-right">Débito</th>
+            <th className="px-4 py-2 text-right">Crédito</th>
+            <th className="px-4 py-2 text-right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {renderGrupo("ACTIVO", activos)}
+          
+          <tr className="bg-gray-100 font-semibold">
+            <td colSpan={5} className="px-4 py-2 text-right">Total Activo</td>
+            <td className="px-4 py-2 text-right">{format(totalActivos.saldo)}</td>
+          </tr>
 
-        <div>
-          <h3 className="text-red-700 font-bold mb-2">Pasivos & Patrimonio</h3>
-          {[...liabilities, ...equity].map((e, i) => (
-            <div key={i} className="text-sm">
-              {e.account_code} - {e.account_name}: {formatAmount(e.credit)}
-            </div>
-          ))}
-        </div>
-      </div>
+          {renderGrupo("PASIVO", pasivos)}
+          <tr className="bg-gray-100 font-semibold">
+            <td colSpan={5} className="px-4 py-2 text-right">Total Pasivo</td>
+            <td className="px-4 py-2 text-right">{format(totalPasivos.saldo)}</td>
+          </tr>
 
-      <div className="mt-4 font-semibold">
-        <div>Total Activos: {formatAmount(totalDebits)}</div>
-        <div>Total Pasivos + Patrimonio: {formatAmount(totalCredits)}</div>
-      </div>
-
-      <div className="mt-6 flex justify-center">
-        <button
-          onClick={exportToPDF}
-          className="px-6 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
-        >
-          📄 Exporta Balance de Situacion en PDF
-        </button>
-      </div>
+          {renderGrupo("PATRIMONIO", patrimonios)}
+          <tr className="border-t text-sm text-green-700">
+            <td className="px-4 py-1 font-bold">Resultado</td>
+            <td className="px-4 py-1">Resultado del Ejercicio</td>
+            <td className="px-4 py-1 text-right">$0,00</td>
+            <td className="px-4 py-1 text-right">—</td>
+            <td className="px-4 py-1 text-right">—</td>
+            <td className="px-4 py-1 text-right">{format(result)}</td>
+          </tr>
+          <tr className="bg-gray-100 font-semibold">
+            <td colSpan={5} className="px-4 py-2 text-right">Total Patrimonio</td>
+            <td className="px-4 py-2 text-right">{format(totalPatrimonioFinal)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

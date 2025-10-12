@@ -1,149 +1,87 @@
-import React, { useMemo } from "react";
-import { JournalEntry } from "../types/JournalEntry";
+import React from "react";
+import type { JournalEntry } from "../types/JournalEntry";
+import { agruparCuentasPorTipo, formatearMonto } from "../utils/contabilidadUtils";
 
 interface Props {
   entries: JournalEntry[];
+  result?: number;
 }
 
-export default function BalanceSheet({ entries }: Props) {
-  const formatter = useMemo(
-    () =>
-      new Intl.NumberFormat("es-EC", {
-        style: "currency",
-        currency: "USD",
-        minimumFractionDigits: 2,
-      }),
-    []
-  );
+export default function BalanceSheet({ entries, result = 0 }: Props) {
+  const cuentasPorTipo = agruparCuentasPorTipo(entries);
 
-  const fmt = (n: number) => formatter.format(n);
+  const renderSeccion = (tipo: "activo" | "pasivo" | "patrimonio") => {
+    let cuentas = cuentasPorTipo[tipo] || [];
+    cuentas = cuentas.filter((cuenta) => cuenta.codigo.length <= 5);
 
-  const groupAndSumAccounts = (prefix: string, type: "debit" | "credit") => {
-    const map = new Map<string, { code: string; name: string; value: number }>();
-    entries
-      .filter((e) => (e.account_code || "").startsWith(prefix))
-      .forEach((e) => {
-        const code = e.account_code || "";
-        const name = e.account_name || "";
-        const key = `${code} - ${name}`;
-        const amount = type === "debit"
-          ? (e.debit || 0) - (e.credit || 0)
-          : (e.credit || 0) - (e.debit || 0);
-        if (!map.has(key)) {
-          map.set(key, { code, name, value: amount});
-        } else {
-          const prev = map.get(key)!;
-          prev.value += amount;
-        }
+    if (tipo === "patrimonio") {
+      cuentas.push({
+        codigo: "39999",
+        nombre: "Resultado del Ejercicio",
+        debito: 0,
+        credito: 0,
+        saldo: result,
       });
-      return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+    }
+
+    const total = cuentas.reduce((sum, c) => sum + c.saldo, 0);
+
+    return (
+      <>
+        <tr className="bg-gray-100">
+          <td colSpan={6} className={`text-left font-bold py-2 px-4 ${
+            tipo === "activo" 
+            ? "text-green-700" 
+            : tipo === "pasivo" 
+            ? "text-red-700" 
+            : "text-purple-700"
+          }`}>
+            {tipo.toUpperCase()}
+          </td>
+        </tr>
+
+        {cuentas.map((cuenta) => (
+          <tr key={cuenta.codigo} className="border-t">
+            <td className="px-4 py-2 font-bold">{cuenta.codigo}</td>
+            <td className="px-4 py-2">{cuenta.nombre}</td>
+            <td className="px-4 py-2 text-right">{/* Saldo inicial no disponible */}-</td>
+            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.debito)}</td>
+            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.credito)}</td>
+            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.saldo)}</td>
+          </tr>
+        ))}
+
+        <tr className="bg-gray-200 font-semibold">
+          <td colSpan={5} className="px-4 py-2 text-right">
+            Total {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
+          </td>
+          <td className="px-4 py-2 text-right">{formatearMonto(total)}</td>
+        </tr>
+      </>
+    );
   };
-
-  const getUtilidadDelEjercicio = () => {
-    const ventas = entries
-      .filter((e) => e.account_code === "70101")
-      .reduce((acc, e) => acc + Number(e.credit || 0), 0);
-
-    const compras = entries
-      .filter((e) => e.account_code === "60601")
-      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
-
-    const ice = entries
-      .filter((e) => e.account_code === "53901")
-      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
-
-    const ivaCredito = entries
-      .filter((e) => e.account_code === "24301")
-      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
-
-    const gastos = entries
-      .filter((e) => (e.account_code || "").startsWith("5"))
-      .reduce((acc, e) => acc + Number(e.debit || 0), 0);
-
-    return ventas - compras - ice -ivaCredito - gastos;
-  };
-
-  const utilidadNeta = getUtilidadDelEjercicio();
-
-  const activos = groupAndSumAccounts("1", "debit");
-  const pasivos = groupAndSumAccounts("2", "credit");
-  const patrimonio = groupAndSumAccounts("3", "credit");
-
-  const totalActivo = activos.reduce((sum, c) => sum + c.value, 0);
-  const totalPasivo = pasivos.reduce((sum, c) => sum + c.value, 0);
-  const totalPatrimonio = patrimonio.reduce((sum, c) => sum + c.value, 0) + utilidadNeta;
 
   return (
-    <div className="bg-white p-4 rounded shadow border">
-      <h2 className="text-xl font-bold text-blue-800 mb-4">📊 Balance General</h2>
-
-      <div className="grid grid-cols-2 gap-8 font-mono text-sm">
-        <div>
-          <h3 className="text-lg font-semibold text-green-700 mb-2">ACTIVO</h3>
-          {activos.map((a, i) => (
-            <div key={i} className="flex justify-between">
-              <span>
-                <span className="text-gray-500 mr-1">{a.code}</span>
-                {a.name}
-              </span>
-              <span>{fmt(a.value)}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* PASIVO + PATRIMONIO */}
-        <div>
-          <h3 className="text-lg font-semibold text-red-700 mb-2">PASIVO</h3>
-          {pasivos.map((p, i) => (
-            <div key={i} className="flex justify-between">
-              <span>
-                <span className="text-gray-500 mr-1">{p.code}</span>
-                {p.name}
-              </span>
-              <span>{fmt(p.value)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between font-bold border-t mt-2 pt-1">
-            <span>Total Pasivo</span>
-            <span>{fmt(totalPasivo)}</span>
-          </div>
-
-          <h3 className="text-lg font-semibold text-purple-700 mt-4 mb-2">PATRIMONIO</h3>
-          {patrimonio.map((p, i) => (
-            <div key={i} className="flex justify-between">
-              <span>
-                <span className="text-gray-500 mr-1">{p.code}</span>
-                {p.name}
-              </span>
-              <span>{fmt(p.value)}</span>
-            </div>
-          ))}
-          <div className="flex justify-between font-bold mt-2 text-green-700">
-            <span>Resultado del Ejercicio</span>
-            <span>{fmt(utilidadNeta)}</span>
-          </div>
-          <div className="flex justify-between font-bold border-t pt-1">
-            <span>Total Patrimonio</span>
-            <span>{fmt(totalPatrimonio)}</span>
-          </div>
-        </div>
-      </div>
-
-        {/* Linea horizontal final */}
-        <hr className="my-4 border-t border-gray-300 col-span-2" />
-
-        <div className="grid grid-cols-2 font-bold text-lg">
-        {/* Activo: Total en misma linea */}
-        <div className="flex justify-between pr-6 text-green-900">
-          <span>Total Activo</span>
-          <span>{fmt(totalActivo)}</span>
-        </div>
-        
-        {/* Total Pasivo + Patrimonio debajo del Total Patrimonio */}
-        <div className="flex flex-col items-end">
-          <span>Total Pasivo + Patrimonio</span>
-          <span>{fmt(totalPasivo + totalPatrimonio)}</span>
-        </div>
+    <div className="p-4">
+      <h1 className="text-xl font-bold mb-4">📘 Balance General</h1>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border border-gray-300 text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="px-4 py-2 text-left">Código</th>
+              <th className="px-4 py-2 text-left">Cuenta</th>
+              <th className="px-4 py-2 text-right">Balance Inicial</th>
+              <th className="px-4 py-2 text-right">Débito</th>
+              <th className="px-4 py-2 text-right">Crédito</th>
+              <th className="px-4 py-2 text-right">Saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {renderSeccion("activo")}
+            {renderSeccion("pasivo")}
+            {renderSeccion("patrimonio")}
+          </tbody>
+        </table>
       </div>
     </div>
   );

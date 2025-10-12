@@ -10,6 +10,7 @@ import {
   query,
   where,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 
 import type { Entity } from "../types/Entity";
@@ -102,13 +103,17 @@ export async function fetchJournalEntries(entityId: string): Promise<JournalEntr
 /**
  * Elimina las entradas contables asociadas a una factura por su número.
  */
-export async function deleteJournalEntriesByInvoiceNumber(invoiceNumber: string, entityId: string) {
-  const q = query(
-    collection(db, "journalEntries"),
-    where("invoice_number", "==", invoiceNumber),
-    where("entityId", "==", entityId)
-  );
+export async function deleteJournalEntriesByInvoiceNumber(
+  entityId: string,
+  invoiceNumbers: string[]
+): Promise<void> {
+  if (!entityId || invoiceNumbers.length === 0) return;
+
+  const colRef = collection(db, "entities", entityId, "journalEntries"); // ✔️ subcolección correcta
+  const q = query(colRef, where("invoice_number", "in", invoiceNumbers));
   const snap = await getDocs(q);
+
   const deletions = snap.docs.map((docRef) => deleteDoc(docRef.ref));
   await Promise.all(deletions);
 }
+

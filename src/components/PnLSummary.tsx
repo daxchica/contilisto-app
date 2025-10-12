@@ -71,7 +71,7 @@ export default function PnLSummary({ entries }: Props) {
     let y = 20;
     
     doc.setFontSize(16);
-    doc.getStringUnitWidth("Estado de Perdidas y Ganancias", 20, y);  
+    doc.text("Estado de Perdidas y Ganancias", 20, y);  
     y += 10;
 
     const line = (label: string, value?: number, code?: string, bold?: boolean) => {

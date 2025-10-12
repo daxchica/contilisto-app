@@ -4,10 +4,11 @@ import {
   addDoc,
   collection,
   doc,
+  deleteDoc,
   getDocs,
   query,
+  setDoc,
   where,
-  deleteDoc,
   serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
@@ -31,20 +32,20 @@ export async function saveJournalEntries(
   entityId: string,
   entries: JournalEntry[],
   userId: string
-) {
+): Promise<JournalEntry[]> {
   if (!entityId) throw new Error("Missing entityId for journal entry");
   if (!userId) throw new Error("Missing userId for journal entry");
 
   const journalRef = collection(db, "entities", entityId, "journalEntries");
- 
+  const savedEntries: JournalEntry[] = [];
+
   for (const { userId: _ignored, ...rest } of entries) {
+    const id = rest.id || crypto.randomUUID();
     const fullEntry = {
       ...rest,
       entityId,
       userId,
       createdAt: Date.now(),
-
-      // 🔐 Garantiza valores válidos
       debit: typeof rest.debit === "number" ? rest.debit : 0,
       credit: typeof rest.credit === "number" ? rest.credit : 0,
       description: rest.description || "",
@@ -53,8 +54,13 @@ export async function saveJournalEntries(
       account_name: rest.account_name || "",
       date: rest.date || new Date().toISOString().slice(0, 10),
     };
-    await addDoc(journalRef, fullEntry);
+
+    const docRef = doc(journalRef, id);
+    await setDoc(docRef, fullEntry);
+    savedEntries.push(fullEntry);
   }
+
+  return savedEntries;
 }
 
 export async function fetchJournalEntries(
@@ -62,7 +68,10 @@ export async function fetchJournalEntries(
 ): Promise<JournalEntry[]> {
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const snapshot = await getDocs(journalRef);
-  return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data(), })) as JournalEntry[];
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  })) as JournalEntry[];
 }
 
 export async function getAlreadyProcessedInvoiceNumbers(
@@ -142,12 +151,14 @@ export async function deleteJournalEntriesByTransactionId(
   entityId: string,
   transactionId: string
 ) {
-  const qy = query(collection(db, "entities", entityId, "journalEntries"), where("transactionId", "==", transactionId));
+  const qy = query(
+    collection(db, "entities", entityId, "journalEntries"),
+    where("transactionId", "==", transactionId)
+  );
   const snapshot = await getDocs(qy);
   await Promise.all(snapshot.docs.map(docSnap => deleteDoc(docSnap.ref)));
 }
 
-/** 🔧 Batch deletes using IN (chunks of 10) to be efficient and avoid many roundtrips */
 export async function deleteJournalEntriesByInvoiceNumber(
   entityId: string,
   invoiceNumbers: string[]
@@ -155,48 +166,58 @@ export async function deleteJournalEntriesByInvoiceNumber(
   if (!entityId || invoiceNumbers.length === 0) return;
 
   const colRef = collection(db, "entities", entityId, "journalEntries");
-  const chunks: string[][] = [];
-  for (let i = 0; i < invoiceNumbers.length; i += 10) {
-    chunks.push(invoiceNumbers.slice(i, i + 10));
-  }
+  const q = query(colRef, where("invoice_number", "in", invoiceNumbers));
+  const snap = await getDocs(q);
 
-  for (const inChunk of chunks) {
-    const qy = query(colRef, where("invoice_number", "in", inChunk));
-    const snap = await getDocs(qy);
-    const batch = writeBatch(db);
-    snap.forEach(d => batch.delete(d.ref));
-    await batch.commit();
-  }
+  const deletions = snap.docs.map((docRef) => deleteDoc(docRef.ref));
+  await Promise.all(deletions);
 }
 
 export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
-  await saveJournalEntries(entry.entityId, [entry], entry.userId);
+  const saved = await saveJournalEntries(entry.entityId, [entry], entry.userId);
+  return saved[0];
 }
 
 export async function deleteJournalEntriesByIds(
-  entryIds: string[], 
+  entryIds: string[],
   entityId: string,
   uid: string,
-) : Promise<void> {
-    if (!entityId) throw new Error("Missing entityId for deleteJournalEntriesByIds");
-    if (!uid) throw new Error("Missing user uid for deleteJournalEntriesByIds");
-    if (!entryIds || entryIds.length === 0) return;
-
-    try {
-      const BATCH_SIZE = 450;
-      for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
-        const chunk = entryIds.slice(i, i + BATCH_SIZE);
-        const batch = writeBatch(db);
-        chunk.forEach((id) => {
-          if (!id) return;
-          const entryRef = doc(db, "entities", entityId, "journalEntries", id);
-          batch.delete(entryRef);
-        });
-        await batch.commit();
-      }
-      console.log(`${entryIds.length} asientos eliminados de Firestore.`);
-    } catch (err) {
-      console.error("Error al eliminar entradas:", err);
-      throw err;
-    }
+): Promise<void> {
+  if (!entityId) throw new Error("Missing entityId for deleteJournalEntriesByIds");
+  if (!uid) throw new Error("Missing user uid for deleteJournalEntriesByIds");
+  if (!entryIds || entryIds.length === 0) {
+    console.warn("No se proporcionaron IDs para eliminar");
+   return;
   }
+
+  try {
+    console.log("Eliminando IDs:", entryIds, "para la entidad:", entityId);
+
+    const journalPath = `entities/${entityId}/journalEntries`;
+    const colRef = collection(db, journalPath);
+
+    // Comprobamos qué documentos existen realmente en Firestore antes de eliminarlos
+    const allDocs = await getDocs(colRef);
+    const allIds = allDocs.docs.map((d) => d.id);
+    console.log("📦 Documentos actualmente en Firestore:", allIds);
+
+    const BATCH_SIZE = 450;
+
+    for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
+      const chunk = entryIds.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+
+      chunk.forEach((id) => {
+        if (!id) return;
+        const entryRef = doc(db, "entities", entityId, "journalEntries", id);
+        console.log("Eliminando:", entryRef.path);
+        batch.delete(entryRef);
+      });
+      await batch.commit();
+    }
+    console.log(`${entryIds.length} asientos eliminados de Firestore.`);
+  } catch (err) {
+    console.error("Error al eliminar entradas:", err);
+    throw Error("Error eliminando registros de Firestore");
+  }
+}
