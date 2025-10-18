@@ -17,7 +17,7 @@ interface Props {
   entityId: string;
   userId: string;
   onClose: () => void;
-  onSave: (withNote: JournalEntry[], note: string) => void;
+  onSave: (withNote: JournalEntry[], note: string) => Promise<void>;
 }
 
 type Row = JournalEntry & { _rid: string };
@@ -33,7 +33,7 @@ function toNum(n: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-function rid() {
+function rid(): string {
   if (typeof crypto?.getRandomValues === "function") {
     const a = new Uint32Array(2);
     crypto.getRandomValues(a);
@@ -231,28 +231,36 @@ export default function JournalPreviewModal({
   };
 
   const handleConfirm = useCallback(async () => {
-    if (!canConfirm || isSaving) return;
+  if (!canConfirm || isSaving) return;
 
-    // Force blur to commit last input value
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
+  // Forzar blur para confirmar último input activo
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
 
-    setIsSaving(true);
+  setIsSaving(true);
 
-    setTimeout(async() => {
-      const withNote = rows.map<Row>((r) => ({
-        ...r,
-        description: r.description?.trim() ? r.description : note || r.description,
-        userId,
-        entityId,
-        editedAt: r.isManual ? Date.now() : r.editedAt,
-      }));
-      await learnFromEdits(withNote);
-      onSave(withNote, note);
-      onClose();
-    }, 0);
-  }, [rows, note, userId, entityId, canConfirm, isSaving, onSave, onClose]);
+  try {
+    const withNote: JournalEntry[] = rows.map((r) => ({
+    ...r,
+    description: r.description?.trim() ? r.description : note || r.description,
+    userId,
+    entityId,
+    editedAt: r.isManual ? Date.now() : r.editedAt ?? Date.now(),
+  }));
+
+    console.log("✅ Guardando asientos desde JournalPreviewModal:", withNote, note);
+
+    await learnFromEdits(withNote);
+    await onSave(withNote, note);
+    onClose();
+  } catch (error) {
+    console.error("❌ Error al confirmar asiento:", error);
+    alert("Error al guardar los asientos contables.");
+  } finally {
+    setIsSaving(false);
+  }
+}, [rows, note, userId, entityId, canConfirm, isSaving, onSave, onClose]);
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
@@ -355,7 +363,15 @@ export default function JournalPreviewModal({
             <button onClick={onClose} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
               Cancelar
             </button>
-            <button onClick={handleConfirm} disabled={!canConfirm} className={`rounded px-4 py-2 text-white ${canConfirm ? "bg-blue-600 hover:bg-blue-700" : "bg-blue-300 cursor-not-allowed"}`}>
+            <button 
+              onClick={handleConfirm} 
+              disabled={!canConfirm || isSaving} 
+              className={`rounded px-4 py-2 text-white ${
+                canConfirm && !isSaving
+                  ? "bg-blue-600 hover:bg-blue-700" 
+                  : "bg-blue-300 cursor-not-allowed"
+                }`}
+              >
               {isSaving ? "Guardando..." : "  ✅ Confirmar Asientos"}
             </button>
           </div>

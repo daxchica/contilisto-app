@@ -7,14 +7,14 @@ export type EntrySource = "ai" | "ai-layout" | "manual" | "edited";
 export interface JournalEntry {
     /** Firestore doc id (when fetched) */
     id?: string;
-    entityId: string;
+    entityId?: string;
     userId?: string;
     account_code: string;
     debit?: number; // e.g., 123.45
     credit?: number; // e.g., 123.45
     /** ISO date YYYY-MM-DD */
     date: string;
-    createdAt: number;
+    createdAt?: number;
     /** Free text; typically vendor/customer or memo */
     description: string;
     /** PUC code and name chosen for this line */
@@ -28,7 +28,7 @@ export interface JournalEntry {
     /** Auth metadata (keep userId; uid deprecated for consistency) */
     uid?: string; // legacy alias; prefer userId
     /** Provenance and manual edit flags */
-    source: "ai" | "ai-layout" | "manual" | "edited";
+    source?: "ai" | "ai-layout" | "manual" | "edited";
     isManual?: boolean;         // true when user added/edited the line
     /** Audit fields (epoch ms) */
     editedAt?: number;

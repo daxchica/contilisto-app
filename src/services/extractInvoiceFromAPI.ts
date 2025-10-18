@@ -9,7 +9,8 @@ import { normalizeEntry, canonicalPair } from "../utils/accountPUCMap";
  */
 export async function extractInvoiceFromAPI(
   fullText: string, 
-  entityRUC: string
+  entityRUC: string,
+  entityType: string,
 ): Promise<JournalEntry[]> {
   const today = new Date().toISOString().slice(0, 10);
 

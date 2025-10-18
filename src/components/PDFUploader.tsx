@@ -12,6 +12,7 @@ interface PDFUploaderProps {
   entityId: string;
   userId: string;
   accounts: Account[];
+  entityType: string;
   refreshJournal?: () => void;
 }
 
@@ -20,6 +21,7 @@ export default function PDFUploader({
   entityId,
   userId,
   accounts,
+  entityType,
   onUploadComplete,
   refreshJournal,
 }: PDFUploaderProps) {
@@ -47,17 +49,16 @@ export default function PDFUploader({
     return clean;
   };
 
-  const handleConfirm = async (confirmed: JournalEntry[]) => {
-    try {
+  const handleConfirm = async (confirmed: JournalEntry[], note: string) => {
+    try{
       const sanitized = confirmed.map(sanitizeEntry);
-      await saveJournalEntries(entityId, sanitized, userId);
-      onUploadComplete(sanitized, "preview-confirmed");
-      if (refreshJournal) refreshJournal();
+      onUploadComplete(sanitized, note || "preview-confirmed");
       setSuccessMessage(`✅ ${sanitized.length} asientos guardados exitosamente.`);
     } catch (err) {
       console.error("Error al guardar los asientos confirmados:", err);
       setError("❌ Hubo un error al guardar los asientos.");
     } finally {
+      // Cierra el modal SIEMPRE, incluso si hubo error
       resetPreviewState();
     }
   };
@@ -87,7 +88,7 @@ export default function PDFUploader({
   };
 
   const handleFiles = async (files: File[]) => {
-    if (!userRUC || !entityId || !userId) {
+    if (!userRUC || !entityId || !userId || !entityType) {
       setError("Faltan parámetros obligatorios para procesar los archivos.");
       return;
     }
@@ -99,7 +100,7 @@ export default function PDFUploader({
 
     for (const file of files) {
       try {
-        const entries = await parsePDF(file, userRUC, entityId, userId);
+        const entries = await parsePDF(file, userRUC, entityId, userId, entityType);
         if (entries.length > 0) {
           allEntries.push(...entries);
           setProcessedFiles((prev) => [...prev, file.name]);
@@ -113,8 +114,7 @@ export default function PDFUploader({
     }
 
     if (allEntries.length > 0) {
-      setPreviewEntries(allEntries);
-      setShowPreview(true);
+      onUploadComplete(allEntries, "");
     } else {
       setError("Ningún archivo nuevo fue procesado. Posiblemente ya fueron procesados antes.");
     }
@@ -180,16 +180,6 @@ export default function PDFUploader({
       )}
       {error && <p className="mt-2 whitespace-pre-line text-red-600">{error}</p>}
 
-      {showPreview && (
-        <JournalPreviewModal
-          entries={previewEntries}
-          accounts={accounts}
-          entityId={entityId}
-          userId={userId}
-          onClose={resetPreviewState}
-          onSave={handleConfirm}
-        />
-      )}
     </div>
   );
 }

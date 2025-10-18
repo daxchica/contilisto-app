@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { EntityType } from "../types/Entity";
 import "../styles/AddEntityModal.css";
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (data: { ruc: string; name: string }) => Promise<void> | void;
+  onCreate: (data: { ruc: string; name: string; entityType: EntityType }) => Promise<void> | void;
 };
 
 export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
   const [ruc, setRuc] = useState("");
   const [name, setName] = useState("");
+  const [entityType, setEntityType] = useState<EntityType>("comercial");
   const [saving, setSaving] = useState(false);
 
   // ---- Drag state ----
@@ -18,18 +20,18 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
 
-
   // Centrar al abrir y limpiar campos
   useEffect(() => {
     if (!isOpen) return;
     setRuc("");
     setName("");
+    setEntityType("comercial");
     // centra modal (usando viewport actual)
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     // tamaño aproximado del modal (puedes medirlo si prefieres)
-    const approxW = 480;
-    const approxH = 280;
+    const approxW = 540;
+    const approxH = 320;
     setPos({ x: Math.max((vw - approxW) / 2, 12), y: Math.max((vh - approxH) / 2, 12) });
   }, [isOpen]);
 
@@ -71,7 +73,6 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
     const min = 12;
     const maxX = window.innerWidth - w - min;
     const maxY = window.innerHeight - h - min;
-
     setPos({
       x: Math.min(Math.max(nx, min), Math.max(maxX, min)),
       y: Math.min(Math.max(ny, min), Math.max(maxY, min)),
@@ -92,7 +93,7 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
     if (!canCreate || saving) return;
     try {
       setSaving(true);
-      await onCreate({ ruc: ruc.trim(), name: name.trim() });
+      await onCreate({ ruc: ruc.trim(), name: name.trim(), entityType });
       onClose();
     } finally {
       setSaving(false);
@@ -124,10 +125,11 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
 
       {/* Window */}
       <div
-        className={`fixed z-50 bg-white p-6 shadow-lg rounded-md`}
+        className={`fixed z-50 bg-white p-6 shadow-lg rounded-md w-[540px]`}
         style={{ left: `${pos.x}px`, top: `${pos.y}px`}}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        ref={modalRef}
       >
         {/* Drag handle (header) */}
         <div
@@ -171,6 +173,25 @@ export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
               onChange={(e) => setName(e.target.value)}
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Tipo de Empresa</label>
+            <select
+              className="w-full border rounded px-3 py-2"
+              value={entityType}
+              onChange={(e) => setEntityType(e.target.value as EntityType)}
+              required
+            >
+              <option value="comercial">Comercial</option>
+              <option value="primario">Primario (Agrícola / Pesca / Minas)</option>
+              <option value="industrial">Industrial</option>
+              <option value="servicios profesionales">Servicios Profesionales</option>
+              <option value="servicios generales">Servicios Generales</option>
+              <option value="construccion">Construcción</option>
+              <option value="educacion">Educación</option>
+              <option value="farmacia">Farmacia</option>
+            </select>
           </div>
 
           <div className="pt-2 flex justify-end gap-2">

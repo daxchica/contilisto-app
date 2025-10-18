@@ -14,7 +14,8 @@ import JournalPreviewModal from "../components/JournalPreviewModal";
 
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
-import type { Entity } from "../types/Entity";
+import type { Entity, EntityType } from "../types/Entity";
+
 
 import {
   createEntity,
@@ -27,9 +28,10 @@ import {
   saveJournalEntries,
   deleteJournalEntriesByIds,
 } from "../services/journalService";
-import {
+import { 
   deleteInvoicesFromFirestoreLog,
   clearFirestoreLogForEntity,
+  fetchProcessedInvoice,
 } from "../services/firestoreLogService";
 import {
   clearLocalLogForEntity,
@@ -65,10 +67,12 @@ function InvoiceLogDropdown({
   entityId, 
   ruc, 
   setSessionJournal,
+  logRefreshTrigger,
 }: { 
   entityId: string; 
   ruc: string; 
-  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>; 
+  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>;
+  logRefreshTrigger: number;
 }) {
   const [invoices, setInvoices] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -81,7 +85,7 @@ function InvoiceLogDropdown({
     }
     setInvoices(Array.from(getProcessedInvoices(ruc)));
     setSelected(new Set());
-  }, [entityId, ruc]);
+  }, [entityId, ruc, logRefreshTrigger]);
 
   const toggleInvoice = useCallback((invoice: string) => {
     setSelected((prev) => {
@@ -162,6 +166,7 @@ export default function EntitiesDashboard() {
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAddEntity, setShowAddEntity] = useState(false);
+  const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
   /* 1) Load user entities */
   useEffect(() => {
@@ -200,14 +205,20 @@ export default function EntitiesDashboard() {
 
   /* 3) Keep global context in sync */
   useEffect(() => {
-    if (!selectedEntity) {
-      setEntity(null);
+    if (
+      selectedEntity?.id &&
+      selectedEntity?.ruc &&
+      selectedEntity?.name &&
+      selectedEntity?.type
+    ) {
+      setEntity({
+        id: selectedEntity.id,
+        ruc: selectedEntity.ruc,
+        name: selectedEntity.name,
+        type: selectedEntity.type,
+    });
     } else {
-      setEntity ({
-        id: selectedEntity.id ?? "",
-        ruc: selectedEntity.ruc ?? "",
-        name: selectedEntity.name ?? "",
-      });
+      setEntity(null);
     }
   }, [selectedEntity, setEntity]);
 
@@ -286,17 +297,46 @@ export default function EntitiesDashboard() {
   }, [sessionJournal, selectedEntity, user?.uid]);
 
   // ✅ FUNCION CORREGIDA: guarda, registra facturas y cierra modal
-  const handlePreviewSave = async (entries: JournalEntry[], note: string) => {
+  const handlePreviewSave = async (
+    entries: JournalEntry[], 
+    note: string
+  ) => {
     if (!user?.uid || !selectedEntityId) return;
+    console.log("Paso 1: Entrando a handlePreviewSave");
+
     try {
+      // 1 Guardar los asientos confirmados
       await saveJournalEntries(selectedEntityId, entries, user.uid);
-      entries.forEach((e) => {
-        if (e.invoice_number) saveInvoiceToLocalLog(selectedEntityId, e.invoice_number);
-      });
+      console.log("Paso 2: Asientos guardados en Firestore");
+
+      // 2 Registrar facturas procesadas (solo despues de confirmacion)
+      for (const e of entries) {
+        if (e.invoice_number) {
+          try {
+            saveInvoiceToLocalLog(selectedEntityId, e.invoice_number);
+            await fetchProcessedInvoice(selectedEntityId, e.invoice_number );
+          } catch (logErr) {
+            console.error(`Error registrando log de factura ${e.invoice_number}:`, logErr);
+          }
+        }
+      }
+
+      // 3 Cerrar el modal
       setShowPreviewModal(false); // cerrar modal inmediatamente
-      fetchJournalEntries(selectedEntityId).then(setSessionJournal); // actualizar
+      console.log("Paso 3: Modal cerrado con setShowPreviewModal(false)");
+
+      // 4. Actualizar el journal desde Firestore
+      const refreshed = await fetchJournalEntries(selectedEntityId);
+      setSessionJournal(refreshed); // actualizar
+      console.log("Paso 4: Asientos actualizados");
+
+      setLogRefreshTrigger((prev) => prev + 1);
+      console.log("Paso 5: Lista de facturas procesadas actualizada");
+
     } catch (err) {
       console.error("Error al guardar asientos desde preview:", err);
+      alert("Error al guardar asientos o registrar factura.");
+      throw err;
     }
   };
 
@@ -341,9 +381,9 @@ export default function EntitiesDashboard() {
     }
   };
 
-  const handleEntityCreated = useCallback(async ({ ruc, name }: { ruc: string; name: string }) => {
+  const handleEntityCreated = useCallback(async ({ ruc, name, entityType }: { ruc: string; name: string; entityType: EntityType }) => {
       if (!user?.uid) return;
-      await createEntity({ ruc: ruc.trim(), name: name.trim() });
+      await createEntity({ ruc: ruc.trim(), name: name.trim(), type: entityType.trim() });
       const updated = await fetchEntities(user.uid);
       setEntities(updated);
       // Try to select the one we just created
@@ -352,6 +392,11 @@ export default function EntitiesDashboard() {
       alert("✅ Entidad creada.");
     }, [user?.uid]
   );
+
+  const appendToSessionJournal = (entries: JournalEntry[], note: string) => {
+  setSessionJournal((prev) => [...prev, ...entries]);
+  console.log("✅ Entradas agregadas al libro diario:", entries, note);
+};
 
   /* ------------------------------ UI ------------------------------ */
   return (
@@ -417,6 +462,7 @@ export default function EntitiesDashboard() {
                   entityId={selectedEntityId}
                   ruc={selectedEntityRUC}
                   setSessionJournal={setSessionJournal}
+                  logRefreshTrigger={logRefreshTrigger}
                 />
               )}
             </div>
@@ -437,13 +483,18 @@ export default function EntitiesDashboard() {
 
             {selectedEntity && selectedEntityRUC ? (
               <PDFUploader
-                userRUC={selectedEntityRUC}
-                entityId={selectedEntityId}
+                userRUC={selectedEntity?.ruc ?? ""}
+                entityId={selectedEntity?.id ?? ""}
                 userId={auth.currentUser?.uid ?? ""}
                 accounts={accounts}
+                entityType={selectedEntity?.type ?? "servicios"}
                 onUploadComplete={(entries) => {
                   setPreviewEntries(entries);
                   setShowPreviewModal(true);
+                }}
+                refreshJournal={async () => {
+                  const updated = await fetchJournalEntries(selectedEntity.id);
+                  setSessionJournal(updated);
                 }}
               />
             ) : (
@@ -542,15 +593,13 @@ export default function EntitiesDashboard() {
     />
     {showPreviewModal && (
       <JournalPreviewModal
+        key={selectedEntityId + logRefreshTrigger}
         entries={previewEntries}
         accounts={accounts}
         entityId={selectedEntityId}
         userId={user?.uid ?? ""}
         onClose={() => setShowPreviewModal(false)}
-        onSave={(withNote, note) => {
-          setSessionJournal((prev) => [...prev, ...withNote]);
-          setShowPreviewModal(false);
-        }}
+        onSave={handlePreviewSave}
       />
     )}
     </>

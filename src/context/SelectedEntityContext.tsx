@@ -1,14 +1,17 @@
+// src/context/SelectedEntityContext.tsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import type { EntityType } from "../types/Entity";
 
-type SelectedEntity = { 
-    id: string; 
-    ruc: string; 
-    name: string; 
+type SelectedEntity = {
+  id: string;
+  ruc: string;
+  name: string;
+  type: EntityType;
 } | null;
 
 type Ctx = {
-  entity: SelectedEntity;
-  setEntity: (e: SelectedEntity) => void;
+  entity: SelectedEntity | null;
+  setEntity: (e: SelectedEntity | null) => void;
 };
 
 const SelectedEntityContext = createContext<Ctx | undefined>(undefined);
@@ -23,7 +26,9 @@ export const SelectedEntityProvider: React.FC<{ children: React.ReactNode }> = (
         if (raw) {
           try { 
               const parsed = JSON.parse(raw);
-              if (parsed && parsed.id) setEntity(parsed);
+              if (parsed && parsed.id && parsed.ruc && parsed.type) {
+                setEntity(parsed);
+              }
             } catch {
               console.warn("Invalid entity in localStorage");
             }

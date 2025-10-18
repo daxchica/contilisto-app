@@ -1,4 +1,4 @@
-export async function extractInvoiceFromAPI(fullText: string, entityRUC: string) {
+export async function extractInvoiceFromAPI(fullText: string, entityRUC: string, entityType: string) {
   console.log("Sending to extract-invoice:", { text: fullText?.slice(0, 300), entityRUC });
   const res = await fetch('/.netlify/functions/extract-Invoice', {
     method: 'POST',

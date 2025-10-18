@@ -1,4 +1,3 @@
-// src/services/journalService.ts
 import { db } from "../firebase-config";
 import {
   addDoc,
@@ -9,13 +8,12 @@ import {
   query,
   setDoc,
   where,
-  serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
 import * as pdfjsLib from "pdfjs-dist";
 import "../pdfWorker";
 
-import { extractInvoiceFromAPI } from "../ai/extractInvoiceFromAPI";
+import { extractInvoiceFromAPI } from "../services/extractInvoiceFromAPI";
 import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
 import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
@@ -24,27 +22,49 @@ import {
   logProcessedInvoice as logToLocalStorage,
   getProcessedInvoices as getLocalProcessed,
 } from "./localLogService";
+
 import { JournalEntry } from "../types/JournalEntry";
+import { Account } from "../types/AccountTypes";
 
 const INCLUDE_ICE_IN_EXPENSE = true;
 
+/**
+ * Guarda asientos contables en Firestore con control de duplicados.
+ */
 export async function saveJournalEntries(
   entityId: string,
   entries: JournalEntry[],
   userId: string
 ): Promise<JournalEntry[]> {
-  if (!entityId) throw new Error("Missing entityId for journal entry");
-  if (!userId) throw new Error("Missing userId for journal entry");
+  if (!entityId) throw new Error("❌ Missing entityId for journal entry");
+  if (!userId) throw new Error("❌ Missing userId for journal entry");
 
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const savedEntries: JournalEntry[] = [];
 
-  for (const { userId: _ignored, ...rest } of entries) {
+  // Buscar duplicados por invoice_number
+  const invoiceNumbers = [...new Set(entries.map((e) => e.invoice_number).filter(Boolean))];
+  const existingEntries: Record<string, boolean> = {};
+
+  if (invoiceNumbers.length > 0) {
+    const q = query(journalRef, where("invoice_number", "in", invoiceNumbers));
+    const snapshot = await getDocs(q);
+    snapshot.forEach((doc) => {
+      const data = doc.data() as JournalEntry;
+      if (data.invoice_number) {
+        const key = `${data.invoice_number}-${data.account_code}-${data.debit}-${data.credit}-${data.date}`;
+        existingEntries[key] = true;
+      }
+    });
+  }
+
+  for (const { userId: _ignore, ...rest } of entries) {
     const id = rest.id || crypto.randomUUID();
-    const fullEntry = {
+    const fullEntry: JournalEntry = {
       ...rest,
       entityId,
       userId,
+      id,
       createdAt: Date.now(),
       debit: typeof rest.debit === "number" ? rest.debit : 0,
       credit: typeof rest.credit === "number" ? rest.credit : 0,
@@ -55,6 +75,12 @@ export async function saveJournalEntries(
       date: rest.date || new Date().toISOString().slice(0, 10),
     };
 
+    const duplicateKey = `${fullEntry.invoice_number}-${fullEntry.account_code}-${fullEntry.debit}-${fullEntry.credit}-${fullEntry.date}`;
+    if (existingEntries[duplicateKey]) {
+      console.warn(`[⛔️ Duplicado detectado] Saltando asiento: ${duplicateKey}`);
+      continue;
+    }
+
     const docRef = doc(journalRef, id);
     await setDoc(docRef, fullEntry);
     savedEntries.push(fullEntry);
@@ -63,9 +89,10 @@ export async function saveJournalEntries(
   return savedEntries;
 }
 
-export async function fetchJournalEntries(
-  entityId: string
-): Promise<JournalEntry[]> {
+/**
+ * Obtiene todos los asientos contables para una entidad.
+ */
+export async function fetchJournalEntries(entityId: string): Promise<JournalEntry[]> {
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const snapshot = await getDocs(journalRef);
   return snapshot.docs.map((docSnap) => ({
@@ -74,46 +101,59 @@ export async function fetchJournalEntries(
   })) as JournalEntry[];
 }
 
-export async function getAlreadyProcessedInvoiceNumbers(
-  entityId: string
-): Promise<Set<string>> {
+/**
+ * Devuelve el set de invoice_number ya procesados.
+ */
+export async function getAlreadyProcessedInvoiceNumbers(entityId: string): Promise<Set<string>> {
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const snapshot = await getDocs(journalRef);
-
   const invoiceSet = new Set<string>();
+
   snapshot.forEach((doc) => {
     const { invoice_number } = doc.data();
     if (typeof invoice_number === "string" && invoice_number.trim()) {
       invoiceSet.add(invoice_number.trim());
     }
   });
+
   return invoiceSet;
 }
 
+/**
+ * Procesa un archivo PDF y extrae los asientos contables desde IA o LayoutAI.
+ */
 export async function parsePDF(
+  
   file: File,
   userRUC: string,
   entityId: string,
   userId: string,
+  entityType: string,
   useLayoutAI: boolean = false
 ): Promise<JournalEntry[]> {
-  if (!file || !userRUC || !entityId || !userId) throw new Error("Missing parameter");
+  console.log("parsePDF() fue llamado con archivo:", File.name);
+  if (!file || !userRUC || !entityId || !userId || !entityType) {
+    throw new Error("❌ Faltan parámetros obligatorios en parsePDF");
+  }
 
   const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  const allProcessed = new Set([
-    ...(await getAlreadyProcessedInvoiceNumbers(entityId)),
-    ...getLocalProcessed(userRUC),
-  ]);
-
+  const processedInvoices = await getAlreadyProcessedInvoiceNumbers(entityId);
   const entries: JournalEntry[] = [];
 
   try {
     if (useLayoutAI) {
       const blocks = await extractTextBlocksFromPDF(file);
-      const aiEntries = await extractInvoiceFromLayoutAPI(blocks, userRUC);
-      const newOnly = aiEntries.filter(e => e.invoice_number && !allProcessed.has(e.invoice_number));
-      if (newOnly.length > 0) entries.push(...newOnly.map(e => ({ ...e, transactionId, userId })));
-      else return [];
+      const aiEntries = await extractInvoiceFromLayoutAPI(blocks, userRUC, entityType);
+
+      const newOnly = aiEntries.filter(
+        (e) => e.invoice_number && !processedInvoices.has(e.invoice_number)
+      );
+
+      if (newOnly.length > 0) {
+        entries.push(...newOnly.map((e) => ({ ...e, transactionId, userId })));
+      } else {
+        console.warn("📭 No se encontraron asientos nuevos (LayoutAI)");
+      }
     } else {
       const buffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -125,40 +165,41 @@ export async function parsePDF(
         fullText += " " + (content.items as any[]).map((item: any) => item.str).join(" ");
       }
 
-      const aiEntries = await extractInvoiceFromAPI(fullText, userRUC);
-      const newOnly = aiEntries.filter(e => e.invoice_number && !allProcessed.has(e.invoice_number));
-      if (newOnly.length > 0) entries.push(...newOnly.map(e => ({ ...e, transactionId, userId })));
-      else return [];
+      const aiEntries = await extractInvoiceFromAPI(fullText, userRUC, entityType);
+
+      const newOnly = aiEntries.filter(
+        (e) => e.invoice_number && !processedInvoices.has(e.invoice_number)
+      );
+
+      if (newOnly.length > 0) {
+        entries.push(...newOnly.map((e) => ({ ...e, transactionId, userId })));
+      } else {
+        console.warn("📭 No se encontraron asientos nuevos (OCR)");
+      }
     }
   } catch (err) {
-    console.error("AI extraction failed", err);
+    console.error("❌ Error durante la extracción IA:", err);
     return [];
   }
-
-  await Promise.all(
-    entries.map(e =>
-      fetchProcessedInvoice(entityId, e.invoice_number!).catch(err =>
-        console.error(`Error logging invoice ${e.invoice_number}`, err)
-      )
-    )
-  );
-  entries.forEach(e => logToLocalStorage(userRUC, e.invoice_number!));
 
   return entries;
 }
 
-export async function deleteJournalEntriesByTransactionId(
-  entityId: string,
-  transactionId: string
-) {
+/**
+ * Elimina todos los registros con un mismo transactionId.
+ */
+export async function deleteJournalEntriesByTransactionId(entityId: string, transactionId: string) {
   const qy = query(
     collection(db, "entities", entityId, "journalEntries"),
     where("transactionId", "==", transactionId)
   );
   const snapshot = await getDocs(qy);
-  await Promise.all(snapshot.docs.map(docSnap => deleteDoc(docSnap.ref)));
+  await Promise.all(snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref)));
 }
 
+/**
+ * Elimina registros por invoice_number.
+ */
 export async function deleteJournalEntriesByInvoiceNumber(
   entityId: string,
   invoiceNumbers: string[]
@@ -173,51 +214,48 @@ export async function deleteJournalEntriesByInvoiceNumber(
   await Promise.all(deletions);
 }
 
+/**
+ * Crea un único asiento contable.
+ */
 export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
   const saved = await saveJournalEntries(entry.entityId, [entry], entry.userId);
   return saved[0];
 }
 
+/**
+ * Elimina múltiples registros por sus IDs.
+ */
 export async function deleteJournalEntriesByIds(
   entryIds: string[],
   entityId: string,
-  uid: string,
+  uid: string
 ): Promise<void> {
-  if (!entityId) throw new Error("Missing entityId for deleteJournalEntriesByIds");
-  if (!uid) throw new Error("Missing user uid for deleteJournalEntriesByIds");
+  if (!entityId) throw new Error("❌ Missing entityId for deleteJournalEntriesByIds");
+  if (!uid) throw new Error("❌ Missing user uid for deleteJournalEntriesByIds");
   if (!entryIds || entryIds.length === 0) {
-    console.warn("No se proporcionaron IDs para eliminar");
-   return;
+    console.warn("⚠️ No se proporcionaron IDs para eliminar");
+    return;
   }
 
   try {
-    console.log("Eliminando IDs:", entryIds, "para la entidad:", entityId);
-
     const journalPath = `entities/${entityId}/journalEntries`;
     const colRef = collection(db, journalPath);
 
-    // Comprobamos qué documentos existen realmente en Firestore antes de eliminarlos
-    const allDocs = await getDocs(colRef);
-    const allIds = allDocs.docs.map((d) => d.id);
-    console.log("📦 Documentos actualmente en Firestore:", allIds);
-
     const BATCH_SIZE = 450;
-
     for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
       const chunk = entryIds.slice(i, i + BATCH_SIZE);
       const batch = writeBatch(db);
-
       chunk.forEach((id) => {
         if (!id) return;
         const entryRef = doc(db, "entities", entityId, "journalEntries", id);
-        console.log("Eliminando:", entryRef.path);
         batch.delete(entryRef);
       });
       await batch.commit();
     }
-    console.log(`${entryIds.length} asientos eliminados de Firestore.`);
+
+    console.log(`🧹 ${entryIds.length} asientos eliminados de Firestore.`);
   } catch (err) {
-    console.error("Error al eliminar entradas:", err);
+    console.error("❌ Error al eliminar entradas:", err);
     throw Error("Error eliminando registros de Firestore");
   }
 }

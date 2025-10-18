@@ -1,4 +1,4 @@
-// src/services/journalService.ts
+// src/services/entityService.ts
 
 import { db } from "../firebase-config";
 import {
@@ -13,7 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import type { Entity } from "../types/Entity";
+import type { Entity, EntityType } from "../types/Entity";
 import type { JournalEntry } from "@/types/JournalEntry";
 import { uidOrThrow } from "../utils/auth";
 // import type { JournalEntry } from "../types/JournalEntry";
@@ -22,12 +22,19 @@ import { uidOrThrow } from "../utils/auth";
  * Guarda múltiples entradas contables en Firestore, validando campos requeridos.
  */
 
-export async function createEntity(params: { id?: string; ruc: string; name: string }): Promise<string> {
+export async function createEntity(params: { 
+  id?: string; 
+  ruc: string; 
+  name: string;
+  type: string; 
+}): Promise<string> {
   const uid = uidOrThrow();
+
   const data: Entity = {
     uid: uid,
     name: params.name.trim(),
     ruc: params.ruc.trim(),
+    type: params.type as EntityType,
     createdAt: Date.now(),
   };
 

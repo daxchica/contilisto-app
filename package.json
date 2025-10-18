@@ -28,6 +28,7 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.541.0",
     "openai": "^5.20.2",
+    "papaparse": "^5.5.3",
     "pdfjs-dist": "^5.3.93",
     "postcss": "^8.5.3",
     "react": "^19.1.0",

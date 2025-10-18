@@ -20,7 +20,8 @@ function filterRelevantBlocks(blocks: TextBlock[]): TextBlock[] {
  */
 export async function extractInvoiceFromLayoutAPI(
   blocks: TextBlock[],
-  entityRUC: string
+  entityRUC: string,
+  entityType: string,
 ): Promise<JournalEntry[]> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -30,7 +31,7 @@ export async function extractInvoiceFromLayoutAPI(
     const response = await fetch("/api/extract-invoice-layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ blocks, userRUC: entityRUC }),
+      body: JSON.stringify({ blocks, userRUC: entityRUC, entityType }),
     });
 
     if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -85,6 +86,7 @@ function coerceLayoutEntry(
       : "income";
 
   return {
+    id: crypto.randomUUID(),
     date,
     description,
     account_code: (pair as any).code || "",
@@ -94,5 +96,9 @@ function coerceLayoutEntry(
     type: tipoDetectado,
     invoice_number: r?.invoice_number ? String(r.invoice_number) : "",
     source: "ai-layout",
+    isManual: false,
+    userId: "",
+    entityId: "",
+    createdAt: Date.now(),
   };
 }

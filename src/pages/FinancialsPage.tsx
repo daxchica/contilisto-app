@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import PnLSummary from "../components/PnLSummary";
-import { BalanceSheetDisplay } from "../components/BalanceSheetDisplay";
+import BalanceSheetDisplay from "../components/BalanceSheetDisplay";
 import { JournalEntry } from "../types/JournalEntry";
 
 interface Props {
