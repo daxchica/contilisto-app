@@ -15,3 +15,5 @@ export interface CustomAccount extends Account {
   userId?: string;
   createdAt?: number;
 }
+
+export type TipoCuenta = "activo" | "pasivo" | "patrimonio";

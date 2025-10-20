@@ -1,4 +1,5 @@
 // src/components/JournalPreviewModal.tsx
+
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";

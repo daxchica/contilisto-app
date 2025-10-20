@@ -1,11 +1,37 @@
 // src/components/BalanceSheet.tsx
-
 import React, { useMemo, useState } from "react";
 import type { JournalEntry } from "../types/JournalEntry";
-import { agruparCuentasPorTipo, formatearMonto } from "../utils/contabilidadUtils";
+import { formatearMonto } from "../utils/contabilidadUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
+import ECUADOR_COA from "../../shared/coa/ecuador_coa";
+
+const COLUMNS = ["Codigo", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"] as const;
+
+// 🔹 Detecta el nivel jerárquico del código (ej: 1 = nivel 1, 10101 = nivel 3, 1010101 = nivel 5)
+function detectLevel(code: string): number {
+  if (code.length === 1) return 1;
+  if (code.length === 3) return 2;
+  if (code.length === 5) return 3;
+  if (code.length === 7) return 4;
+  return 5;
+}
+
+// 🔹 Extrae el código padre según el nivel (ej: 1010101 → 10101 → 101 → 1)
+function getParentCode(code: string, level: number): string {
+  if (level === 5) return code.slice(0, 5);
+  if (level === 4) return code.slice(0, 3);
+  if (level === 3) return code.slice(0, 3);
+  if (level === 2) return code.slice(0, 1);
+  return "";
+}
+
+// 🔹 Indenta según el nivel jerárquico
+function padLeftForLevel(text: string, level: number): string {
+  const indent = "&nbsp;&nbsp;&nbsp;&nbsp;".repeat(level - 1);
+  return `${indent}${text}`;
+}
 
 interface Props {
   entries: JournalEntry[];
@@ -13,141 +39,118 @@ interface Props {
 }
 
 export default function BalanceSheet({ entries, result = 0 }: Props) {
-  const [nivel, setNivel] = useState(4);
+  const [level, setLevel] = useState(5);
 
-  const cuentasPorTipo = useMemo(() => agruparCuentasPorTipo(entries), [entries]);
+  const groupedAccounts = useMemo(() => {
+    const map = new Map<string, {
+      code: string;
+      name: string;
+      debit: number;
+      credit: number;
+      level: number;
+    }>();
 
-  const longitudesPermitidas = { 1: 1, 2: 2, 3: 3, 4: 5 };
-  const maxLength = longitudesPermitidas[nivel] ?? 5;
+    // 1. Agregar todas las cuentas del PUC hasta el nivel seleccionado
+    for (const acc of ECUADOR_COA) {
+      const lvl = detectLevel(acc.code);
+      if (lvl <= level) {
+        map.set(acc.code, {
+          code: acc.code,
+          name: acc.name,
+          debit: 0,
+          credit: 0,
+          level: lvl,
+        });
+      }
+    }
 
-  const construirFilas = () => {
-    const rows: any[] = [];
+    // 2. Acumular débitos y créditos desde los registros contables
+    for (const entry of entries) {
+      const entryLevel = detectLevel(entry.account_code);
+      for (let l = 1; l <= Math.min(entryLevel, level); l++) {
+        const parentCode = entry.account_code.slice(0, l === 1 ? 1 : l === 2 ? 3 : l === 3 ? 5 : l === 4 ? 7 : 9);
+        const acc = map.get(parentCode);
+        if (acc) {
+          acc.debit += entry.debit || 0;
+          acc.credit += entry.credit || 0;
+        }
+      }
+    }
 
-    ["activo", "pasivo", "patrimonio"].forEach((tipo) => {
-      let cuentas = cuentasPorTipo[tipo as keyof typeof cuentasPorTipo] || [];
-      cuentas = cuentas.filter((cuenta) => cuenta.codigo.length <= maxLength);
+    // 3. Insertar Resultado del Ejercicio en la cuenta correspondiente
+    if (level >= 5) {
+      const resultadoCode = result >= 0 ? "30701" : "30702";
+      const resultadoName = result >= 0 ? "GANANCIA NETA DEL PERIODO" : "PÉRDIDA NETA DEL EJERCICIO";
 
-      if (tipo === "patrimonio") {
-        cuentas.push({
-          codigo: "39999",
-          nombre: "Resultado del Ejercicio",
-          debito: 0,
-          credito: 0,
-          saldo: result,
+      // Añadir la cuenta si no existe
+      if (!map.has(resultadoCode)) {
+        map.set(resultadoCode, {
+          code: resultadoCode,
+          name: resultadoName,
+          debit: 0,
+          credit: 0,
+          level: 5,
         });
       }
 
-      const total = cuentas.reduce((sum, c) => sum + c.saldo, 0);
+      // Sumar al resultado
+      const resultadoAcc = map.get(resultadoCode);
+      if (resultadoAcc) {
+        if (result >= 0) {
+          resultadoAcc.credit += result;
+        } else {
+          resultadoAcc.debit += -result;
+        }
+      }
+    }
 
-      rows.push([
-        tipo.toUpperCase(),
-        "",
-        "",
-        "",
-        "",
-        ""
-      ]);
+    // 4. Convertir a array, calcular saldo y ordenar
+    const array = Array.from(map.values()).map((acc) => ({
+      ...acc,
+      balance: (acc.debit ?? 0) - (acc.credit ?? 0),
+    }));
 
-      cuentas.forEach((cuenta) => {
-        rows.push([
-          cuenta.codigo,
-          cuenta.nombre,
-          "-",
-          formatearMonto(cuenta.debito),
-          formatearMonto(cuenta.credito),
-          formatearMonto(cuenta.saldo),
-        ]);
-      });
+    return array.sort((a, b) => a.code.localeCompare(b.code));
+  }, [entries, level, result]);
 
-      rows.push([
-        `TOTAL ${tipo.toUpperCase()}`,
-        "",
-        "",
-        "",
-        "",
-        formatearMonto(total),
-      ]);
-    });
-
-    return rows;
-  };
-
-  const exportarPDF = () => {
+  const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Balance General", 14, 14);
     autoTable(doc, {
       startY: 20,
-      head: [["Código", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"]],
-      body: construirFilas(),
+      head: [[...COLUMNS]],
+      body: groupedAccounts.map((acc) => [
+        acc.code,
+        acc.name.replace(/\u00a0/g, " "), // Quitar HTML entities
+        "-",
+        formatearMonto(acc.debit),
+        formatearMonto(acc.credit),
+        formatearMonto(acc.balance),
+      ]),
     });
     doc.save("balance-general.pdf");
   };
 
-  const exportarCSV = () => {
+  const exportCSV = () => {
     const csv = Papa.unparse({
-      fields: ["Código", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"],
-      data: construirFilas(),
+      fields: [...COLUMNS],
+      data: groupedAccounts.map((acc) => [
+        acc.code,
+        acc.name.replace(/\u00a0/g, " "),
+        "-",
+        formatearMonto(acc.debit),
+        formatearMonto(acc.credit),
+        formatearMonto(acc.balance),
+      ]),
     });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", "balance-general.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const renderSeccion = (tipo: "activo" | "pasivo" | "patrimonio") => {
-    let cuentas = cuentasPorTipo[tipo] || [];
-    cuentas = cuentas.filter((cuenta) => cuenta.codigo.length <= maxLength);
-
-    if (tipo === "patrimonio") {
-      cuentas.push({
-        codigo: "39999",
-        nombre: "Resultado del Ejercicio",
-        debito: 0,
-        credito: 0,
-        saldo: result,
-      });
-    }
-
-    const total = cuentas.reduce((sum, c) => sum + c.saldo, 0);
-
-    return (
-      <>
-        <tr className="bg-gray-100">
-          <td colSpan={6} className={`text-left font-bold py-2 px-4 ${
-            tipo === "activo" 
-              ? "text-green-700" 
-              : tipo === "pasivo" 
-              ? "text-red-700" 
-              : "text-purple-700"
-          }`}>
-            {tipo.toUpperCase()}
-          </td>
-        </tr>
-
-        {cuentas.map((cuenta) => (
-          <tr key={cuenta.codigo} className="border-t">
-            <td className="px-4 py-2 font-bold">{cuenta.codigo}</td>
-            <td className="px-4 py-2">{cuenta.nombre}</td>
-            <td className="px-4 py-2 text-right">-</td>
-            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.debito)}</td>
-            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.credito)}</td>
-            <td className="px-4 py-2 text-right">{formatearMonto(cuenta.saldo)}</td>
-          </tr>
-        ))}
-
-        <tr className="bg-gray-200 font-semibold">
-          <td colSpan={5} className="px-4 py-2 text-right">
-            Total {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
-          </td>
-          <td className="px-4 py-2 text-right">{formatearMonto(total)}</td>
-        </tr>
-      </>
-    );
   };
 
   return (
@@ -161,25 +164,25 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
             <select
               id="nivel"
               className="border rounded px-2 py-1 text-sm"
-              value={nivel}
-              onChange={(e) => setNivel(Number(e.target.value))}
+              value={level}
+              onChange={(e) => setLevel(Number(e.target.value))}
             >
               <option value={1}>Nivel 1</option>
               <option value={2}>Nivel 2</option>
               <option value={3}>Nivel 3</option>
               <option value={4}>Nivel 4</option>
+              <option value={5}>Nivel 5</option>
             </select>
           </div>
 
           <button
-            onClick={exportarPDF}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded"
-          >
+            onClick={exportPDF}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded">
             📄 Exportar PDF
           </button>
 
           <button
-            onClick={exportarCSV}
+            onClick={exportCSV}
             className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-1 rounded"
           >
             📊 Exportar CSV
@@ -191,18 +194,22 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
         <table className="min-w-full border border-gray-300 text-sm">
           <thead className="bg-gray-100">
             <tr>
-              <th className="px-4 py-2 text-left">Código</th>
-              <th className="px-4 py-2 text-left">Cuenta</th>
-              <th className="px-4 py-2 text-right">Balance Inicial</th>
-              <th className="px-4 py-2 text-right">Débito</th>
-              <th className="px-4 py-2 text-right">Crédito</th>
-              <th className="px-4 py-2 text-right">Saldo</th>
+              {COLUMNS.map((col) => (
+                <th key={col} className="px-4 py-2 text-left">{col}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {renderSeccion("activo")}
-            {renderSeccion("pasivo")}
-            {renderSeccion("patrimonio")}
+            {groupedAccounts.map((acc) => (
+              <tr key={acc.code} className="border-t">
+                <td className="px-4 py-2 font-bold">{acc.code}</td>
+                <td className="px-4 py-2" dangerouslySetInnerHTML={{ __html: padLeftForLevel(acc.name, acc.level) }} />
+                <td className="px-4 py-2 text-right">-</td>
+                <td className="px-4 py-2 text-right">{formatearMonto(acc.debit)}</td>
+                <td className="px-4 py-2 text-right">{formatearMonto(acc.credit)}</td>
+                <td className="px-4 py-2 text-right">{formatearMonto(acc.balance)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
