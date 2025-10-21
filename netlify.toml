@@ -1,7 +1,7 @@
 # netlify.toml
 
 [build]
-  command = "pip install -r requirements.txt && npm run build"
+  command = "npm run build"
   publish = "dist"                         # Carpeta de salida del build (vite build)
   functions = "netlify/functions"          # Directorio donde están tus serverless functions
 
