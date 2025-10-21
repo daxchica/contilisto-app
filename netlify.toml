@@ -1,6 +1,7 @@
 # netlify.toml
 
 [build]
+  command = "pip install -r requirements.txt && npm run build"
   publish = "dist"                         # Carpeta de salida del build (vite build)
   functions = "netlify/functions"          # Directorio donde están tus serverless functions
 
@@ -19,3 +20,14 @@
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["openai"]
+
+[build.environment]
+  RUSTUP_HOME = "/opt/buildhome/.rustup"
+  CARGO_HOME = "/opt/buildhome/.cargo"
+  PATH = "/opt/buildhome/.cargo/bin:/opt/buildhome/python/bin:/opt/buildhome/.pyenv/shims:/opt/buildhome/python3.9/bin:/opt/buildhome/.pyenv/versions/3.9.13/bin:/opt/buildhome/.pyenv/bin:/opt/buildhome/.nvm/versions/node/v18.14.0/bin:/opt/buildhome/bin:/opt/buildhome/python3.9/bin:/opt/buildhome/.pyenv/versions/3.9.13/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  PYTHON_VERSION = "3.9"
+  PIP_NO_CACHE_DIR = "off"
+  PIP_DISABLE_PIP_VERSION_CHECK = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-python"
