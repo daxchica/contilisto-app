@@ -25,6 +25,3 @@
   PYTHON_VERSION = "3.10"
   PIP_NO_CACHE_DIR = "off"
   PIP_DISABLE_PIP_VERSION_CHECK = "1"
-
-[[plugins]]
-  package = "@netlify/plugin-python"
