@@ -1,7 +1,7 @@
 // src/components/BalanceSheet.tsx
 import React, { useMemo, useState } from "react";
 import type { JournalEntry } from "../types/JournalEntry";
-import { formatearMonto } from "../utils/contabilidadUtils";
+import { formatAmount } from "../utils/accountingUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
@@ -17,12 +17,8 @@ function detectLevel(code: string): number {
   return 5;
 }
 
-function getParentCode(code: string, level: number): string {
-  if (level === 5) return code.slice(0, 5);
-  if (level === 4) return code.slice(0, 3);
-  if (level === 3) return code.slice(0, 3);
-  if (level === 2) return code.slice(0, 1);
-  return "";
+function getParentCodeByLevel(code: string, level: number): string {
+  return code.slice(0, level === 1 ? 1 : level === 2 ? 3 : level === 3 ? 5 : level === 4 ? 7 : 9);
 }
 
 function padLeftForLevel(text: string, level: number): string {
@@ -37,6 +33,13 @@ interface Props {
 
 export default function BalanceSheet({ entries, result = 0 }: Props) {
   const [level, setLevel] = useState(5);
+  const [collapsedLevels, setCollapsedLevels] = useState<number[]>([]);
+
+  const toggleCollapseLevel = (lvl: number) => {
+    setCollapsedLevels((prev) =>
+      prev.includes(lvl) ? prev.filter((l) => l !== lvl) : [...prev, lvl]
+    );
+  };
 
   const groupedAccounts = useMemo(() => {
     const map = new Map<string, {
@@ -47,6 +50,7 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       level: number;
     }>();
 
+    // Step 1: Initialize map with accounts from COA up to selected level
     for (const acc of ECUADOR_COA) {
       const lvl = detectLevel(acc.code);
       const group = acc.code.slice(0, 1);
@@ -61,12 +65,13 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       }
     }
 
+    // Step 2: Add journal entry values to corresponding accounts by hierarchy
     for (const entry of entries) {
       const entryLevel = detectLevel(entry.account_code);
       const group = entry.account_code.slice(0, 1);
       if (["1", "2", "3"].includes(group)) {
         for (let l = 1; l <= Math.min(entryLevel, level); l++) {
-          const parentCode = entry.account_code.slice(0, l === 1 ? 1 : l === 2 ? 3 : l === 3 ? 5 : l === 4 ? 7 : 9);
+          const parentCode = getParentCodeByLevel(entry.account_code, l);
           const acc = map.get(parentCode);
           if (acc) {
             acc.debit += entry.debit || 0;
@@ -76,55 +81,66 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       }
     }
 
-    if (level >= 5) {
-      const resultadoCode = result >= 0 ? "30701" : "30702";
-      const resultadoName = result >= 0 ? "GANANCIA NETA DEL PERIODO" : "PÉRDIDA NETA DEL EJERCICIO";
+    // 3. Add Result of the Period (Resultado del Ejercicio)
+    
+    const resultCode = result >= 0 ? "30701" : "30702";
+    const resultName = result >= 0 ? "GANANCIA NETA DEL PERIODO" : "PÉRDIDA NETA DEL EJERCICIO";
+    
+    if (!map.has(resultCode)) {
+      map.set(resultCode, {
+        code: resultCode,
+        name: resultName,
+        debit: 0,
+        credit: 0,
+        level: 5,
+      });
+    }
 
-      if (!map.has(resultadoCode)) {
-        map.set(resultadoCode, {
-          code: resultadoCode,
-          name: resultadoName,
-          debit: 0,
-          credit: 0,
-          level: 5,
-        });
+    const resultAcc = map.get(resultCode);
+    if (resultAcc) {
+      if (result >= 0) {
+        resultAcc.credit += result;
+      } else {
+        resultAcc.debit += Math.abs(result);
       }
-
-      const resultadoAcc = map.get(resultadoCode);
-      if (resultadoAcc) {
-        if (result >= 0) {
-          resultadoAcc.credit += result;
-        } else {
-          resultadoAcc.debit += -result;
+    
+      // Propagate to parent levels (307 and 3)
+      const parentCodes = ["307", "3"];
+      for (const parentCode of parentCodes) {
+        const parentAcc = map.get(parentCode);
+        if (parentAcc) {
+          parentAcc.debit += resultAcc.debit;
+          parentAcc.credit += resultAcc.credit;
         }
       }
     }
-
-    const array = Array.from(map.values()).map((acc) => ({
-      ...acc,
-      balance: (acc.debit ?? 0) - (acc.credit ?? 0),
-    }));
-
-    return array.sort((a, b) => a.code.localeCompare(b.code));
+  
+    return Array.from(map.values())
+      .map((acc) => ({
+        ...acc,
+        balance: acc.debit - acc.credit,
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code));
   }, [entries, level, result]);
 
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    doc.text("Balance General", 14, 14);
-    autoTable(doc, {
-      startY: 20,
-      head: [[...COLUMNS]],
-      body: groupedAccounts.map((acc) => [
-        acc.code,
-        acc.name.replace(/\u00a0/g, " "),
-        "-",
-        formatearMonto(acc.debit),
-        formatearMonto(acc.credit),
-        formatearMonto(acc.balance),
-      ]),
-    });
-    doc.save("balance-general.pdf");
-  };
+
+const exportPDF = () => {
+  const doc = new jsPDF();
+  doc.text("Balance General", 14, 14);
+  autoTable(doc, {
+    startY: 20,
+    head: [[...COLUMNS]],
+    body: groupedAccounts.map((acc) => [
+      acc.code,
+      acc.name.replace(/\u00a0/g, " "),
+      "-",
+      formatAmount(acc.debit),
+      formatAmount(acc.credit),
+      formatAmount(acc.balance),
+    ]),
+  });
+  doc.save("balance-general.pdf");
+};
 
   const exportCSV = () => {
     const csv = Papa.unparse({
@@ -133,9 +149,9 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
         acc.code,
         acc.name.replace(/\u00a0/g, " "),
         "-",
-        formatearMonto(acc.debit),
-        formatearMonto(acc.credit),
-        formatearMonto(acc.balance),
+        formatAmount(acc.debit),
+        formatAmount(acc.credit),
+        formatAmount(acc.balance),
       ]),
     });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -200,9 +216,9 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
                 <td className="px-4 py-2 font-bold">{acc.code}</td>
                 <td className="px-4 py-2" dangerouslySetInnerHTML={{ __html: padLeftForLevel(acc.name, acc.level) }} />
                 <td className="px-4 py-2 text-right">-</td>
-                <td className="px-4 py-2 text-right">{formatearMonto(acc.debit)}</td>
-                <td className="px-4 py-2 text-right">{formatearMonto(acc.credit)}</td>
-                <td className="px-4 py-2 text-right">{formatearMonto(acc.balance)}</td>
+                <td className="px-4 py-2 text-right">{formatAmount(acc.debit)}</td>
+                <td className="px-4 py-2 text-right">{formatAmount(acc.credit)}</td>
+                <td className="px-4 py-2 text-right">{formatAmount(acc.balance)}</td>
               </tr>
             ))}
           </tbody>
