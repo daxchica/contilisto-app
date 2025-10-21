@@ -9,7 +9,6 @@ import ECUADOR_COA from "../../shared/coa/ecuador_coa";
 
 const COLUMNS = ["Codigo", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"] as const;
 
-// 🔹 Detecta el nivel jerárquico del código (ej: 1 = nivel 1, 10101 = nivel 3, 1010101 = nivel 5)
 function detectLevel(code: string): number {
   if (code.length === 1) return 1;
   if (code.length === 3) return 2;
@@ -18,7 +17,6 @@ function detectLevel(code: string): number {
   return 5;
 }
 
-// 🔹 Extrae el código padre según el nivel (ej: 1010101 → 10101 → 101 → 1)
 function getParentCode(code: string, level: number): string {
   if (level === 5) return code.slice(0, 5);
   if (level === 4) return code.slice(0, 3);
@@ -27,7 +25,6 @@ function getParentCode(code: string, level: number): string {
   return "";
 }
 
-// 🔹 Indenta según el nivel jerárquico
 function padLeftForLevel(text: string, level: number): string {
   const indent = "&nbsp;&nbsp;&nbsp;&nbsp;".repeat(level - 1);
   return `${indent}${text}`;
@@ -50,10 +47,10 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       level: number;
     }>();
 
-    // 1. Agregar todas las cuentas del PUC hasta el nivel seleccionado
     for (const acc of ECUADOR_COA) {
       const lvl = detectLevel(acc.code);
-      if (lvl <= level) {
+      const group = acc.code.slice(0, 1);
+      if (lvl <= level && ["1", "2", "3"].includes(group)) {
         map.set(acc.code, {
           code: acc.code,
           name: acc.name,
@@ -64,25 +61,25 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       }
     }
 
-    // 2. Acumular débitos y créditos desde los registros contables
     for (const entry of entries) {
       const entryLevel = detectLevel(entry.account_code);
-      for (let l = 1; l <= Math.min(entryLevel, level); l++) {
-        const parentCode = entry.account_code.slice(0, l === 1 ? 1 : l === 2 ? 3 : l === 3 ? 5 : l === 4 ? 7 : 9);
-        const acc = map.get(parentCode);
-        if (acc) {
-          acc.debit += entry.debit || 0;
-          acc.credit += entry.credit || 0;
+      const group = entry.account_code.slice(0, 1);
+      if (["1", "2", "3"].includes(group)) {
+        for (let l = 1; l <= Math.min(entryLevel, level); l++) {
+          const parentCode = entry.account_code.slice(0, l === 1 ? 1 : l === 2 ? 3 : l === 3 ? 5 : l === 4 ? 7 : 9);
+          const acc = map.get(parentCode);
+          if (acc) {
+            acc.debit += entry.debit || 0;
+            acc.credit += entry.credit || 0;
+          }
         }
       }
     }
 
-    // 3. Insertar Resultado del Ejercicio en la cuenta correspondiente
     if (level >= 5) {
       const resultadoCode = result >= 0 ? "30701" : "30702";
       const resultadoName = result >= 0 ? "GANANCIA NETA DEL PERIODO" : "PÉRDIDA NETA DEL EJERCICIO";
 
-      // Añadir la cuenta si no existe
       if (!map.has(resultadoCode)) {
         map.set(resultadoCode, {
           code: resultadoCode,
@@ -93,7 +90,6 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
         });
       }
 
-      // Sumar al resultado
       const resultadoAcc = map.get(resultadoCode);
       if (resultadoAcc) {
         if (result >= 0) {
@@ -104,7 +100,6 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       }
     }
 
-    // 4. Convertir a array, calcular saldo y ordenar
     const array = Array.from(map.values()).map((acc) => ({
       ...acc,
       balance: (acc.debit ?? 0) - (acc.credit ?? 0),
@@ -121,7 +116,7 @@ export default function BalanceSheet({ entries, result = 0 }: Props) {
       head: [[...COLUMNS]],
       body: groupedAccounts.map((acc) => [
         acc.code,
-        acc.name.replace(/\u00a0/g, " "), // Quitar HTML entities
+        acc.name.replace(/\u00a0/g, " "),
         "-",
         formatearMonto(acc.debit),
         formatearMonto(acc.credit),
