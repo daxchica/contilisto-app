@@ -7,6 +7,7 @@ export interface Entry {
   account_name: string;
   debit?: number;
   credit?: number;
+  date?: string;
 }
 
 interface Props {

@@ -1,7 +1,7 @@
 // src/types/JournalEntry.ts
 
 export type EntryKind = "income" | "expense" | "asset" | "liability" | "equity";
-export type EntrySource = "ai" | "ai-layout" | "manual" | "edited";
+export type EntrySource = "ai" | "ai-layout" | "manual" | "edited" | "initial";
 
 /** Journal line stored in cents for perfect math */
 export interface JournalEntry {
@@ -12,36 +12,27 @@ export interface JournalEntry {
     account_code: string;
     debit?: number; // e.g., 123.45
     credit?: number; // e.g., 123.45
-    /** ISO date YYYY-MM-DD */
-    date: string;
+    date?: string;
     createdAt?: number;
-    /** Free text; typically vendor/customer or memo */
     description: string;
-    /** PUC code and name chosen for this line */
     account_name: string;
-    /** For high-level classification (used by you UI and AI). */
     type?: EntryKind; // "income" | "expense" | "liability";
-    /** Optional invoice linkage */
     invoice_number?: string;
-    /** All lines generated together share this */
     transactionId?: string;
-    /** Auth metadata (keep userId; uid deprecated for consistency) */
     uid?: string; // legacy alias; prefer userId
-    /** Provenance and manual edit flags */
-    source?: "ai" | "ai-layout" | "manual" | "edited";
+    source?: EntrySource;
     isManual?: boolean;         // true when user added/edited the line
-    /** Audit fields (epoch ms) */
     editedAt?: number;
     editedBy?: string;
     origin?: string;
     note?: string;
-    /** Optional vendor/customer RUC to aid learning */
     counterpartyRUC?: string;
 }
 
 /** helper converters */
 export const toCents = (x: number | undefined) =>
   typeof x === "number" ? Math.round(x * 100) : 0;
+
 export const fromCents = (c: number | undefined) =>
   typeof c === "number" ? c / 100 : 0;
 

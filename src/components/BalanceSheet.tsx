@@ -1,4 +1,3 @@
-// src/components/BalanceSheet.tsx
 import React, { useMemo, useState } from "react";
 import type { JournalEntry } from "../types/JournalEntry";
 import { formatAmount } from "../utils/accountingUtils";
@@ -6,141 +5,140 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
 import ECUADOR_COA from "../../shared/coa/ecuador_coa";
+import { groupEntriesByAccount } from "@/utils/groupJournalEntries";
 
-const COLUMNS = ["Codigo", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"] as const;
+const COLUMNS = ["Código", "Cuenta", "Saldo Inicial", "Débito", "Crédito", "Saldo"] as const;
 
 function detectLevel(code: string): number {
-  if (code.length === 1) return 1;
-  if (code.length === 3) return 2;
-  if (code.length === 5) return 3;
-  if (code.length === 7) return 4;
-  return 5;
+  return Math.floor((code.length - 1) / 2) + 1;
 }
 
-function getParentCodeByLevel(code: string, level: number): string {
-  return code.slice(0, level === 1 ? 1 : level === 2 ? 3 : level === 3 ? 5 : level === 4 ? 7 : 9);
-}
-
-function padLeftForLevel(text: string, level: number): string {
-  const indent = "&nbsp;&nbsp;&nbsp;&nbsp;".repeat(level - 1);
-  return `${indent}${text}`;
+function getParentCodeByLevel(code: string): string | null {
+  if (code.length <=1) return null;
+  return code.slice(0, code.length - 2);
 }
 
 interface Props {
   entries: JournalEntry[];
-  result?: number;
+  resultadoDelEjercicio: number;
+  entityId: string;
 }
 
-export default function BalanceSheet({ entries, result = 0 }: Props) {
+export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId }: Props) {
   const [level, setLevel] = useState(5);
-  const [collapsedLevels, setCollapsedLevels] = useState<number[]>([]);
+  const [collapsedCodes, setCollapsedCodes] = useState<Set<string>>(new Set());
 
-  const toggleCollapseLevel = (lvl: number) => {
-    setCollapsedLevels((prev) =>
-      prev.includes(lvl) ? prev.filter((l) => l !== lvl) : [...prev, lvl]
-    );
+  const toggleCollapse = (code: string) => {
+    const updated = new Set(collapsedCodes);
+    updated.has(code) ? updated.delete(code) : updated.add(code);
+    setCollapsedCodes(updated);
   };
 
+  const groupedEntries = useMemo(
+    () => groupEntriesByAccount(entries.filter(e => e.entityId === entityId)), 
+    [entries, entityId]
+  );
+
   const groupedAccounts = useMemo(() => {
-    const map = new Map<string, {
-      code: string;
-      name: string;
-      debit: number;
-      credit: number;
-      level: number;
-    }>();
+    const map = new Map<string, any>();
 
-    // Step 1: Initialize map with accounts from COA up to selected level
     for (const acc of ECUADOR_COA) {
-      const lvl = detectLevel(acc.code);
-      const group = acc.code.slice(0, 1);
-      if (lvl <= level && ["1", "2", "3"].includes(group)) {
-        map.set(acc.code, {
-          code: acc.code,
-          name: acc.name,
-          debit: 0,
-          credit: 0,
-          level: lvl,
-        });
-      }
-    }
+      const code = acc.code;
+      const levelDetected = detectLevel(code);
+      if (levelDetected > level) continue;
+      if (!["1", "2", "3"].includes(code[0])) continue;
+        
+      const group = groupedEntries[code] || { debit: 0, credit: 0, initial: 0 };
 
-    // Step 2: Add journal entry values to corresponding accounts by hierarchy
-    for (const entry of entries) {
-      const entryLevel = detectLevel(entry.account_code);
-      const group = entry.account_code.slice(0, 1);
-      if (["1", "2", "3"].includes(group)) {
-        for (let l = 1; l <= Math.min(entryLevel, level); l++) {
-          const parentCode = getParentCodeByLevel(entry.account_code, l);
-          const acc = map.get(parentCode);
-          if (acc) {
-            acc.debit += entry.debit || 0;
-            acc.credit += entry.credit || 0;
-          }
-        }
-      }
-    }
+      const balance = code.startsWith("1")
+      ? group.initial + group.debit - group.credit
+      : group.initial - group.debit + group.credit;
 
-    // 3. Add Result of the Period (Resultado del Ejercicio)
-    
-    const resultCode = result >= 0 ? "30701" : "30702";
-    const resultName = result >= 0 ? "GANANCIA NETA DEL PERIODO" : "PÉRDIDA NETA DEL EJERCICIO";
-    
-    if (!map.has(resultCode)) {
-      map.set(resultCode, {
-        code: resultCode,
-        name: resultName,
-        debit: 0,
-        credit: 0,
-        level: 5,
+      map.set(acc.code, {
+        code,
+        name: acc.name,
+        debit: group.debit,
+        credit: group.credit,
+        balance,
+        initialBalance: group.initial,
+        level: levelDetected,
+        parent: getParentCodeByLevel(acc.code),
       });
     }
+  
+    // Resultado del ejercicio
+    map.set("307", {
+      code: "307",
+      name: "RESULTADO DEL EJERCICIO",
+      debit: 0,
+      credit: 0,
+      balance: 0,
+      initialBalance: 0,
+      level: 2,
+      parent: "3",
+    });
+    map.set("30701", {
+      code: "30701",
+      name: "GANANCIA NETA DEL PERIODO",
+      debit: 0,
+      credit: 0,
+      balance: resultadoDelEjercicio > 0 ? resultadoDelEjercicio : 0,
+      initialBalance: 0,
+      level: 3,
+      parent: "307",
+    });
+    map.set("30702", {
+      code: "30702",
+      name: "PÉRDIDA NETA DEL EJERCICIO",
+      debit: 0,
+      credit: 0,
+      balance: resultadoDelEjercicio < 0 ? resultadoDelEjercicio : 0,
+      initialBalance: 0,
+      level: 3,
+      parent: "307",
+    });
 
-    const resultAcc = map.get(resultCode);
-    if (resultAcc) {
-      if (result >= 0) {
-        resultAcc.credit += result;
-      } else {
-        resultAcc.debit += Math.abs(result);
-      }
-    
-      // Propagate to parent levels (307 and 3)
-      const parentCodes = ["307", "3"];
-      for (const parentCode of parentCodes) {
-        const parentAcc = map.get(parentCode);
-        if (parentAcc) {
-          parentAcc.debit += resultAcc.debit;
-          parentAcc.credit += resultAcc.credit;
-        }
+    // Propagar montos hacia padres
+    const allAccounts = Array.from(map.values()).sort((a, b) => b.code.length - a.code.length);
+    for (const acc of allAccounts) {
+      if (!acc.parent) continue;
+      const parent = map.get(acc.parent);
+      if (parent) {
+        parent.initialBalance += acc.initialBalance;
+        parent.debit += acc.debit;
+        parent.credit += acc.credit;
+        parent.balance += acc.balance;
       }
     }
-  
-    return Array.from(map.values())
-      .map((acc) => ({
-        ...acc,
-        balance: acc.debit - acc.credit,
-      }))
-      .sort((a, b) => a.code.localeCompare(b.code));
-  }, [entries, level, result]);
 
+    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+  }, [groupedEntries, level, resultadoDelEjercicio, entityId]);
 
-const exportPDF = () => {
-  const doc = new jsPDF();
-  doc.text("Balance General", 14, 14);
-  autoTable(doc, {
-    startY: 20,
-    head: [[...COLUMNS]],
-    body: groupedAccounts.map((acc) => [
-      acc.code,
-      acc.name.replace(/\u00a0/g, " "),
-      "-",
-      formatAmount(acc.debit),
-      formatAmount(acc.credit),
-      formatAmount(acc.balance),
-    ]),
-  });
-  doc.save("balance-general.pdf");
-};
+  const isVisible = (acc: { code: string; parent: string | null }) => {
+    if (!acc.parent) return true;
+    for (const code of collapsedCodes) {
+      if (acc.code.startsWith(code) && acc.code !== code) return false;
+    }
+    return true;
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.text("Balance General", 14, 14);
+    autoTable(doc, {
+      startY: 20,
+      head: [[...COLUMNS]],
+      body: groupedAccounts.map((acc) => [
+        acc.code,
+        acc.name.replace(/\u00a0/g, " "),
+        formatAmount(acc.initialBalance),
+        formatAmount(acc.debit),
+        formatAmount(acc.credit),
+        formatAmount(acc.balance),
+      ]),
+    });
+    doc.save("balance-general.pdf");
+  };
 
   const exportCSV = () => {
     const csv = Papa.unparse({
@@ -148,7 +146,7 @@ const exportPDF = () => {
       data: groupedAccounts.map((acc) => [
         acc.code,
         acc.name.replace(/\u00a0/g, " "),
-        "-",
+        formatAmount(acc.initialBalance),
         formatAmount(acc.debit),
         formatAmount(acc.credit),
         formatAmount(acc.balance),
@@ -168,7 +166,6 @@ const exportPDF = () => {
     <div className="p-4">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
         <h1 className="text-xl font-bold text-blue-800">📘 Balance General</h1>
-
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <label htmlFor="nivel" className="text-sm text-gray-700">Nivel:</label>
@@ -178,24 +175,15 @@ const exportPDF = () => {
               value={level}
               onChange={(e) => setLevel(Number(e.target.value))}
             >
-              <option value={1}>Nivel 1</option>
-              <option value={2}>Nivel 2</option>
-              <option value={3}>Nivel 3</option>
-              <option value={4}>Nivel 4</option>
-              <option value={5}>Nivel 5</option>
+              {[1, 2, 3, 4, 5].map((lvl) => (
+                <option key={lvl} value={lvl}>Nivel {lvl}</option>
+              ))}
             </select>
           </div>
-
-          <button
-            onClick={exportPDF}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded">
+          <button onClick={exportPDF} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded">
             📄 Exportar PDF
           </button>
-
-          <button
-            onClick={exportCSV}
-            className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-1 rounded"
-          >
+          <button onClick={exportCSV} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-1 rounded">
             📊 Exportar CSV
           </button>
         </div>
@@ -211,16 +199,29 @@ const exportPDF = () => {
             </tr>
           </thead>
           <tbody>
-            {groupedAccounts.map((acc) => (
-              <tr key={acc.code} className="border-t">
-                <td className="px-4 py-2 font-bold">{acc.code}</td>
-                <td className="px-4 py-2" dangerouslySetInnerHTML={{ __html: padLeftForLevel(acc.name, acc.level) }} />
-                <td className="px-4 py-2 text-right">-</td>
-                <td className="px-4 py-2 text-right">{formatAmount(acc.debit)}</td>
-                <td className="px-4 py-2 text-right">{formatAmount(acc.credit)}</td>
-                <td className="px-4 py-2 text-right">{formatAmount(acc.balance)}</td>
-              </tr>
-            ))}
+            {groupedAccounts.filter(isVisible).map((acc) => {
+              const hasChildren = groupedAccounts.some((child) => child.parent === acc.code);
+              const isCollapsed = collapsedCodes.has(acc.code);
+              return (
+                <tr key={acc.code} className="border-t">
+                  <td className="px-4 py-2 font-bold">{acc.code}</td>
+                  <td className="px-4 py-2">
+                    <span
+                      onClick={() => hasChildren && toggleCollapse(acc.code)}
+                      className={`cursor-pointer select-none ${hasChildren ? "text-blue-600 font-semibold" : ""}`}
+                    >
+                      {`${"    ".repeat(acc.level - 1)}${hasChildren ? (isCollapsed ? "► " : "▼ ") : ""}${acc.name}`}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-right">{formatAmount(acc.initialBalance)}</td>
+                  <td className="px-4 py-2 text-right">{formatAmount(acc.debit)}</td>
+                  <td className="px-4 py-2 text-right">{formatAmount(acc.credit)}</td>
+                  <td className={`px-4 py-2 text-right ${acc.balance < 0 ? "text-red-600 font-semibold" : ""}`}>
+                    {formatAmount(acc.balance)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

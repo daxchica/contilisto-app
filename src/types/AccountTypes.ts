@@ -3,6 +3,8 @@
 export interface Account {
   code: string;
   name: string;
+  level: number;
+  sign?: "positive" | "negative";
 }
 
 /** Row stored in Firestore for user-defined accounts */
@@ -17,3 +19,12 @@ export interface CustomAccount extends Account {
 }
 
 export type TipoCuenta = "activo" | "pasivo" | "patrimonio";
+
+export interface AccountWithBalance extends Account {
+  debit: number;
+  credit: number;
+  balance: number;
+  initialBalance?: number;
+  parentCode?: string;
+  children?: AccountWithBalance[];
+}

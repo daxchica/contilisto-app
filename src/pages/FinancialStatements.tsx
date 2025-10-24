@@ -47,9 +47,10 @@ export default function FinancialStatements() {
     const from = startDate ? new Date(startDate) : null;
     const to   = endDate   ? new Date(endDate)   : null;
     return entries.filter((e) => {
-      const d = new Date(e.date);
+      const d = e.date ? new Date(e.date) : null;
+      if (!d) return false;
       if (from && d < from) return false;
-      if (to && d > to)     return false;
+      if (to && d > to) return false;
       return true;
     });
   }, [entries, startDate, endDate]);
@@ -72,7 +73,7 @@ export default function FinancialStatements() {
 
     if (activeTab === "comprobacion") return <TrialBalance entries={filteredEntries} />;
     if (activeTab === "estado")       return <PnLSummary   entries={filteredEntries} />;
-    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} result={resultadoDelEjercicio} />;
+    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} resultadoDelEjercicio={resultadoDelEjercicio} entityId={entityId} />;
 
     return null;
   };
@@ -91,8 +92,6 @@ export default function FinancialStatements() {
     );
   }
 
-  
-
   return (
     <div className="pt-24 px-4 min-h-screen flex justify-center">
       <div className="w-full max-w-5xl">
@@ -103,7 +102,7 @@ export default function FinancialStatements() {
 
         {/* Panel de Saldos Iniciales */}
         <div className="mb-8">
-          <InitialBalancePanel entityId={entityId} />
+          <InitialBalancePanel entityId={entityId} userId="" accounts={[]}/>
         </div>
 
         {/* Filtros globales */}
