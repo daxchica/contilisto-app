@@ -5,13 +5,9 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
 import ECUADOR_COA from "../../shared/coa/ecuador_coa";
-import { groupEntriesByAccount } from "@/utils/groupJournalEntries";
+import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries";
 
 const COLUMNS = ["Código", "Cuenta", "Saldo Inicial", "Débito", "Crédito", "Saldo"] as const;
-
-function detectLevel(code: string): number {
-  return Math.floor((code.length - 1) / 2) + 1;
-}
 
 function getParentCodeByLevel(code: string): string | null {
   if (code.length <=1) return null;
