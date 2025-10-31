@@ -1,6 +1,5 @@
 import { db } from "../firebase-config";
 import {
-  addDoc,
   collection,
   doc,
   deleteDoc,
@@ -19,8 +18,9 @@ import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
 import { fetchProcessedInvoice } from "./firestoreLogService";
 import {
-  logProcessedInvoice as logToLocalStorage,
+  saveInvoiceToLocalLog,
   getProcessedInvoices as getLocalProcessed,
+  logProcessedInvoice as logToLocalStorage,
 } from "./localLogService";
 
 import { JournalEntry } from "../types/JournalEntry";
@@ -86,6 +86,22 @@ export async function saveJournalEntries(
     savedEntries.push(fullEntry);
   }
 
+  // Fixed: Registrar facturas procesadas despues de guardar exitosamente
+  const uniqueInvoices = new Set(
+    savedEntries
+      .map((e) => e.invoice_number)
+      .filter((inv): inv is string => Boolean(inv?.trim()))
+  );
+
+  for (const invoiceNumber of uniqueInvoices) {
+    try {
+      saveInvoiceToLocalLog(entityId, invoiceNumber);
+      console.log(`Factura registrada en Log: ${invoiceNumber}`);
+    } catch (logErr) {
+      console.error(`Error registrando factura ${invoiceNumber}:`, logErr);
+    }
+  }
+
   return savedEntries;
 }
 
@@ -93,6 +109,11 @@ export async function saveJournalEntries(
  * Obtiene todos los asientos contables para una entidad.
  */
 export async function fetchJournalEntries(entityId: string): Promise<JournalEntry[]> {
+  if (!entityId) {
+    console.warn(" fetchJournalEntries called without entityId");
+    return [];
+  }
+
   const journalRef = collection(db, "entities", entityId, "journalEntries");
   const snapshot = await getDocs(journalRef);
   return snapshot.docs.map((docSnap) => ({
@@ -131,12 +152,14 @@ export async function parsePDF(
   entityType: string,
   useLayoutAI: boolean = false
 ): Promise<JournalEntry[]> {
-  console.log("parsePDF() fue llamado con archivo:", File.name);
+  console.log("parsePDF() fue llamado con archivo:", file.name);
+
   if (!file || !userRUC || !entityId || !userId || !entityType) {
     throw new Error("❌ Faltan parámetros obligatorios en parsePDF");
   }
 
   const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  
   const processedInvoices = await getAlreadyProcessedInvoiceNumbers(entityId);
   const entries: JournalEntry[] = [];
 
@@ -150,9 +173,15 @@ export async function parsePDF(
       );
 
       if (newOnly.length > 0) {
-        entries.push(...newOnly.map((e) => ({ ...e, transactionId, userId })));
+        entries.push(...newOnly.map((e) => ({ 
+          ...e, 
+          transactionId, 
+          userId,
+        entityId 
+      })));
+      console.log(`Extraidos ${newOnly.length} asientos nuevos (LayoutAI)`);
       } else {
-        console.warn("📭 No se encontraron asientos nuevos (LayoutAI)");
+        console.warn("📭 Factura ya procesada anteriormente (LayoutAI)");
       }
     } else {
       const buffer = await file.arrayBuffer();
@@ -172,14 +201,20 @@ export async function parsePDF(
       );
 
       if (newOnly.length > 0) {
-        entries.push(...newOnly.map((e) => ({ ...e, transactionId, userId })));
+        entries.push(...newOnly.map((e) => ({ 
+          ...e, 
+          transactionId, 
+          userId,
+          entityId 
+        })));
+        console.log(`Extraidos ${newOnly.length} asientos nuevos (OCR)`);
       } else {
-        console.warn("📭 No se encontraron asientos nuevos (OCR)");
+        console.warn("📭 Factura ya procesada anteriormente (OCR)");
       }
     }
   } catch (err) {
     console.error("❌ Error durante la extracción IA:", err);
-    return [];
+    throw err;
   }
 
   return entries;
@@ -188,7 +223,10 @@ export async function parsePDF(
 /**
  * Elimina todos los registros con un mismo transactionId.
  */
-export async function deleteJournalEntriesByTransactionId(entityId: string, transactionId: string) {
+export async function deleteJournalEntriesByTransactionId(
+  entityId: string, 
+  transactionId: string
+) {
   const qy = query(
     collection(db, "entities", entityId, "journalEntries"),
     where("transactionId", "==", transactionId)
@@ -212,12 +250,16 @@ export async function deleteJournalEntriesByInvoiceNumber(
 
   const deletions = snap.docs.map((docRef) => deleteDoc(docRef.ref));
   await Promise.all(deletions);
+
+  console.log(`Eliminados ${snap.size} asientos con facturas:`, invoiceNumbers);
 }
 
 /**
  * Crea un único asiento contable.
  */
-export async function createJournalEntry(entry: JournalEntry & { entityId: string; userId: string }) {
+export async function createJournalEntry(
+  entry: JournalEntry & { entityId: string; userId: string }
+): Promise<JournalEntry> {
   const saved = await saveJournalEntries(entry.entityId, [entry], entry.userId);
   return saved[0];
 }
@@ -238,18 +280,17 @@ export async function deleteJournalEntriesByIds(
   }
 
   try {
-    const journalPath = `entities/${entityId}/journalEntries`;
-    const colRef = collection(db, journalPath);
-
     const BATCH_SIZE = 450;
     for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
       const chunk = entryIds.slice(i, i + BATCH_SIZE);
       const batch = writeBatch(db);
+      
       chunk.forEach((id) => {
         if (!id) return;
         const entryRef = doc(db, "entities", entityId, "journalEntries", id);
         batch.delete(entryRef);
       });
+      
       await batch.commit();
     }
 

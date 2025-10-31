@@ -1,130 +1,104 @@
 // ARCHIVO: src/components/PDFUploader.tsx
 
-import { useState, useEffect,DragEvent, ChangeEvent, useRef } from "react";
-import { parsePDF, saveJournalEntries } from "../services/journalService";
+import { useState, useEffect, DragEvent, ChangeEvent, useRef } from "react";
+import { parsePDF } from "../services/journalService";
 import JournalPreviewModal from "./JournalPreviewModal";
 import type { JournalEntry } from "../types/JournalEntry";
 import type { Account } from "../types/AccountTypes";
 
 interface PDFUploaderProps {
-  onUploadComplete: (journal: JournalEntry[], preview: string) => void;
+  onUploadComplete: (entries: JournalEntry[]) => void;
   userRUC?: string;
   entityId: string;
   userId: string;
   accounts: Account[];
   entityType: string;
-  refreshJournal?: () => void;
 }
 
 export default function PDFUploader({
   userRUC,
   entityId,
   userId,
-  accounts,
   entityType,
   onUploadComplete,
-  refreshJournal,
 }: PDFUploaderProps) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewEntries, setPreviewEntries] = useState<JournalEntry[]>([]);
-  const [processedFiles, setProcessedFiles] = useState<string[]>([]); // (optional)
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const resetPreviewState = () => {
-    setShowPreview(false);
-    setPreviewEntries([]);
-  };
-
-  const sanitizeEntry = (entry: JournalEntry): JournalEntry => {
-    const clean = { ...entry };
-    delete clean.editedAt;
-    delete clean.createdAt;
-    delete clean.origin;
-    delete clean.note;
-    return clean;
-  };
-
-  const handleConfirm = async (confirmed: JournalEntry[], note: string) => {
-    try{
-      const sanitized = confirmed.map(sanitizeEntry);
-      onUploadComplete(sanitized, note || "preview-confirmed");
-      setSuccessMessage(`✅ ${sanitized.length} asientos guardados exitosamente.`);
-    } catch (err) {
-      console.error("Error al guardar los asientos confirmados:", err);
-      setError("❌ Hubo un error al guardar los asientos.");
-    } finally {
-      // Cierra el modal SIEMPRE, incluso si hubo error
-      resetPreviewState();
-    }
-  };
 
   const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    const dropped = Array.from(e.dataTransfer.files).filter((f) =>
+    const dropped = Array.from(e.dataTransfer.files).filter((f) => 
       f.name.toLowerCase().endsWith(".pdf")
-    );
-    if (dropped.length === 0) {
-      setError("Solo se aceptan archivos PDF.");
-      return;
-    }
-    await handleFiles(dropped);
-  };
+  );
+  if (dropped.length === 0) {
+    setError("solo se aceptan archivos PDF.");
+    return;
+  }
+  await handleFiles(dropped);
+};
 
-  const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files || []).filter(f => f.name.toLowerCase().endsWith(".pdf"));
-    if (selected.length === 0) {
-      setError("Selecciona al menos un archivo PDF.");
-      return;
-    }
-    await handleFiles(selected);
-    // permite volver a seleccionar los mismos archivos
-    if (fileInputRef.current) fileInputRef.current.value = "";
+const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
+  const selected = Array.from(e.target.files || []).filter((f) => 
+    f.name.toLowerCase().endsWith(".pdf")
+  );
+  if (selected.length === 0) {
+    setError("Selecciona al menos un archivo PDF.");
+    return;
+  }
+  await handleFiles(selected);
+  if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleFiles = async (files: File[]) => {
     if (!userRUC || !entityId || !userId || !entityType) {
-      setError("Faltan parámetros obligatorios para procesar los archivos.");
+      setError("Faltan parametros obligatorios para procesar los archivos");
       return;
-    }
+  }
 
-    setLoading(true);
-    setError("");
-    const allEntries: JournalEntry[] = [];
-    const ignored: string[] = [];
+  setLoading(true);
+  setError("");
+  setSuccessMessage("");
 
-    for (const file of files) {
-      try {
-        const entries = await parsePDF(file, userRUC, entityId, userId, entityType);
-        if (entries.length > 0) {
-          allEntries.push(...entries);
-          setProcessedFiles((prev) => [...prev, file.name]);
-        } else {
-          ignored.push(file.name);
-        }
-      } catch (err) {
-        console.warn(`❌ Error procesando ${file.name}`, err);
-        ignored.push(file.name);
+  const allEntries: JournalEntry[] = [];
+  const processedFiles: string[] = [];
+  const ignoredFiles: string[] = [];
+
+  for (const file of files) {
+    try {
+      console.log(`Procesando archivo: ${file.name}`);
+      const entries = await parsePDF(file, userRUC, entityId, userId, entityType);
+
+      if (entries.length > 0) {
+        allEntries.push(...entries);
+        processedFiles.push(file.name);
+      } else {
+        ignoredFiles.push(file.name);
       }
+    } catch (err) {
+      console.error(`Error procesando ${file.name}:`, err);
+      ignoredFiles.push(file.name);
     }
+  }
 
-    if (allEntries.length > 0) {
-      onUploadComplete(allEntries, "");
-    } else {
-      setError("Ningún archivo nuevo fue procesado. Posiblemente ya fueron procesados antes.");
+  setLoading(false);
+
+  // Simplificado - solo pasar entradas al padre
+  if (allEntries.length > 0) {
+    setSuccessMessage(`${allEntries.length} asientos extraidos de ${processedFiles.length} archivo(s)`);
+    onUploadComplete(allEntries);
+  } else {
+    setError(
+      ignoredFiles.length > 0
+        ? `Archivos ya procesados o sin datos validos: ${ignoredFiles.join(", ")}`
+        : "No se pudieron extraer asientos de los archivos."
+      );
     }
-
-    if (ignored.length > 0) {
-      setError(`Se ignoraron archivos ya procesados: ${ignored.join(", ")}`);
-    }
-
-    setLoading(false);
   };
+  
 
   const handleSelectClick = () => {
     fileInputRef.current?.click();
@@ -152,14 +126,17 @@ export default function PDFUploader({
         dragging ? "bg-blue-100" : "bg-white"
       }`}
     >
-      <p className="mb-2">Arrastra tus PDFs aquí o usa el botón para seleccionar.</p>
+      <p className="mb-2">
+        Arrastra tus PDFs aquí o usa el botón para seleccionar.
+      </p>
 
       <button
         type="button"
         onClick={handleSelectClick}
+        disabled={loading}
         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
       >
-        Seleccionar archivos
+        {loading ? " Procesando..." : "Seleccionar archivos"}
       </button>
 
       <input
@@ -170,16 +147,23 @@ export default function PDFUploader({
         onChange={handleFileInput}
         className="hidden"
         title="Selecciona tus archivos PDF"
+        disabled={loading}
         placeholder="Selecciona tus archivos PDF"
       />
 
-      {loading && <p className="mt-2 text-blue-600">⏳ Procesando archivos…</p>}
-      {successMessage && <p className="mt-2 text-green-700">{successMessage}</p>}
-      {processedFiles.length > 0 && (
-        <p className="mt-2 text-sm text-green-600">✅ Archivos procesados: {processedFiles.join(", ")}</p>
+      {loading && (
+        <p className="mt-2 text-blue-600">
+          ⏳ Extrayendo datos de facturas con IA...
+        </p>
       )}
-      {error && <p className="mt-2 whitespace-pre-line text-red-600">{error}</p>}
 
+      {successMessage && (
+        <p className="mt-2 text-green-700 font-medium">{successMessage}</p>
+      )}
+
+      {error && (
+        <p className="mt-2 whitespace-pre-line text-red-600 font-medium">{error}</p>
+      )}
     </div>
   );
 }

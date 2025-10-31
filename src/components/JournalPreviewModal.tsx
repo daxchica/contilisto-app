@@ -128,7 +128,10 @@ export default function JournalPreviewModal({
       const next = [...prev];
       const cur = next[idx];
       const merged = { ...cur, ...patch };
-      const canon = normalizeEntry({ account_code: merged.account_code, account_name: merged.account_name });
+      const canon = normalizeEntry({ 
+        account_code: merged.account_code, 
+        account_name: merged.account_name 
+      });
 
       next[idx] = {
         ...merged,
@@ -147,10 +150,24 @@ export default function JournalPreviewModal({
   const setAmount = (idx: number, field: "debit" | "credit", raw: string) => {
     const val = raw.trim() === "" ? undefined : Number.parseFloat(raw);
     if (field === "debit") {
-      patchRow(idx, { debit: Number.isFinite(val as number) ? (val as number) : undefined, credit: undefined });
+      patchRow(idx, { 
+        debit: Number.isFinite(val as number) ? (val as number) : undefined, 
+        credit: undefined 
+      });
     } else {
-      patchRow(idx, { credit: Number.isFinite(val as number) ? (val as number) : undefined, debit: undefined });
+      patchRow(idx, { 
+        credit: Number.isFinite(val as number) ? (val as number) : undefined, 
+        debit: undefined 
+      });
     }
+  };
+
+  const setDescription = (idx: number, description: string) => {
+    patchRow(idx, { description });
+  };
+
+  const setDate = (idx: number, date: string) => {
+    patchRow(idx, { date });
   };
 
   const applyCode = (idx: number, code: string) => {
@@ -242,7 +259,7 @@ export default function JournalPreviewModal({
   setIsSaving(true);
 
   try {
-    const withNote: JournalEntry[] = rows.map((r) => ({
+    const finalEntries: JournalEntry[] = rows.map((r) => ({
     ...r,
     description: r.description?.trim() ? r.description : note || r.description,
     userId,
@@ -250,18 +267,18 @@ export default function JournalPreviewModal({
     editedAt: r.isManual ? Date.now() : r.editedAt ?? Date.now(),
   }));
 
-    console.log("✅ Guardando asientos desde JournalPreviewModal:", withNote, note);
+    console.log("✅ Guardando asientos desde JournalPreviewModal:", finalEntries, length);
 
-    await learnFromEdits(withNote);
-    await onSave(withNote, note);
-    onClose();
+    await learnFromEdits(finalEntries);
+
+    await onSave(finalEntries, note);
+
   } catch (error) {
     console.error("❌ Error al confirmar asiento:", error);
     alert("Error al guardar los asientos contables.");
-  } finally {
     setIsSaving(false);
   }
-}, [rows, note, userId, entityId, canConfirm, isSaving, onSave, onClose]);
+}, [rows, note, userId, entityId, canConfirm, isSaving, onSave]);
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
@@ -284,20 +301,39 @@ export default function JournalPreviewModal({
               🧾 Previsualización de Asientos Contables
             </h2>
             <div className="flex gap-2">
-              <button onClick={() => insertLine(selectedIdx ?? undefined)} className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700">
+              <button 
+                onClick={() => insertLine(selectedIdx ?? undefined)} 
+                className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700"
+                disabled={isSaving}
+              >
                 ➕ Agregar línea
               </button>
-              <button onClick={duplicateSelected} disabled={selectedIdx == null} className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <button 
+                onClick={duplicateSelected} 
+                disabled={selectedIdx == null} 
+                className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 ⧉ Duplicar
               </button>
-              <button onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))} disabled={selectedIdx == null} className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <button 
+                onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))} 
+                disabled={selectedIdx == null} 
+                className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 ✖ Eliminar
               </button>
             </div>
           </div>
 
           <div className="mb-3">
-            <input className="w-full rounded border px-3 py-3 text-slate-700" placeholder="Ej: Factura No. XXX-XXX-000123, ajuste por depreciación, reclasificación, etc." aria-label="Anotación del asiento (opcional)" value={note} onChange={(e) => setNote(e.target.value)} />
+            <input 
+              className="w-full rounded border px-3 py-3 text-slate-700" 
+              placeholder="Ej: Factura No. XXX-XXX-000123, ajuste por depreciación, reclasificación, etc." 
+              aria-label="Anotación del asiento (opcional)" 
+              value={note} 
+              onChange={(e) => setNote(e.target.value)}
+              disabled={isSaving} 
+            />
           </div>
 
           <div className="max-h-[60vh] overflow-auto rounded border">
@@ -316,9 +352,18 @@ export default function JournalPreviewModal({
                   const selected = selectedIdx === idx;
                   const codeValue = canonicalCodeFrom(r.account_code || r.account_name || "") || inferCodeFromName(r.account_name) || "";
                   return (
-                    <tr key={r._rid} className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`} onClick={() => setSelectedIdx(idx)}>
+                    <tr 
+                      key={r._rid} 
+                      className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`} 
+                      onClick={() => setSelectedIdx(idx)}
+                    >
                       <td className="border p-2">
-                        <select className="w-full rounded border px-2 py-2" value={codeValue} onChange={(e) => applyCode(idx, e.target.value)}>
+                        <select 
+                          className="w-full rounded border px-2 py-2" 
+                          value={codeValue} 
+                          onChange={(e) => applyCode(idx, e.target.value)}
+                          disabled={isSaving}
+                        >
                           <option value="">-- Seleccionar --</option>
                           {accounts.map((a) => (
                             <option key={a.code} value={a.code}>{a.code}</option>
@@ -326,16 +371,51 @@ export default function JournalPreviewModal({
                         </select>
                       </td>
                       <td className="border p-2">
-                        <AccountPicker accounts={accounts} value={codeValue ? { code: codeValue, name: codeToName.get(codeValue) ?? r.account_name } : null} onChange={(acc) => applyAccount(idx, acc)} placeholder="Buscar cuenta por nombre o código…" displayMode="name" inputClassName="w-full rounded border px-2 py-2" />
+                        {isSaving ? (
+                          <input
+                            type="text"
+                            className="w-full rounded border px-2 py-2 text-sm bg-gray-50"
+                            value={codeToName.get(codeValue) ?? r.account_name}
+                            disabled
+                          />
+                      ) : (
+                        <AccountPicker 
+                          accounts={accounts} 
+                          value={codeValue ? { code: codeValue, name: codeToName.get(codeValue) ?? r.account_name } : null} 
+                          onChange={(acc) => applyAccount(idx, acc)} 
+                          placeholder="Buscar cuenta por nombre o código…" 
+                          displayMode="name" 
+                          inputClassName="w-full rounded border px-2 py-2" 
+                        />
+                      )}
+                    </td>
+                    <td className="border p-2">
+                      <input
+                        inputMode="decimal" 
+                        type="number" 
+                        step="0.01" 
+                        className="w-full rounded border px-2 py-2 text-right text-sm" 
+                        value={r.debit ?? ""} 
+                        onChange={(ev) => setAmount(idx, "debit", ev.target.value)} 
+                      />
                       </td>
                       <td className="border p-2 text-right">
-                        <input inputMode="decimal" type="number" step="0.01" className="w-full rounded border px-2 py-2 text-right" value={r.debit ?? ""} onChange={(ev) => setAmount(idx, "debit", ev.target.value)} />
-                      </td>
-                      <td className="border p-2 text-right">
-                        <input inputMode="decimal" type="number" step="0.01" className="w-full rounded border px-2 py-2 text-right" value={r.credit ?? ""} onChange={(ev) => setAmount(idx, "credit", ev.target.value)} />
+                        <input 
+                          inputMode="decimal" 
+                          type="number" 
+                          step="0.01" 
+                          className="w-full rounded border px-2 py-2 text-right text-sm" 
+                          value={r.credit ?? ""} 
+                          onChange={(ev) => setAmount(idx, "credit", ev.target.value)}
+                          disabled={isSaving}
+                        />
                       </td>
                       <td className="border p-2 text-center">
-                        <button className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700" onClick={() => removeRow(idx)}>
+                        <button 
+                          className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700" 
+                          onClick={() => removeRow(idx)}
+                          disabled={isSaving}
+                        >
                           ✖
                         </button>
                       </td>
@@ -361,7 +441,11 @@ export default function JournalPreviewModal({
           </div>
 
           <div className="mt-4 flex items-center justify-end gap-3">
-            <button onClick={onClose} className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300">
+            <button 
+              onClick={onClose} 
+              className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300"
+              disabled={isSaving}
+            >
               Cancelar
             </button>
             <button 

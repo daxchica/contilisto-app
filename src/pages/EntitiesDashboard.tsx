@@ -16,7 +16,6 @@ import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import type { Entity, EntityType } from "../types/Entity";
 
-
 import {
   createEntity,
   deleteEntity,
@@ -31,32 +30,41 @@ import {
 import { 
   deleteInvoicesFromFirestoreLog,
   clearFirestoreLogForEntity,
-  fetchProcessedInvoice,
 } from "../services/firestoreLogService";
 import {
   clearLocalLogForEntity,
   deleteInvoicesFromLocalLog,
   getProcessedInvoices,
-  saveInvoiceToLocalLog,
 } from "../services/localLogService";
 
 // merged chart loader
 import { getEntityChart } from "../services/getEntityChart";
 
 /* ---------------- Dev helper (only in DEV) ---------------- */
-function DevLogResetButton({ entityId, ruc, setSessionJournal, 
-
-}: { entityId: string; ruc: string; setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>> }) {
+function DevLogResetButton({ 
+  entityId, 
+  ruc, 
+  onReset, 
+}: { 
+  entityId: string; 
+  ruc: string; 
+  onReset: () => void;
+}) {
   if (!entityId || !ruc || process.env.NODE_ENV !== "development") return null;
+  
   const handleReset = async () => {
     if (!window.confirm("¿Borrar todos los logs procesados?")) return;
     await clearFirestoreLogForEntity(entityId);
     clearLocalLogForEntity(ruc);
-    setSessionJournal([]);
+    onReset();
     alert("✔️ Logs borrados.");
   };
+
   return (
-    <button onClick={handleReset} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded w-fit">
+    <button 
+      onClick={handleReset} 
+      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded w-fit"
+    >
       🧹 Borrar logs de facturas procesadas (DEV)
     </button>
   );
@@ -66,12 +74,12 @@ function DevLogResetButton({ entityId, ruc, setSessionJournal,
 function InvoiceLogDropdown({ 
   entityId, 
   ruc, 
-  setSessionJournal,
+  onDelete,
   logRefreshTrigger,
 }: { 
   entityId: string; 
   ruc: string; 
-  setSessionJournal: React.Dispatch<React.SetStateAction<JournalEntry[]>>;
+  onDelete: () => void;
   logRefreshTrigger: number;
 }) {
   const [invoices, setInvoices] = useState<string[]>([]);
@@ -107,14 +115,13 @@ function InvoiceLogDropdown({
   
       setInvoices((prev) => prev.filter((inv) => !toDelete.includes(inv)));
       setSelected(new Set());
-      setSessionJournal((prev) => 
-        prev.filter((entry) => !toDelete.includes((entry.invoice_number ?? "").trim())));
+      onDelete();
       alert("🗑️ Facturas eliminadas del log.");
     } catch (err) {
       console.error("Error deleting invoices and journal entries:", err);
       alert("Error al eliminar registros.");
     }
-  }, [entityId, ruc, selected, setSessionJournal]);
+  }, [entityId, ruc, selected, onDelete]);
 
   if (!invoices.length) return null;
 
@@ -157,7 +164,10 @@ export default function EntitiesDashboard() {
   const [selectedEntries, setSelectedEntries] = useState<JournalEntry[]>([]);
 
   const { entity: globalEntity, setEntity } = useSelectedEntity();
-  const selectedEntity = useMemo(() => entities.find((e) => e.id === selectedEntityId) ?? null, [selectedEntityId, entities]);
+  const selectedEntity = useMemo(
+    () => entities.find((e) => e.id === selectedEntityId) ?? null, 
+    [selectedEntityId, entities]
+  );
   const selectedEntityRUC = selectedEntity?.ruc ?? "";
   
   const [loadingJournal, setLoadingJournal] = useState(false);
@@ -168,10 +178,34 @@ export default function EntitiesDashboard() {
   const [showAddEntity, setShowAddEntity] = useState(false);
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
+  /* ==================== CORE REFRESH FUNCTION ==================== */
+  /**
+   * ✅ FIXED: Single source of truth para recargar journal
+   */
+  const refreshJournal = useCallback(async () => {
+    if (!selectedEntityId) {
+      setSessionJournal([]);
+      return;
+    }
+
+    try {
+      setLoadingJournal(true);
+      const fetched = await fetchJournalEntries(selectedEntityId);
+      setSessionJournal(fetched);
+      console.log(`✅ Journal recargado: ${fetched.length} asientos`);
+    } catch (err) {
+      console.error("Error loading journal entries:", err);
+      setSessionJournal([]);
+    } finally {
+      setLoadingJournal(false);
+    }
+  }, [selectedEntityId]);
+
   /* 1) Load user entities */
   useEffect(() => {
     if (!user?.uid) return;
     let cancelled = false;
+    
     (async () => {
       try {
         const list = await fetchEntities(user.uid);
@@ -195,8 +229,9 @@ export default function EntitiesDashboard() {
         }
       }
     })();
+    
     return () => { cancelled = true; };
-    }, [user?.uid]);
+  }, [user?.uid]);
 
   /* 2) Hydrate selection from global context */
   useEffect(() => { 
@@ -216,7 +251,7 @@ export default function EntitiesDashboard() {
         ruc: selectedEntity.ruc,
         name: selectedEntity.name,
         type: selectedEntity.type,
-    });
+      });
     } else {
       setEntity(null);
     }
@@ -224,30 +259,13 @@ export default function EntitiesDashboard() {
 
   /* 4) Load journal for selected entity */
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!selectedEntityId) {
-        setSessionJournal([]);
-        return;
-      }
-      try {
-        setLoadingJournal(true);
-        const fetched = await fetchJournalEntries(selectedEntityId);
-        if (!cancelled) setSessionJournal(fetched);
-      } catch (err) {
-        console.error("Error loading journal entries:", err);
-        if (!cancelled) setSessionJournal([]);
-      } finally {
-        if (!cancelled) setLoadingJournal(false);
-      }
-    })();
-    return () => {
-      cancelled = true; };
-  }, [selectedEntityId]);
+    refreshJournal();
+  }, [refreshJournal]);
 
   /* 5) Load merged Chart of Accounts on entity change */
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       if (!selectedEntityId) {
         setAccounts([]);
@@ -261,25 +279,30 @@ export default function EntitiesDashboard() {
         if (!cancelled) setAccounts([]);
       }
     })();
+
     return () => { cancelled = true; };
   }, [selectedEntityId]);
 
-  /* ---- Actions ---- */
+  /* ==================== ACTION HANDLERS ==================== */
+  
   const confirmDelete = useCallback(async () => {
     if (!entityToDelete || confirmText !== entityToDelete.name) {
       alert("El nombre ingresado no coincide con la entidad seleccionada.");
       return;
     }
+
     try {
       await deleteEntity(entityToDelete.id);
       const remaining = entities.filter((e) => e.id !== entityToDelete.id);
       setEntities(remaining);
+    
       if (selectedEntityId === entityToDelete.id) {
         setSelectedEntityId("");
         setEntity(null);
         setSessionJournal([]);
         setAccounts([]);
       }
+    
       setEntityToDelete(null);
       setConfirmText("");
       alert("Entidad eliminada");
@@ -289,59 +312,48 @@ export default function EntitiesDashboard() {
     }
   }, [confirmText, entities, entityToDelete, selectedEntityId, setEntity]);
 
-  const handleSaveJournal = useCallback(async () => {
-    if (!user?.uid || !selectedEntity || sessionJournal.length === 0) return;
-    await saveJournalEntries(selectedEntity.id, sessionJournal, user.uid);
-    alert("Journal guardado con éxito.");
-    setSessionJournal([]);
-  }, [sessionJournal, selectedEntity, user?.uid]);
-
-  // ✅ FUNCION CORREGIDA: guarda, registra facturas y cierra modal
-  const handlePreviewSave = async (
+  /**
+   * ✅ FIXED: handlePreviewSave simplificado
+   * - Guarda entries (que ya incluye logging de facturas en el service)
+   * - Refresca journal
+   * - Cierra modal
+   * - Actualiza log de facturas
+   */
+  const handlePreviewSave = useCallback(async (
     entries: JournalEntry[], 
     note: string
   ) => {
     if (!user?.uid || !selectedEntityId) return;
-    console.log("Paso 1: Entrando a handlePreviewSave");
+
+    console.log("📝 Guardando asientos confirmados:", entries.length);
 
     try {
-      // 1 Guardar los asientos confirmados
+      // 1. Guardar asientos (incluye logging de facturas automático)
       await saveJournalEntries(selectedEntityId, entries, user.uid);
-      console.log("Paso 2: Asientos guardados en Firestore");
+      console.log("✅ Asientos guardados en Firestore");
 
-      // 2 Registrar facturas procesadas (solo despues de confirmacion)
-      for (const e of entries) {
-        if (e.invoice_number) {
-          try {
-            saveInvoiceToLocalLog(selectedEntityId, e.invoice_number);
-            await fetchProcessedInvoice(selectedEntityId, e.invoice_number );
-          } catch (logErr) {
-            console.error(`Error registrando log de factura ${e.invoice_number}:`, logErr);
-          }
-        }
-      }
+      // 2. Cerrar modal inmediatamente
+      setShowPreviewModal(false);
+      setPreviewEntries([]);
 
-      // 3 Cerrar el modal
-      setShowPreviewModal(false); // cerrar modal inmediatamente
-      console.log("Paso 3: Modal cerrado con setShowPreviewModal(false)");
+      // 3. Refrescar journal desde Firestore
+      await refreshJournal();
 
-      // 4. Actualizar el journal desde Firestore
-      const refreshed = await fetchJournalEntries(selectedEntityId);
-      setSessionJournal(refreshed); // actualizar
-      console.log("Paso 4: Asientos actualizados");
-
+      // 4. Actualizar lista de facturas procesadas
       setLogRefreshTrigger((prev) => prev + 1);
-      console.log("Paso 5: Lista de facturas procesadas actualizada");
 
+      console.log("✅ Proceso de guardado completado");
     } catch (err) {
-      console.error("Error al guardar asientos desde preview:", err);
-      alert("Error al guardar asientos o registrar factura.");
+      console.error("❌ Error al guardar asientos desde preview:", err);
+      alert("Error al guardar asientos. Por favor intenta de nuevo.");
       throw err;
     }
-  };
+  }, [user?.uid, selectedEntityId, refreshJournal]);
 
-    // 🆕 Función para borrar entradas seleccionadas del diario (en Firestore y localmente)
-  const handleDeleteSelected = async () => {
+  /**
+   * ✅ FIXED: handleDeleteSelected simplificado
+   */
+  const handleDeleteSelected = useCallback(async () => {
     if (!user?.uid || !selectedEntityId || selectedEntries.length === 0) {
       alert("No hay registros seleccionados para eliminar.");
       return;
@@ -356,52 +368,71 @@ export default function EntitiesDashboard() {
         .filter((id): id is string => Boolean(id));
 
       if (ids.length === 0) {
-        alert("Los registros seleccionados no tienen ID valid.");
+        alert("Los registros seleccionados no tienen ID válido.");
         return;
       }
       
-      console.log("Eliminando registros:", ids, "de la entidad:", selectedEntityId);
+      console.log("🗑️ Eliminando registros:", ids.length);
 
-      // Eliminar en Firestore
-      await deleteJournalEntriesByIds(ids, selectedEntityId!, user.uid);
+      await deleteJournalEntriesByIds(ids, selectedEntityId, user.uid);
+      await refreshJournal();
 
-      try {
-        const refreshed = await fetchJournalEntries(selectedEntityId);
-        console.log("Recarga completada:", refreshed.length, "asientos");
-        setSessionJournal(refreshed);
-      } catch (error) {
-        console.error("❌ Error al eliminar registros:", error);
-        alert("Error al recargar registros despues de eliminar.");
-      }
-
-      alert("Registros eliminados correctamente.");
+      setSelectedEntries([]);
+      alert(`✅ ${ids.length} registros eliminados correctamente.`);
     } catch (err) {
-      console.error("Error al aliminar registros:", err);
-      alert("Error al eliminar registros.")
+      console.error("❌ Error al eliminar registros:", err);
+      alert("Error al eliminar registros.");
     }
-  };
+  }, [user?.uid, selectedEntityId, selectedEntries, refreshJournal]);
 
-  const handleEntityCreated = useCallback(async ({ ruc, name, entityType }: { ruc: string; name: string; entityType: EntityType }) => {
-      if (!user?.uid) return;
-      await createEntity({ ruc: ruc.trim(), name: name.trim(), type: entityType.trim() });
-      const updated = await fetchEntities(user.uid);
-      setEntities(updated);
-      // Try to select the one we just created
-      const newlyCreated =  updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
-      if (newlyCreated) setSelectedEntityId(newlyCreated.id ?? "");
-      alert("✅ Entidad creada.");
-    }, [user?.uid]
-  );
+  const handleEntityCreated = useCallback(async ({ 
+    ruc, 
+    name, 
+    entityType 
+  }: { 
+    ruc: string; 
+    name: string; 
+    entityType: EntityType 
+  }) => {
+    if (!user?.uid) return;
+    
+    await createEntity({ 
+      ruc: ruc.trim(), 
+      name: name.trim(), 
+      type: entityType.trim() 
+    });
+    
+    const updated = await fetchEntities(user.uid);
+    setEntities(updated);
+    
+    // Try to select the one we just created
+    const newlyCreated = updated.find((e) => e.ruc === ruc && e.name === name) ?? updated[updated.length - 1];
+    if (newlyCreated) setSelectedEntityId(newlyCreated.id ?? "");
+    
+    alert("✅ Entidad creada.");
+  }, [user?.uid]);
 
-  const appendToSessionJournal = (entries: JournalEntry[], note: string) => {
-  setSessionJournal((prev) => [...prev, ...entries]);
-  console.log("✅ Entradas agregadas al libro diario:", entries, note);
-};
+  /**
+   * ✅ FIXED: Callback para cuando se suben PDFs
+   */
+  const handlePDFUploadComplete = useCallback((entries: JournalEntry[]) => {
+    console.log("📄 PDF procesado, mostrando preview con", entries.length, "asientos");
+    setPreviewEntries(entries);
+    setShowPreviewModal(true);
+  }, []);
+
+  /**
+   * ✅ FIXED: Callback para entrada manual
+   */
+  const handleManualEntriesAdded = useCallback(async (entries: JournalEntry[]) => {
+    console.log("✍️ Asientos manuales agregados:", entries.length);
+    await refreshJournal();
+  }, [refreshJournal]);
 
   /* ------------------------------ UI ------------------------------ */
   return (
     <>
-      <div className="pt-20 pb-6 max-w-screen-xl mx-auto">
+      <div className="pt-20 pb-6 max-w-screen-xl mx-auto px-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-blue-900 flex items-center">
@@ -410,10 +441,10 @@ export default function EntitiesDashboard() {
           <button
             onClick={() => setShowAccountsModal(true)}
             disabled={!selectedEntityId}
-            className="px-4 py-2 bg-emerald-500 text-white rounded shadow hover:bg-emerald-600 disabled:opacity-50"
+            className="px-4 py-2 bg-emerald-500 text-white rounded shadow hover:bg-emerald-600 disabled:opacity-50 transition"
             title={selectedEntityId ? "Ver / Editar Plan de Cuentas" : "Selecciona una entidad"}
           >
-            Ver Plan de Cuentas
+            📚 Ver Plan de Cuentas
           </button>
         </div>
 
@@ -422,13 +453,17 @@ export default function EntitiesDashboard() {
           {/* Left column: entities & actions */}
           <div>
             <div className="flex flex-wrap gap-2 mb-3">
-              <button onClick={() => setShowAddEntity(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+              <button 
+                onClick={() => setShowAddEntity(true)} 
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+              >
                 ➕ Agregar Entidad
               </button>
             </div>
 
             <label htmlFor="entity-select" className="font-semibold block mb-1">
-              Lista de Entidades</label>
+              Lista de Entidades
+            </label>
             <select
               id="entity-select"
               value={selectedEntityId}
@@ -446,22 +481,37 @@ export default function EntitiesDashboard() {
             </select>
 
             <div className="flex flex-col gap-2 mt-3">
-              {selectedEntity && (
+              {selectedEntity && selectedEntity.id && (
                 <button
-                  onClick={() => setEntityToDelete(entities.find((e) => e.id === selectedEntityId) || null)}
-                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded w-fit">
+                  onClick={() => setEntityToDelete({
+                    id: selectedEntity.id!,
+                    ruc: selectedEntity.ruc,
+                    name: selectedEntity.name
+                  })}
+                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded w-fit transition"
+                >
                   ⚠️ Eliminar Entidad
                 </button>
               )}
 
-              <DevLogResetButton entityId={selectedEntityId} ruc={selectedEntityRUC} setSessionJournal={setSessionJournal} />
+              <DevLogResetButton 
+                entityId={selectedEntityId} 
+                ruc={selectedEntityRUC} 
+                onReset={() => {
+                  setSessionJournal([]);
+                  setLogRefreshTrigger(prev => prev + 1);
+                }}
+              />
 
               {selectedEntity && (
                 <InvoiceLogDropdown
-                  key={selectedEntityId}
+                  key={`${selectedEntityId}-${logRefreshTrigger}`}
                   entityId={selectedEntityId}
                   ruc={selectedEntityRUC}
-                  setSessionJournal={setSessionJournal}
+                  onDelete={() => {
+                    refreshJournal();
+                    setLogRefreshTrigger(prev => prev + 1);
+                  }}
                   logRefreshTrigger={logRefreshTrigger}
                 />
               )}
@@ -474,31 +524,24 @@ export default function EntitiesDashboard() {
               <button
                 onClick={() => setShowManualModal(true)}
                 disabled={!selectedEntityId}
-                className="px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 disabled:opacity-50"
+                className="px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 disabled:opacity-50 transition"
                 title={selectedEntityId ? "Registrar asientos manuales" : "Selecciona una entidad"}
               >
                 ➕ Carga Manual
               </button>
             </div>
 
-            {selectedEntity && selectedEntityRUC ? (
+            {selectedEntity && selectedEntityRUC && selectedEntity.id && selectedEntity.type ? (
               <PDFUploader
-                userRUC={selectedEntity?.ruc ?? ""}
-                entityId={selectedEntity?.id ?? ""}
+                userRUC={selectedEntity.ruc}
+                entityId={selectedEntity.id}
                 userId={auth.currentUser?.uid ?? ""}
                 accounts={accounts}
-                entityType={selectedEntity?.type ?? "servicios"}
-                onUploadComplete={(entries) => {
-                  setPreviewEntries(entries);
-                  setShowPreviewModal(true);
-                }}
-                refreshJournal={async () => {
-                  const updated = await fetchJournalEntries(selectedEntity.id);
-                  setSessionJournal(updated);
-                }}
+                entityType={selectedEntity.type}
+                onUploadComplete={handlePDFUploadComplete}
               />
             ) : (
-              <div className="p-6 border rounded text-gray-500">
+              <div className="p-6 border-2 border-dashed rounded text-gray-500 text-center">
                 Selecciona una entidad para habilitar la carga de PDFs.
               </div>
             )}
@@ -513,17 +556,15 @@ export default function EntitiesDashboard() {
         </div>
       )}
 
-      {/* Journal + AR/AP */}
+      {/* Journal Table */}
       {!loadingJournal && sessionJournal.length > 0 && (
-        <>
-          <JournalTable
-            entries={sessionJournal}
-            entityName={selectedEntity?.name ?? ""}
-            onDeleteSelected={handleDeleteSelected}
-            onSave={handleSaveJournal}
-            onSelectEntries={setSelectedEntries} />
-        {/*  <AccountsReceivablePayable entries={journal} /> */}
-        </>
+        <JournalTable
+          entries={sessionJournal}
+          entityName={selectedEntity?.name ?? ""}
+          onDeleteSelected={handleDeleteSelected}
+          onSave={async () => {}} // No longer needed here
+          onSelectEntries={setSelectedEntries}
+        />
       )}
 
       {/* Empty state when no entries */}
@@ -539,6 +580,7 @@ export default function EntitiesDashboard() {
           <div className="bg-white p-6 rounded shadow-md max-w-sm w-full">
             <h2 className="text-lg font-bold text-red-700 mb-2">Confirmar eliminación</h2>
             <p className="text-sm mb-2">Escribe el nombre exacto para confirmar:</p>
+            <p className="text-sm font-medium mb-3 text-gray-700">{entityToDelete.name}</p>
             <input
               type="text"
               className="border px-2 py-1 rounded w-full"
@@ -548,7 +590,10 @@ export default function EntitiesDashboard() {
             />
             <div className="flex justify-end gap-2 mt-4">
               <button
-                onClick={() => setEntityToDelete(null)}
+                onClick={() => {
+                  setEntityToDelete(null);
+                  setConfirmText("");
+                }}
                 className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
               >
                 Cancelar
@@ -570,7 +615,12 @@ export default function EntitiesDashboard() {
           onClose={() => setShowAccountsModal(false)}
           entityId={selectedEntityId}
           accounts={accounts}
-          onUploadComplete={(entries) => setSessionJournal((prev) => [...prev, ...entries])}     // immediate render with merged chart
+          onUploadComplete={async () => {
+            // Reload accounts after changes
+            const chart = await getEntityChart(selectedEntityId);
+            setAccounts(chart);
+            await refreshJournal();
+          }}
         />
       )}
 
@@ -579,29 +629,31 @@ export default function EntitiesDashboard() {
           onClose={() => setShowManualModal(false)}
           entityId={selectedEntityId}
           userId={auth.currentUser?.uid ?? ""}
-          onAddEntries={(entries) =>
-            setSessionJournal((prev) => [...prev, ...entries])
-          }
-          // ManualEntryModal can use its own fetch OR use accounts prop if you add it
+          onAddEntries={handleManualEntriesAdded}
           accounts={accounts}
         />
       )}
-    <AddEntityModal
-      isOpen={showAddEntity}
-      onClose={() => setShowAddEntity(false)}
-      onCreate={handleEntityCreated}
-    />
-    {showPreviewModal && (
-      <JournalPreviewModal
-        key={selectedEntityId + logRefreshTrigger}
-        entries={previewEntries}
-        accounts={accounts}
-        entityId={selectedEntityId}
-        userId={user?.uid ?? ""}
-        onClose={() => setShowPreviewModal(false)}
-        onSave={handlePreviewSave}
+
+      <AddEntityModal
+        isOpen={showAddEntity}
+        onClose={() => setShowAddEntity(false)}
+        onCreate={handleEntityCreated}
       />
-    )}
+
+      {showPreviewModal && (
+        <JournalPreviewModal
+          key={`${selectedEntityId}-${logRefreshTrigger}`}
+          entries={previewEntries}
+          accounts={accounts}
+          entityId={selectedEntityId}
+          userId={user?.uid ?? ""}
+          onClose={() => {
+            setShowPreviewModal(false);
+            setPreviewEntries([]);
+          }}
+          onSave={handlePreviewSave}
+        />
+      )}
     </>
   );
 }

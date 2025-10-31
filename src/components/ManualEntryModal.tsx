@@ -1,482 +1,374 @@
 // src/components/ManualEntryModal.tsx
-import { v4 as uuidv4 } from "uuid";
-import React, { useEffect, useRef, useState, useId, useMemo } from "react";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Rnd } from "react-rnd";
-import { JournalEntry } from "../types/JournalEntry";
-import { Account } from "../types/AccountTypes";
+import { v4 as uuidv4 } from "uuid";
 import { saveJournalEntries } from "../services/journalService";
-import "../components/ManualEntryModal.css";
-
-/* ------------------------------------------------------ */
-/* -------- Component: AccountSearchInput (Search) ------- */
-/* ------------------------------------------------------ */
-
-// Normaliza texto sin acentos
-const norm = (s: string) =>
-  (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "");
-
-function AccountSearchInput({
-  value,
-  onPick,
-  accounts,
-  placeholder = "Buscar cuenta por nombre o código…",
-}: {
-  value: string;
-  onPick: (acc: { code: string; name: string }) => void;
-  accounts: { code: string; name: string }[];
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [active, setActive] = useState(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const menuRef = useRef<HTMLUListElement | null>(null);
-  const listId = useId();
-  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
-    top: 0,
-    left: 0,
-    width: 0,
-  });
-
-  const filtered = useMemo(() => {
-    const query = norm(q);
-    if (!query) return accounts.slice(0, 50);
-    return accounts
-      .filter((a) => norm(a.name).includes(query) || a.code.includes(query))
-      .slice(0, 50);
-  }, [q, accounts]);
-
-  const positionMenu = () => {
-    const el = inputRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setPos({ top: r.bottom, left: r.left, width: r.width });
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    positionMenu();
-
-    const onDocDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (!inputRef.current?.contains(t) && !menuRef.current?.contains(t)) {
-        setOpen(false);
-      }
-    };
-
-    const onResizeOrScroll = () => positionMenu();
-    document.addEventListener("mousedown", onDocDown);
-    window.addEventListener("resize", onResizeOrScroll);
-    document.addEventListener("scroll", onResizeOrScroll, true);
-
-    return () => {
-      document.removeEventListener("mousedown", onDocDown);
-      window.removeEventListener("resize", onResizeOrScroll);
-      document.removeEventListener("scroll", onResizeOrScroll, true);
-    };
-  }, [open]);
-
-  useEffect(() => () => setOpen(false), []);
-
-  useEffect(() => {
-    if (!menuRef.current) return;
-    const el = menuRef.current.querySelector<HTMLElement>(`[data-idx="${active}"]`);
-    if (!el) return;
-    const parent = menuRef.current;
-    const top = el.offsetTop;
-    const bottom = top + el.offsetHeight;
-    if (top < parent.scrollTop) parent.scrollTop = top;
-    else if (bottom > parent.scrollTop + parent.clientHeight) {
-      parent.scrollTop = bottom - parent.clientHeight;
-    }
-  }, [active]);
-
-  const pick = (acc: { code: string; name: string }) => {
-    onPick(acc);
-    setQ(acc.name);
-    setOpen(false);
-  };
-
-  return (
-    <>
-      <input
-        ref={inputRef}
-        aria-label="Buscar cuenta"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-activedescendant={open ? `${listId}-opt-${active}` : undefined}
-        autoComplete="off"
-        value={open ? q : value}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setActive(0);
-          if (!open) setOpen(true);
-        }}
-        onFocus={() => {
-          setQ(value || "");
-          setActive(0);
-          setOpen(true);
-          requestAnimationFrame(positionMenu);
-        }}
-        onKeyDown={(e) => {
-          if (!open) return;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActive((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            const acc = filtered[active];
-            if (acc) pick(acc);
-          } else if (e.key === "Escape" || e.key === "Tab") {
-            setOpen(false);
-          }
-        }}
-        placeholder={placeholder}
-        className="border rounded px-2 py-1 w-full"
-      />
-
-      {open &&
-        createPortal(
-          <ul
-            id={listId}
-            ref={menuRef}
-            role="listbox"
-            className="account-dropdown dropdown-absolute"
-            data-top={pos.top}
-            data-left={pos.left}
-            data-width={pos.width}
-          >
-            {filtered.length === 0 ? (
-              <li
-                role="option"
-                aria-disabled="true"
-                className="px-3 py-2 text-sm text-gray-500"
-              >
-                Sin resultados…
-              </li>
-            ) : (
-              filtered.map((acc, idx) => (
-                <li
-                  key={acc.code}
-                  id={`${listId}-opt-${idx}`}
-                  data-idx={idx}
-                  role="option"
-                  aria-selected={idx === active}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(idx)}
-                  onClick={() => pick(acc)}
-                  className={`cursor-pointer px-3 py-2 hover:bg-gray-100 ${
-                    idx === active ? "bg-gray-50" : ""
-                  }`}
-                >
-                  <div className="font-mono text-xs text-gray-600">{acc.code}</div>
-                  <div className="text-sm">{acc.name}</div>
-                </li>
-              ))
-            )}
-          </ul>,
-          document.body
-        )}
-    </>
-  );
-}
-
-/* ------------------------------------------------------ */
-/* ---------------------- Modal -------------------------- */
-/* ------------------------------------------------------ */
+import type { Account } from "../types/AccountTypes";
+import type { JournalEntry } from "../types/JournalEntry";
+import AccountPicker from "./AccountPicker";
+import { canonicalCodeFrom, canonicalPair, normalizeEntry } from "../utils/accountPUCMap";
 
 interface Props {
-  onClose: () => void;
   entityId: string;
   userId: string;
   accounts: Account[];
-  onAddEntries: (entries: JournalEntry[]) => void;
+  onClose: () => void;
+  onAddEntries: (entries: JournalEntry[]) => Promise<void>;
 }
 
-interface ManualLine {
-  id: string;
-  account_code: string;
-  account_name: string;
-  debit: number;
-  credit: number;
-}
+/**
+ * ✅ ManualEntryModal with full editing capabilities
+ * - Manual editing of all fields (date, code, account, description, amounts)
+ * - onAddEntries is async and parent handles refresh
+ * - Matches JournalPreviewModal functionality
+ */
 
-const emptyLine = (): ManualLine => ({
-  id: uuidv4(),
-  account_code: "",
-  account_name: "",
-  debit: 0,
-  credit: 0,
-});
-
-export default function ManualEntryModal({
-  onClose,
-  entityId,
-  userId,
-  accounts,
-  onAddEntries,
+export default function ManualEntryModal({ 
+  entityId, 
+  userId, 
+  accounts, 
+  onClose, 
+  onAddEntries 
 }: Props) {
-  const [note, setNote] = useState("");
-  const [lines, setLines] = useState<ManualLine[]>([emptyLine(), emptyLine()]);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [rows, setRows] = useState<JournalEntry[]>([createEmptyRow(), createEmptyRow()]);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  const addLine = () => setLines((prev) => [...prev, emptyLine()]);
-  const removeLine = (idx: number) =>
-    setLines((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx)));
+  function createEmptyRow(): JournalEntry {
+    return {
+      id: uuidv4(),
+      account_code: "",
+      account_name: "",
+      debit: undefined,
+      credit: undefined,
+      description: "",
+      entityId,
+      userId,
+      date: new Date().toISOString().slice(0, 10),
+      source: "manual",
+      isManual: true,
+      createdAt: Date.now(),
+    };
+  }
 
-  const setLine = (idx: number, patch: Partial<ManualLine>) =>
-    setLines((prev) => {
+  const totals = useMemo(() => {
+    const debit = rows.reduce((s, r) => s + (r.debit || 0), 0);
+    const credit = rows.reduce((s, r) => s + (r.credit || 0), 0);
+    const diff = +(debit - credit).toFixed(2);
+    return { debit: +debit.toFixed(2), credit: +credit.toFixed(2), diff };
+  }, [rows]);
+
+  const isBalanced = Math.abs(totals.diff) < 0.01 && totals.debit > 0 && totals.credit > 0;
+
+  const patchRow = (idx: number, patch: Partial<JournalEntry>) => {
+    setRows((prev) => {
       const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
+      const merged = { ...next[idx], ...patch };
+      const canon = normalizeEntry({ 
+        account_code: merged.account_code, 
+        account_name: merged.account_name 
+      });
+      next[idx] = {
+        ...merged,
+        account_code: canon.account_code,
+        account_name: canon.account_name,
+      };
       return next;
     });
+  };
 
-  const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
-  const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
-  const balanced = Math.abs(totalDebit - totalCredit) < 0.005;
+  const applyCode = (idx: number, code: string) => {
+    const name = accounts.find((a) => a.code === code)?.name ?? "";
+    patchRow(idx, { account_code: code || "", account_name: name || "" });
+  };
 
-  const parseAmount = (v: string) => Math.max(0, parseFloat(v || "0") || 0);
-  const amountValue = (n: number) => (n === 0 ? "" : String(n));
+  const applyAccount = (idx: number, acc: { code: string; name: string } | null) => {
+    if (!acc) return;
+    const canon = canonicalPair(acc);
+    patchRow(idx, { account_code: canon.code || "", account_name: canon.name || "" });
+  };
 
-  const handleConfirm = async () => {
-    if (!balanced) {
-      alert("El asiento contable está descuadrado. Debe estar balanceado para guardar.");
-      return;
-    }
-
-    const incomplete = lines.some(
-      (l) => !l.account_code || (l.debit === 0 && l.credit === 0)
-    );
-    if (incomplete) {
-      alert("Por favor completa todos los campos obligatorios.");
-      return;
-    }
-
-    const entries: JournalEntry[] = lines.map((line) => ({
-      id: line.id,
-      account_code: line.account_code,
-      account_name: line.account_name,
-      debit: line.debit,
-      credit: line.credit,
-      comment: note,
-      description: note || "Asiento manual",
-      type: line.debit > 0 ? "expense" : "income",
-      userId,
-      entityId,
-      isManual: true,
-      source: "manual",
-      date,
-      createdAt: Date.now(),
-    }));
-
-    try {
-      await saveJournalEntries(entityId, entries, userId);
-      onAddEntries(entries);
-      alert("Asiento guardado exitosamente");
-      onClose();
-    } catch (err) {
-      console.error("Error al guardar asientos:", err);
-      alert("Error al guardar los asientos. Intenta nuevamente.");
+  const setAmount = (idx: number, field: "debit" | "credit", raw: string) => {
+    const val = raw.trim() === "" ? undefined : Number.parseFloat(raw);
+    if (field === "debit") {
+      patchRow(idx, { debit: val, credit: undefined });
+    } else {
+      patchRow(idx, { credit: val, debit: undefined });
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50">
+  const setDescription = (idx: number, description: string) => {
+    patchRow(idx, { description });
+  };
+
+  const addRow = () => setRows([...rows, createEmptyRow()]);
+
+  const duplicateRow = () => {
+    if (selectedIdx == null) return;
+    const copy = { ...rows[selectedIdx], id: uuidv4() };
+    setRows((prev) => {
+      const next = [...prev];
+      next.splice(selectedIdx + 1, 0, copy);
+      return next;
+    });
+    setSelectedIdx(selectedIdx + 1);
+  };
+
+  const removeRow = (idx: number) => {
+    if (rows.length <= 1) return;
+    setRows((prev) => prev.filter((_, i) => i !== idx));
+    if (selectedIdx === idx) setSelectedIdx(null);
+  };
+
+  /**
+   * - Guarda en Firestore
+   * - Llama a onAddEntries (padre maneja refresh)
+   * - Cierra modal
+   */
+  const handleSave = async () => {
+    if (!isBalanced || isSaving) return;
+
+    setIsSaving(true);
+
+    try {
+      const withMeta = rows.map((r) => ({ 
+        ...r, 
+        userId, 
+        entityId,
+        createdAt: Date.now(),
+      }));
+
+      console.log("✍️ Guardando asientos manuales:", withMeta.length);
+
+      await saveJournalEntries(entityId, withMeta, userId);
+      await onAddEntries(withMeta);
+
+      onClose();
+    } catch (err) {
+      console.error("❌ Error al guardar asientos manuales:", err);
+      alert("Error al guardar los asientos. Por favor intenta de nuevo.");
+      setIsSaving(false);
+    }
+  };
+
+  // Close on click outside
+  // Close on click outside, but not when clicking AccountPicker dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Don't close if clicking inside the modal
+      if (modalRef.current && !modalRef.current.contains(target)) {
+        // Don't close if clicking on AccountPicker dropdown (it renders in a portal)
+        const isAccountPickerDropdown = target.closest('[role="listbox"]') || 
+                                       target.closest('.account-picker-dropdown') ||
+                                       target.closest('[data-account-picker]');
+        
+        if (!isAccountPickerDropdown && !isSaving) {
+          onClose();
+        }
+      }
+    };
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose, isSaving]);
+
+  return createPortal(
+    <div 
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
+      onClick={(e) => {
+        // Only close if clicking directly on the backdrop (not on modal content)
+        if (e.target === e.currentTarget && !isSaving) {
+          onClose();
+        }
+      }}
+    >
       <Rnd
-        default={{
-          x: (window.innerWidth - 800) / 2,
-          y: (window.innerHeight - 600) / 2,
-          width: 800,
-          height: "auto",
+        default={{ 
+          x: window.innerWidth / 2 - 600, 
+          y: window.innerHeight / 2 - 350, 
+          width: 1200, 
+          height: "auto" 
         }}
         bounds="window"
-        minWidth={600}
-        dragHandleClassName="modal-drag-handle"
-        className="absolute z-50"
+        minWidth={1000}
+        dragHandleClassName="drag-header"
+        enableResizing={false}
+        className="bg-white rounded-xl shadow-xl border border-gray-300"
       >
-        <div className="bg-white rounded-2xl shadow-xl w-[92vw] max-w-5xl max-h-[92vh] overflow-y-auto">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b cursor-move modal-drag-handle">
-            <h2 className="text-2xl font-bold text-blue-700">✍️ Asiento Contable Manual</h2>
-            <button onClick={onClose} className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300">
-              Cerrar
-            </button>
-          </div>
-
-          {/* Nota */}
-          <div className="px-6 pt-4">
-            <label className="block text-sm font-medium mb-1">Anotación del asiento (opcional)</label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Ej: Ajuste por depreciación, reclasificación, etc."
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-
-          {/* Fecha */}
-          <div className="px-6 mt-4 mb-2 w-full">
-            <label className="block text-sm font-medium mb-1">Fecha de la transacción</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full border rounded-md p-2"
-            />
-          </div>
-
-          {/* Tabla */}
-          <div className="px-6 py-4">
-            <div className="overflow-x-auto overflow-visible">
-              <table className="w-full text-sm border rounded overflow-visible">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="p-2 border text-left w-44">Código</th>
-                    <th className="p-2 border text-left">Cuenta</th>
-                    <th className="p-2 border text-right w-40">Débito</th>
-                    <th className="p-2 border text-right w-40">Crédito</th>
-                    <th className="p-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line, i) => (
-                    <tr key={line.id} className="hover:bg-gray-50">
-                      {/* Código */}
-                      <td className="p-2 border">
-                        <select
-                          value={line.account_code}
-                          onChange={(e) => {
-                            const code = e.target.value;
-                            const acc = accounts.find((a) => a.code === code);
-                            setLine(i, {
-                              account_code: code,
-                              account_name: acc ? acc.name : "",
-                            });
-                          }}
-                          className="border rounded px-2 py-1 w-full"
-                        >
-                          <option value="">-- Seleccionar --</option>
-                          {accounts.map((acc) => (
-                            <option key={acc.code} value={acc.code}>
-                              {acc.code}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Cuenta (búsqueda avanzada) */}
-                      <td className="p-2 border">
-                        <AccountSearchInput
-                          value={line.account_name}
-                          accounts={accounts}
-                          onPick={(acc) =>
-                            setLine(i, { account_code: acc.code, account_name: acc.name })
-                          }
-                        />
-                      </td>
-
-                      {/* Débito */}
-                      <td className="p-2 border text-right">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={amountValue(line.debit)}
-                          onChange={(e) =>
-                            setLine(i, { debit: parseAmount(e.target.value), credit: 0 })
-                          }
-                          className="border rounded px-2 py-1 w-full text-right"
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Crédito */}
-                      <td className="p-2 border text-right">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={amountValue(line.credit)}
-                          onChange={(e) =>
-                            setLine(i, { credit: parseAmount(e.target.value), debit: 0 })
-                          }
-                          className="border rounded px-2 py-1 w-full text-right"
-                          placeholder="0.00"
-                        />
-                      </td>
-
-                      {/* Eliminar */}
-                      <td className="p-2 border text-center">
-                        <button
-                          onClick={() => removeLine(i)}
-                          className={`px-2 py-1 text-white rounded ${
-                            lines.length <= 2
-                              ? "bg-gray-400 cursor-not-allowed"
-                              : "bg-red-600 hover:bg-red-700"
-                          }`}
-                          disabled={lines.length <= 2}
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* Totales */}
-                  <tr className="bg-gray-50 font-semibold">
-                    <td className="p-2 border" colSpan={2}>
-                      Totales
-                    </td>
-                    <td className="p-2 border text-right">{totalDebit.toFixed(2)}</td>
-                    <td className="p-2 border text-right">{totalCredit.toFixed(2)}</td>
-                    <td className="p-2 border text-left" colSpan={2}>
-                      {balanced ? (
-                        <span className="text-green-600">Asiento cuadrado</span>
-                      ) : (
-                        <span className="text-red-600">
-                          Descuadrado: {Math.abs(totalDebit - totalCredit).toFixed(2)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Acciones */}
-            <div className="flex justify-end gap-3 mt-4 pb-6">
-              <button
-                onClick={addLine}
-                className="px-5 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
+        <div ref={modalRef} className="bg-white rounded-xl shadow-lg w-full p-6 mx-4">
+          <div className="drag-header cursor-move mb-4 border-b pb-3 flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-800">
+              ✍ Ingreso manual de asiento contable
+            </h2>
+            <div className="flex gap-2">
+              <button 
+                onClick={addRow} 
+                disabled={isSaving}
+                className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 ➕ Agregar línea
               </button>
-              <button
-                onClick={handleConfirm}
-                className="px-5 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700"
+              <button 
+                onClick={duplicateRow} 
+                disabled={selectedIdx == null || isSaving} 
+                className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                💾 Guardar
+                ⧉ Duplicar
               </button>
-              <button
-                onClick={onClose}
-                className="px-5 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700"
+              <button 
+                onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))} 
+                disabled={selectedIdx == null || rows.length <= 1 || isSaving} 
+                className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                ✖️ Cancelar
+                ✖ Eliminar
               </button>
             </div>
           </div>
+
+          <div className="max-h-[60vh] overflow-auto rounded border">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
+                <tr className="border-b">
+                  <th className="border p-2 w-[180px]">Código</th>
+                  <th className="border p-2 min-w-[320px]">Cuenta</th>
+                  <th className="border p-2 min-w-[200px]">Descripción</th>
+                  <th className="border p-2 text-right w-[120px]">Débito</th>
+                  <th className="border p-2 text-right w-[120px]">Crédito</th>
+                  <th className="border p-2 w-[60px]" aria-label="acciones" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => {
+                  const selected = selectedIdx === idx;
+                  const codeValue = canonicalCodeFrom(r.account_code || r.account_name || "");
+                  return (
+                    <tr 
+                      key={r.id} 
+                      className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`} 
+                      onClick={() => setSelectedIdx(idx)}
+                    >
+                      <td className="border p-2">
+                        <select 
+                          className="w-full rounded border px-2 py-2" 
+                          value={codeValue} 
+                          onChange={(e) => applyCode(idx, e.target.value)}
+                          disabled={isSaving}
+                        >
+                          <option value="">-- Seleccionar --</option>
+                          {accounts.map((a) => (
+                            <option key={a.code} value={a.code}>{a.code}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border p-2">
+                        {isSaving ? (
+                          <input
+                          type="text"
+                          className="w-full rounded bordeer px-2 py-2 text-sm bg-gray-50"
+                          value={r.account_name}
+                          disabled
+                        />
+                        ) : (
+                        <AccountPicker
+                          accounts={accounts}
+                          value={codeValue ? { code: codeValue, name: r.account_name } : null}
+                          onChange={(acc) => applyAccount(idx, acc)}
+                          placeholder="Buscar cuenta..."
+                          displayMode="name"
+                          inputClassName="w-full rounded border px-2 py-2"
+                        />
+                      )}
+                      </td>
+                      <td className="border p-2">
+                        <input
+                          type="text"
+                          className="w-full rounded border px-2 py-2"
+                          value={r.description || ""}
+                          onChange={(e) => setDescription(idx, e.target.value)}
+                          placeholder="Descripción..."
+                          disabled={isSaving}
+                        />
+                      </td>
+                      <td className="border p-2 text-right">
+                        <input 
+                          inputMode="decimal" 
+                          type="number" 
+                          step="0.01" 
+                          className="w-full rounded border px-2 py-2 text-right" 
+                          value={r.debit ?? ""} 
+                          onChange={(ev) => setAmount(idx, "debit", ev.target.value)}
+                          disabled={isSaving}
+                        />
+                      </td>
+                      <td className="border p-2 text-right">
+                        <input 
+                          inputMode="decimal" 
+                          type="number" 
+                          step="0.01" 
+                          className="w-full rounded border px-2 py-2 text-right" 
+                          value={r.credit ?? ""} 
+                          onChange={(ev) => setAmount(idx, "credit", ev.target.value)}
+                          disabled={isSaving}
+                        />
+                      </td>
+                      <td className="border p-2 text-center">
+                        <button 
+                          className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700 disabled:opacity-50" 
+                          onClick={() => removeRow(idx)}
+                          disabled={rows.length <= 1 || isSaving}
+                        >
+                          ✖
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 font-medium">
+                  <td className="border p-2" colSpan={3}>Totales</td>
+                  <td className="border p-2 text-right">{totals.debit.toFixed(2)}</td>
+                  <td className="border p-2 text-right">{totals.credit.toFixed(2)}</td>
+                  <td className="border p-2 text-center">
+                    {isBalanced ? (
+                      <span className="text-emerald-700">✓ Balanceado</span>
+                    ) : (
+                      <span className="text-rose-700">Dif: {totals.diff.toFixed(2)}</span>
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button 
+              onClick={onClose} 
+              disabled={isSaving}
+              className="rounded bg-slate-200 px-4 py-2 text-slate-800 hover:bg-slate-300 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button 
+              onClick={handleSave} 
+              disabled={!isBalanced || isSaving} 
+              className={`rounded px-4 py-2 text-white ${
+                isBalanced && !isSaving
+                  ? "bg-blue-600 hover:bg-blue-700" 
+                  : "bg-blue-300 cursor-not-allowed"
+              }`}
+            >
+              {isSaving ? "⏳ Guardando..." : "💾 Guardar asiento"}
+            </button>
+          </div>
         </div>
       </Rnd>
-    </div>
+    </div>,
+    document.body
   );
 }

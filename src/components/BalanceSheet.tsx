@@ -1,3 +1,4 @@
+// src/components/BalanceSheet.tsx
 import React, { useMemo, useState } from "react";
 import type { JournalEntry } from "../types/JournalEntry";
 import { formatAmount } from "../utils/accountingUtils";
@@ -41,7 +42,6 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
     for (const acc of ECUADOR_COA) {
       const code = acc.code;
       const levelDetected = detectLevel(code);
-      if (levelDetected > level) continue;
       if (!["1", "2", "3"].includes(code[0])) continue;
         
       const group = groupedEntries[code] || { debit: 0, credit: 0, initial: 0 };
@@ -107,9 +107,13 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+    // Filtrar cuentas que pertenecen al nivel actual o inferiores
+    return Array.from(map.values())
+      .filter((acc) => acc.level <= level)
+      .sort((a, b) => a.code.localeCompare(b.code));
   }, [groupedEntries, level, resultadoDelEjercicio, entityId]);
 
+  // Control de visibilidad por colapsado
   const isVisible = (acc: { code: string; parent: string | null }) => {
     if (!acc.parent) return true;
     for (const code of collapsedCodes) {
@@ -118,6 +122,7 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
     return true;
   };
 
+  // Exportar a PDF
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Balance General", 14, 14);
@@ -164,7 +169,9 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
         <h1 className="text-xl font-bold text-blue-800">📘 Balance General</h1>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <label htmlFor="nivel" className="text-sm text-gray-700">Nivel:</label>
+            <label htmlFor="nivel" className="text-sm text-gray-700">
+              Nivel:
+            </label>
             <select
               id="nivel"
               className="border rounded px-2 py-1 text-sm"
@@ -172,14 +179,21 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
               onChange={(e) => setLevel(Number(e.target.value))}
             >
               {[1, 2, 3, 4, 5].map((lvl) => (
-                <option key={lvl} value={lvl}>Nivel {lvl}</option>
+                <option key={lvl} value={lvl}>
+                  Nivel {lvl}
+                </option>
               ))}
             </select>
           </div>
-          <button onClick={exportPDF} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded">
+          <button 
+            onClick={exportPDF} 
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1 rounded"
+          >
             📄 Exportar PDF
           </button>
-          <button onClick={exportCSV} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-1 rounded">
+          <button 
+            onClick={exportCSV} 
+            className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-1 rounded">
             📊 Exportar CSV
           </button>
         </div>
@@ -204,15 +218,18 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
                   <td className="px-4 py-2">
                     <span
                       onClick={() => hasChildren && toggleCollapse(acc.code)}
-                      className={`cursor-pointer select-none ${hasChildren ? "text-blue-600 font-semibold" : ""}`}
+                      className={`cursor-pointer select-none ${
+                        hasChildren ? "text-blue-600 font-semibold" : ""}`}
                     >
-                      {`${"    ".repeat(acc.level - 1)}${hasChildren ? (isCollapsed ? "► " : "▼ ") : ""}${acc.name}`}
+                      {`${"    ".repeat(acc.level - 1)}${
+                        hasChildren ? (isCollapsed ? "► " : "▼ ") : ""}${acc.name}`}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right">{formatAmount(acc.initialBalance)}</td>
                   <td className="px-4 py-2 text-right">{formatAmount(acc.debit)}</td>
                   <td className="px-4 py-2 text-right">{formatAmount(acc.credit)}</td>
-                  <td className={`px-4 py-2 text-right ${acc.balance < 0 ? "text-red-600 font-semibold" : ""}`}>
+                  <td className={`px-4 py-2 text-right ${
+                    acc.balance < 0 ? "text-red-600 font-semibold" : ""}`}>
                     {formatAmount(acc.balance)}
                   </td>
                 </tr>
