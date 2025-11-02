@@ -20,6 +20,12 @@ const NON_PREFIX_EXPENSE_CODES = EXPENSE_CODES.filter(
 );
 
 export default function PnLSummary({ entries, onResultChange }: Props) {
+  const isIncomeOrExpenseAccount = (accountCode?: string) => {
+    if (!accountCode) return false;
+    const first = accountCode.charAt(0);
+    return ["4", "5", "6", "7"].includes(first);
+  };
+
   const sumByCode = (codes: string[], side: "debit" | "credit") =>
     entries
       .filter((e) => codes.includes(e.account_code || ""))
@@ -27,7 +33,11 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
 
   const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
     entries
-      .filter((e) => (e.account_code || "").startsWith(prefix))
+      .filter(
+        (e) => 
+          (e.account_code || "").startsWith(prefix) &&
+          isIncomeOrExpenseAccount(e.account_code)
+        )
       .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
   const formatter = useMemo(
@@ -40,15 +50,35 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
     []
   );
 
+  // 🔍 Extract individual expense lines
+  const detailedExpenses = useMemo(() => {
+    const expenses = entries.filter(
+      (e) =>
+        e.account_code &&
+        ["5", "6", "7"].includes(e.account_code.charAt(0)) &&
+        (Number(e.debit) || 0) > 0
+    );
+
+    // Group by account code and sum
+    const grouped = expenses.reduce((acc, e) => {
+      const code = e.account_code!;
+      const name = e.account_name || code;
+      if (!acc[code]) acc[code] = { code, name, total: 0 };
+      acc[code].total += Number(e.debit || 0);
+      return acc;
+    }, {} as Record<string, { code: string; name: string; total: number }>);
+
+    return Object.values(grouped).sort((a, b) => a.code.localeCompare(b.code));
+  }, [entries]);
+
   const summary = useMemo(() => {
     const ventas = sumByCode(["70101"], "credit");
     const compras = sumByCode(["60601"], "debit");
     const ice = sumByCode(["53901"], "debit");
-    const ivaCredito = sumByCode(["24301"], "debit");
 
-    const costoVentas = compras + ice + ivaCredito;
-    const gastos =
-      sumByPrefix("5", "debit") + sumByCode(NON_PREFIX_EXPENSE_CODES, "debit");
+    const costoVentas = compras + ice;
+
+    const gastos = detailedExpenses.reduce((s, e) => s + e.total, 0);
 
     const utilidadBruta = ventas - costoVentas;
     const utilidadNeta = utilidadBruta - gastos;
@@ -57,15 +87,14 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
       ventas,
       compras,
       ice,
-      ivaCredito,
       costoVentas,
       gastos,
       utilidadBruta,
       utilidadNeta,
     };
-  }, [entries]);
+  }, [entries, detailedExpenses]);
 
-  // 👉 Enviar resultado al componente padre (BalanceSheet)
+  // 👉 Send net result to BalanceSheet
   useEffect(() => {
     if (onResultChange) onResultChange(summary.utilidadNeta || 0);
   }, [summary.utilidadNeta, onResultChange]);
@@ -83,7 +112,13 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
     doc.text("Estado de Pérdidas y Ganancias", 20, y);
     y += 10;
 
-    const line = (label: string, value?: number, code?: string, bold?: boolean) => {
+    const line = (
+      label: string, 
+      value?: number, 
+      code?: string, 
+      bold?: boolean,
+      indent = 0
+    ) => {
       doc.setFontSize(bold ? 12 : 10);
       doc.setFont("helvetica", bold ? "bold" : "normal");
       const text = code ? `${code} ${label}` : label;
@@ -101,12 +136,19 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
     line("(-) Costos de Ventas", undefined, undefined, true);
     line("Compras locales", summary.compras, "60601");
     line("Otros tributos (ICE)", summary.ice, "53901");
-    line("IVA crédito tributario", summary.ivaCredito, "24301");
     line("Total Costos de Ventas", summary.costoVentas, undefined, true);
 
     y += 2;
     line("= Utilidad Bruta", summary.utilidadBruta, undefined, true);
-    line("(-) Gastos Operacionales", summary.gastos, undefined, true);
+
+    y += 2;
+    line("(-) Gastos Operacionales", undefined, undefined, true);
+    for (const g of detailedExpenses) {
+      line(g.name, g.total, g.code, false, 10);
+    }
+    line("Total Gastos Operacionales", summary.gastos, undefined, true);
+
+    y += 2; 
     line("= Resultado del Ejercicio", summary.utilidadNeta, undefined, true);
 
     doc.save("Estado_Perdidas_Ganancias.pdf");
@@ -143,11 +185,7 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
             </span>
             <span>{fmt(summary.ice)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>
-              <span className="text-gray-500 mr-2">24301</span>IVA crédito tributario</span>
-            <span>{fmt(summary.ivaCredito)}</span>
-          </div>
+         {/* IVA credito tributario is not an expense (asset account 1-2 group), excluded from PnL */}
         </div>
 
         <div className="flex justify-between font-bold border-t mt-2 pt-1">
@@ -158,6 +196,18 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
         <div className="flex justify-between mt-2">
           <span>Gastos operacionales</span>
           <span>{fmt(summary.gastos)}</span>
+        </div>
+
+        <div className="pl-4 space-y-1">
+          {detailedExpenses.map((exp) => (
+            <div className="flex justify-between" key={exp.code}>
+              <span>
+                <span className="text-gray-500 mr-2">{exp.code}</span>
+                {exp.name}
+              </span>
+              <span>{fmt(exp.total)}</span>
+            </div>
+          ))}
         </div>
 
         <div className="flex justify-between font-bold border-t mt-2 pt-1 text-green-600">

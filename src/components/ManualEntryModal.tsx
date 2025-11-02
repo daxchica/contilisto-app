@@ -129,6 +129,13 @@ export default function ManualEntryModal({
    * - Cierra modal
    */
   const handleSave = async () => {
+
+    const invalidAccounts = rows.filter(r => (r.account_code?.length ?? 0) < 7);
+    if (invalidAccounts.length > 0) {
+      alert("❌ Solo se pueden usar cuentas de nivel 4 o superior (códigos con al menos 7 dígitos).");
+      return;
+    }
+
     if (!isBalanced || isSaving) return;
 
     setIsSaving(true);
@@ -229,14 +236,46 @@ export default function ManualEntryModal({
               </button>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                🗓 Fecha del asiento
+              </label>
+              <input
+                type="date"
+                className="w-full rounded border px-3 py-2"
+                value={rows[0]?.date ?? new Date().toISOString().slice(0, 10)}
+                onChange={(e) => {
+                  const date = e.target.value;
+                  setRows((prev) => prev.map((r) => ({ ...r, date })));
+                }}
+                disabled={isSaving}
+              />
+            </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                🧾 Descripción del asiento
+              </label>
+              <input
+                type="text"
+                className="w-full rounded border px-3 py-2"
+                placeholder="Ej: Aporte de capital inicial"
+                value={rows[0]?.description || ""}
+                onChange={(e) => {
+                  const description = e.target.value;
+                  setRows((prev) => prev.map((r) => ({ ...r, description })));
+                }}
+                disabled={isSaving}
+              />
+            </div>
+          </div>
           <div className="max-h-[60vh] overflow-auto rounded border">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
                 <tr className="border-b">
                   <th className="border p-2 w-[180px]">Código</th>
                   <th className="border p-2 min-w-[320px]">Cuenta</th>
-                  <th className="border p-2 min-w-[200px]">Descripción</th>
                   <th className="border p-2 text-right w-[120px]">Débito</th>
                   <th className="border p-2 text-right w-[120px]">Crédito</th>
                   <th className="border p-2 w-[60px]" aria-label="acciones" />
@@ -245,7 +284,7 @@ export default function ManualEntryModal({
               <tbody>
                 {rows.map((r, idx) => {
                   const selected = selectedIdx === idx;
-                  const codeValue = canonicalCodeFrom(r.account_code || r.account_name || "");
+                  const codeValue = r.account_code || "";
                   return (
                     <tr 
                       key={r.id} 
@@ -261,7 +300,13 @@ export default function ManualEntryModal({
                         >
                           <option value="">-- Seleccionar --</option>
                           {accounts.map((a) => (
-                            <option key={a.code} value={a.code}>{a.code}</option>
+                            <option 
+                              key={a.code} 
+                              value={a.code}
+                              disabled={a.code.length < 7}
+                            >
+                              {a.code} - {a.name}
+                            </option>
                           ))}
                         </select>
                       </td>
@@ -275,24 +320,17 @@ export default function ManualEntryModal({
                         />
                         ) : (
                         <AccountPicker
-                          accounts={accounts}
+                          accounts={accounts.filter((a) => a.code.length >= 7)}
                           value={codeValue ? { code: codeValue, name: r.account_name } : null}
-                          onChange={(acc) => applyAccount(idx, acc)}
+                          onChange={(acc) => {
+                            if (!acc) return;
+                            patchRow(idx, {account_code: acc.code, account_name: acc.name });
+                          }}
                           placeholder="Buscar cuenta..."
                           displayMode="name"
                           inputClassName="w-full rounded border px-2 py-2"
                         />
                       )}
-                      </td>
-                      <td className="border p-2">
-                        <input
-                          type="text"
-                          className="w-full rounded border px-2 py-2"
-                          value={r.description || ""}
-                          onChange={(e) => setDescription(idx, e.target.value)}
-                          placeholder="Descripción..."
-                          disabled={isSaving}
-                        />
                       </td>
                       <td className="border p-2 text-right">
                         <input 

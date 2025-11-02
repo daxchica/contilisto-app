@@ -10,15 +10,29 @@ import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries"
 
 const COLUMNS = ["Código", "Cuenta", "Saldo Inicial", "Débito", "Crédito", "Saldo"] as const;
 
-function getParentCodeByLevel(code: string): string | null {
-  if (code.length <=1) return null;
-  return code.slice(0, code.length - 2);
-}
-
 interface Props {
   entries: JournalEntry[];
   resultadoDelEjercicio: number;
   entityId: string;
+}
+
+type Row = {
+  code: string;
+  name: string;
+  initialBalance: number;
+  debit: number;
+  credit: number;
+  balance: number;
+  level: number;
+  parent: string | null;
+};
+
+function getParentCode(code: string): string | null {
+  if (code.length <= 1) return null;
+  if (code.length <= 3) return code.slice(0, 1);
+  if (code.length <= 5) return code.slice(0, 3);
+  if (code.length <= 7) return code.slice(0, 5);
+  return code.slice(0, code.length - 2);
 }
 
 export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId }: Props) {
@@ -37,84 +51,138 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
   );
 
   const groupedAccounts = useMemo(() => {
-    const map = new Map<string, any>();
+    // Only 1/2/3 groups; restrict Patrimonio to (301,306,307*)
+    const eligible = ECUADOR_COA.filter(acc => {
+      const f = acc.code[0];
+      if (!["1", "2", "3"].includes(f)) return false;
+      if (acc.code.startsWith("3")) {
+        // Show only patrimonio core + resultados + resultado del ejercicio tree
+        return /^3(01|06|07)/.test(acc.code);
+      }
+      return true;
+    });
 
-    for (const acc of ECUADOR_COA) {
+    // Build quick child map to know if an account is a parent
+    const childrenByParent = new Map<string, string[]>();
+    for (const acc of eligible) {
+      const parent = getParentCode(acc.code);
+      if (parent) {
+        if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
+        childrenByParent.get(parent)!.push(acc.code);
+      }
+    }
+    const isLeaf = (code: string) => !childrenByParent.has(code);
+
+    // 1) Seed rows: leaf rows get raw (initial/debit/credit) from ledger; parents start at 0
+    const map = new Map<string, Row>();
+    for (const acc of eligible) {
       const code = acc.code;
-      const levelDetected = detectLevel(code);
-      if (!["1", "2", "3"].includes(code[0])) continue;
-        
-      const group = groupedEntries[code] || { debit: 0, credit: 0, initial: 0 };
+      const g = groupedEntries[code] || { initial: 0, debit: 0, credit: 0 };
 
-      const balance = code.startsWith("1")
-      ? group.initial + group.debit - group.credit
-      : group.initial - group.debit + group.credit;
-
-      map.set(acc.code, {
+      map.set(code, {
         code,
         name: acc.name,
-        debit: group.debit,
-        credit: group.credit,
-        balance,
-        initialBalance: group.initial,
-        level: levelDetected,
-        parent: getParentCodeByLevel(acc.code),
+        initialBalance: isLeaf(code) ? g.initial : 0,
+        debit: isLeaf(code) ? g.debit : 0,
+        credit: isLeaf(code) ? g.credit : 0,
+        balance: 0, // filled after roll-up
+        level: detectLevel(code),
+        parent: getParentCode(code),
       });
     }
-  
-    // Resultado del ejercicio
-    map.set("307", {
-      code: "307",
-      name: "RESULTADO DEL EJERCICIO",
-      debit: 0,
-      credit: 0,
-      balance: 0,
-      initialBalance: 0,
-      level: 2,
-      parent: "3",
-    });
-    map.set("30701", {
-      code: "30701",
-      name: "GANANCIA NETA DEL PERIODO",
-      debit: 0,
-      credit: 0,
-      balance: resultadoDelEjercicio > 0 ? resultadoDelEjercicio : 0,
-      initialBalance: 0,
-      level: 3,
-      parent: "307",
-    });
-    map.set("30702", {
-      code: "30702",
-      name: "PÉRDIDA NETA DEL EJERCICIO",
-      debit: 0,
-      credit: 0,
-      balance: resultadoDelEjercicio < 0 ? resultadoDelEjercicio : 0,
-      initialBalance: 0,
-      level: 3,
-      parent: "307",
-    });
 
-    // Propagar montos hacia padres
-    const allAccounts = Array.from(map.values()).sort((a, b) => b.code.length - a.code.length);
-    for (const acc of allAccounts) {
-      if (!acc.parent) continue;
-      const parent = map.get(acc.parent);
-      if (parent) {
-        parent.initialBalance += acc.initialBalance;
-        parent.debit += acc.debit;
-        parent.credit += acc.credit;
-        parent.balance += acc.balance;
+    // 2️⃣ Add resultado del ejercicio
+    if (!map.has("307")) {
+      map.set("307", {
+        code: "307",
+        name: "RESULTADO DEL EJERCICIO",
+        initialBalance: 0,
+        debit: 0,
+        credit: 0,
+        balance: resultadoDelEjercicio,
+        level: 2,
+        parent: "3",
+      });
+    }
+    if (!map.has("3")) {
+      map.set("3", {
+        code: "3",
+        name: "PATRIMONIO NETO",
+        initialBalance: 0,
+        debit: 0,
+        credit: 0,
+        balance: 0,
+        level: 1,
+        parent: null,
+      });
+    }
+
+    if (resultadoDelEjercicio > 0) {
+      map.set("30701", {
+        code: "30701",
+        name: "GANANCIA NETA DEL PERIODO",
+        initialBalance: 0,
+        debit: 0,
+        credit: resultadoDelEjercicio,
+        balance: 0,
+        level: 3,
+        parent: "307",
+      });
+    } else if (resultadoDelEjercicio < 0) {
+      map.set("30702", {
+        code: "30702",
+        name: "PÉRDIDA NETA DEL EJERCICIO",
+        initialBalance: 0,
+        debit: Math.abs(resultadoDelEjercicio),
+        credit: 0,
+        balance: 0,
+        level: 3,
+        parent: "307",
+      });
+    }
+
+    // Make sure parents referenced by injected nodes exist in children map (for roll-up)
+    for (const row of map.values()) {
+      if (row.parent) {
+        if (!childrenByParent.has(row.parent)) childrenByParent.set(row.parent, []);
+        if (!childrenByParent.get(row.parent)!.includes(row.code)) {
+          childrenByParent.get(row.parent)!.push(row.code);
+        }
       }
     }
 
-    // Filtrar cuentas que pertenecen al nivel actual o inferiores
-    return Array.from(map.values())
-      .filter((acc) => acc.level <= level)
-      .sort((a, b) => a.code.localeCompare(b.code));
-  }, [groupedEntries, level, resultadoDelEjercicio, entityId]);
+    // 3️⃣ Bottom-up propagation (aggregate child balances)
+    const allCodes = Array.from(map.keys()).sort((a, b) => b.length - a.length);
+    for (const code of allCodes) {
+      const row = map.get(code)!;
+      if (!row.parent) continue;
+      const parent = map.get(row.parent);
+      if (!parent) continue;
+      parent.initialBalance += row.initialBalance;
+      parent.debit += row.debit;
+      parent.credit += row.credit;
+  };
 
-  // Control de visibilidad por colapsado
-  const isVisible = (acc: { code: string; parent: string | null }) => {
+  // 4) Compute balances using the group rule
+  for (const row of map.values()) {
+    const first = row.code.charAt(0);
+    if (first === "1") {
+      row.balance = row.initialBalance + row.debit - row.credit;
+    } else if (first === "2" || first === "3") {
+      row.balance = row.initialBalance - row.debit + row.credit;
+    } else {
+      row.balance = 0;
+    }
+  }
+  
+  // 5️⃣ Apply visualization level filter
+  const filtered = Array.from(map.values()).filter((acc) => acc.level <= level);
+  // Sort
+  return filtered.sort((a, b) => a.code.localeCompare(b.code));
+}, [groupedEntries, resultadoDelEjercicio, level]);
+
+  // Collapse visibility
+  const isVisible = (acc: Row) => {
     if (!acc.parent) return true;
     for (const code of collapsedCodes) {
       if (acc.code.startsWith(code) && acc.code !== code) return false;
@@ -131,7 +199,7 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
       head: [[...COLUMNS]],
       body: groupedAccounts.map((acc) => [
         acc.code,
-        acc.name.replace(/\u00a0/g, " "),
+        acc.name,
         formatAmount(acc.initialBalance),
         formatAmount(acc.debit),
         formatAmount(acc.credit),
