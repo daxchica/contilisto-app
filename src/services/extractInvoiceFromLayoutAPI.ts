@@ -16,6 +16,28 @@ function filterRelevantBlocks(blocks: TextBlock[]): TextBlock[] {
 }
 
 /**
+ * 🔍 Busca el número a la derecha del texto dado (basado en coordenadas)
+ */
+function findNumericRightOf(blocks: TextBlock[], label: string): number | null {
+  const target = blocks.find((b) =>
+    b.text.toUpperCase().includes(label.toUpperCase())
+  );
+  if (!target) return null;
+
+  const sameRow = blocks.filter(
+    (b) => Math.abs(b.y - target.y) < 5 && b.x > target.x
+  );
+
+  const nums = sameRow
+    .map((b) =>
+      parseFloat(b.text.replace(/[^\d.,-]/g, "").replace(",", "."))
+    )
+    .filter((n) => !isNaN(n) && n > 0 && n < 100000);
+
+  return nums.length ? Math.max(...nums) : null;
+}
+
+/**
  * Llama al endpoint de Netlify Function para procesar facturas usando LayoutAI.
  */
 export async function extractInvoiceFromLayoutAPI(
@@ -28,7 +50,7 @@ export async function extractInvoiceFromLayoutAPI(
   try {
     const filtered = filterRelevantBlocks(blocks);
 
-    const response = await fetch("/api/extract-invoice-layout", {
+    const response = await fetch("/.netlify/functions/extract-invoice-layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ blocks, userRUC: entityRUC, entityType }),
@@ -38,13 +60,110 @@ export async function extractInvoiceFromLayoutAPI(
     const parsed = await response.json();
     console.log("Respuesta LayoutAI:", parsed);
 
-    if (!Array.isArray(parsed)) return [];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const rawEntries = parsed
+        .map((r) => coerceLayoutEntry(r, "expense", today, entityRUC))
+        .filter((e): e is JournalEntry => e !== null);
 
-    const rawEntries = parsed
-      .map((r) => coerceLayoutEntry(r, "expense", today, entityRUC))
-      .filter((e): e is JournalEntry => e !== null);
+      if (rawEntries.some((e) => e.account_code === "1030201")) {
+        return rawEntries.map(normalizeEntry);
+      }
 
-    return rawEntries.map(normalizeEntry);
+      console.warn("LayoutAI sin IVA detectado - aplicando deteccion visual local...");
+    }
+
+    // === Paso 3: detección local basada en layout (respaldo de precisión) ===
+    const subtotal15 =
+      findNumericRightOf(filtered, "SUBTOTAL 15") ??
+      findNumericRightOf(filtered, "SUBTOTAL 12") ??
+      0;
+
+    const subtotal0 =
+      findNumericRightOf(filtered, "SUBTOTAL 0") ??
+      findNumericRightOf(filtered, "SUBTOTAL 0%") ??
+      0;
+
+    const iva =
+      findNumericRightOf(filtered, "IVA 15") ??
+      findNumericRightOf(filtered, "IVA 12") ??
+      findNumericRightOf(filtered, "IVA") ??
+      0;
+
+    const total =
+      findNumericRightOf(filtered, "VALOR TOTAL") ??
+      findNumericRightOf(filtered, "TOTAL") ??
+      0;
+
+    const subtotalBase =
+      subtotal15 + subtotal0 || (total > 0 && iva > 0 ? total - iva : 0);
+
+    console.log("🧠 Layout precision fallback:", {
+      subtotal15,
+      subtotal0,
+      iva,
+      subtotalBase,
+      total,
+    });
+
+    // === Paso 4: construir asiento contable de respaldo ===
+    const entries: JournalEntry[] = [];
+
+    if (subtotalBase > 0) {
+      entries.push({
+        date: today,
+        description: "Compra local – Gasto general",
+        account_code: "5020128",
+        account_name: "OTROS GASTOS",
+        debit: subtotalBase,
+        credit: undefined,
+        type: "expense",
+        invoice_number: "",
+        source: "ai-layout",
+        isManual: false,
+        userId: "",
+        entityId: "",
+        createdAt: Date.now(),
+      });
+    }
+
+    if (iva > 0.01) {
+      entries.push({
+        date: today,
+        description: "IVA en compras",
+        account_code: "1030201",
+        account_name: "IVA EN COMPRAS",
+        debit: iva,
+        credit: undefined,
+        type: "expense",
+        invoice_number: "",
+        source: "ai-layout",
+        isManual: false,
+        userId: "",
+        entityId: "",
+        createdAt: Date.now(),
+      });
+    }
+
+    const totalToUse = total > 0 ? total : subtotalBase + iva;
+    if (totalToUse > 0) {
+      entries.push({
+        date: today,
+        description: "Cuenta por pagar proveedor",
+        account_code: "201030102",
+        account_name: "PROVEEDORES",
+        debit: undefined,
+        credit: totalToUse,
+        type: "expense",
+        invoice_number: "",
+        source: "ai-layout",
+        isManual: false,
+        userId: "",
+        entityId: "",
+        createdAt: Date.now(),
+      });
+    }
+
+    return entries.map(normalizeEntry);
   } catch (err) {
     console.error("❌ Error calling extract-invoice-layout:", err);
     return [];
@@ -91,8 +210,18 @@ function coerceLayoutEntry(
     description,
     account_code: (pair as any).code || "",
     account_name: (pair as any).name || "",
-    debit: debit && !credit ? debit : debit && credit && debit >= credit ? debit : undefined,
-    credit: credit && !debit ? credit : debit && credit && credit > debit ? credit : undefined,
+    debit:
+      debit && !credit 
+      ? debit 
+      : debit && credit && debit >= credit 
+      ? debit 
+      : undefined,
+    credit: 
+      credit && !debit 
+      ? credit 
+      : debit && credit && credit > debit 
+      ? credit 
+      : undefined,
     type: tipoDetectado,
     invoice_number: r?.invoice_number ? String(r.invoice_number) : "",
     source: "ai-layout",

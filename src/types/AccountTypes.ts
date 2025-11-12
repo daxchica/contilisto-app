@@ -5,6 +5,9 @@ export interface Account {
   name: string;
   level: number;
   sign?: "positive" | "negative";
+  isReceivable?: boolean;
+  isPayable?: boolean;
+  requiresThirdParty?: boolean;
 }
 
 /** Row stored in Firestore for user-defined accounts */

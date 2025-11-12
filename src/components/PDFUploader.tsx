@@ -91,11 +91,12 @@ const handleFileInput = async (e: ChangeEvent<HTMLInputElement>) => {
     setSuccessMessage(`${allEntries.length} asientos extraidos de ${processedFiles.length} archivo(s)`);
     onUploadComplete(allEntries);
   } else {
-    setError(
-      ignoredFiles.length > 0
-        ? `Archivos ya procesados o sin datos validos: ${ignoredFiles.join(", ")}`
-        : "No se pudieron extraer asientos de los archivos."
-      );
+    console.warn("Ningun asiento nuevo detectado, pero se permitira re-procesar en modo DEV.");
+    setSuccessMessage("Modo DEV: revision forzada habilitada para archivos previos o vacios");
+    onUploadComplete([]);
+  }
+  if (ignoredFiles.length > 0) {
+    console.log(`Archivos ignorados: ${ignoredFiles.join(", ")}`);
     }
   };
   

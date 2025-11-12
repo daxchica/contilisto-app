@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import AccountPicker from "./AccountPicker";
-import { saveAccountHint } from "../services/aiLearningService";
+import { saveAccountHint } from "../services/firestoreHintsService";
 import { Rnd } from "react-rnd";
 import {
   canonicalCodeFrom,
@@ -14,11 +14,11 @@ import {
 
 interface Props {
   entries?: JournalEntry[];
+  onSave: (withNote: JournalEntry[], note: string) => Promise<void>;
   accounts: Account[];
   entityId: string;
   userId: string;
   onClose: () => void;
-  onSave: (withNote: JournalEntry[], note: string) => Promise<void>;
 }
 
 type Row = JournalEntry & { _rid: string };
@@ -75,6 +75,12 @@ export default function JournalPreviewModal({
   useEffect(() => {
     const updated: Row[] = entries.map((e) => {
       let u: JournalEntry = { ...e };
+
+      if (!note && entries?.[0]?.invoice_number) {
+        setNote(
+          `Factura No. ${entries[0].invoice_number} - ${entries[0].supplier_name} (${entries[0].issuerRUC})`
+        );
+      }
 
       if (u.type === "income" && u.account_code === "11101" && u.account_name === "Caja") {
         u.account_code = "14301";
@@ -150,15 +156,9 @@ export default function JournalPreviewModal({
   const setAmount = (idx: number, field: "debit" | "credit", raw: string) => {
     const val = raw.trim() === "" ? undefined : Number.parseFloat(raw);
     if (field === "debit") {
-      patchRow(idx, { 
-        debit: Number.isFinite(val as number) ? (val as number) : undefined, 
-        credit: undefined 
-      });
-    } else {
-      patchRow(idx, { 
-        credit: Number.isFinite(val as number) ? (val as number) : undefined, 
-        debit: undefined 
-      });
+      patchRow(idx, { debit: Number.isFinite(val as number) ? (val as number) : undefined, credit: undefined });
+    } else { 
+      patchRow(idx, { credit: Number.isFinite(val as number) ? (val as number) : undefined, debit: undefined });
     }
   };
 
@@ -232,53 +232,98 @@ export default function JournalPreviewModal({
     if (selectedIdx === idx) setSelectedIdx(null);
   };
 
-  const learnFromEdits = async (confirmed: JournalEntry[]) => {
-    const hints = confirmed.filter((r) => r.isManual || r.source === "edited");
-    await Promise.all(
-      hints.map((h) =>
-        saveAccountHint({
-          entityId,
-          userId,
-          hintKey: h.counterpartyRUC || h.invoice_number || h.description || "general",
-          account_code: h.account_code,
-          account_name: h.account_name,
-          type: h.type,
-        }).catch(() => void 0)
-      )
-    );
+  // 🔹 NEW: Learn supplier → account mapping automatically
+  const learnFromSupplier = async (confirmed: JournalEntry[]) => {
+    try {
+      const supplier_ruc = confirmed[0]?.issuerRUC;
+      const supplier_name = confirmed[0]?.supplier_name;
+      const mainDebit = confirmed.find((e) => e.debit && e.debit > 0);
+
+      if (mainDebit && (supplier_ruc || supplier_name)) {
+        await saveAccountHint(
+          supplier_ruc,
+          supplier_name,
+          mainDebit.account_code,
+          mainDebit.account_name,
+        );
+        console.log(
+          "💡 Learned supplier→account:", 
+          supplier_name, 
+          mainDebit.account_code, 
+          mainDebit.account_name
+        );
+      }
+    } catch (err) {
+      console.error("Error saving account hint:", err);
+    }
   };
 
+  const learnFromEdits = async (confirmed: JournalEntry[]) => { 
+    try {
+      const manualEntries = confirmed.filter((r) => r.isManual || r.source === "edited");
+
+      // Group by supplier RUC or name
+      const grouped = new Map<string, { supplier_ruc?: string; supplier_name?: string; account_code: string; account_name: string }>();
+      for (const h of manualEntries) {
+        const key = h.issuerRUC || h.supplier_name;
+        if (!key) continue;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            supplier_ruc: h.issuerRUC,
+            supplier_name: h.supplier_name,
+            account_code: h.account_code,
+            account_name: h.account_name,
+          });
+        }
+      }
+      
+      //Save all unique hints
+      await Promise.all(
+        Array.from(grouped.values()).map(async (hint) =>
+          await saveAccountHint(
+            hint.supplier_ruc,
+            hint.supplier_name,
+            hint.account_code,
+            hint.account_name
+          )
+        )
+      );
+      
+      console.log(`Learned ${grouped.size} supplier->account mappings`);
+    } catch (err) {
+      console.error("Error learning from edits:", err);
+    }
+  };
+
+  // Combined confirmation handler
   const handleConfirm = useCallback(async () => {
-  if (!canConfirm || isSaving) return;
+    if (!canConfirm || isSaving) return;
 
-  // Forzar blur para confirmar último input activo
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-  }
+    // Forzar blur para confirmar último input activo
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setIsSaving(true);
 
-  setIsSaving(true);
+    try {
+      const finalEntries: JournalEntry[] = rows.map((r) => ({
+      ...r,
+      description: r.description?.trim() ? r.description : note || r.description,
+      userId,
+      entityId,
+      editedAt: r.isManual ? Date.now() : r.editedAt ?? Date.now(),
+    }));
 
-  try {
-    const finalEntries: JournalEntry[] = rows.map((r) => ({
-    ...r,
-    description: r.description?.trim() ? r.description : note || r.description,
-    userId,
-    entityId,
-    editedAt: r.isManual ? Date.now() : r.editedAt ?? Date.now(),
-  }));
+      console.log("✅ Guardando asientos desde JournalPreviewModal:", finalEntries.length);
 
-    console.log("✅ Guardando asientos desde JournalPreviewModal:", finalEntries, length);
-
-    await learnFromEdits(finalEntries);
-
-    await onSave(finalEntries, note);
-
-  } catch (error) {
-    console.error("❌ Error al confirmar asiento:", error);
-    alert("Error al guardar los asientos contables.");
-    setIsSaving(false);
-  }
-}, [rows, note, userId, entityId, canConfirm, isSaving, onSave]);
+      await learnFromSupplier(finalEntries);
+      await learnFromEdits(finalEntries);
+      await onSave(finalEntries, note);
+    } catch (error) {
+      console.error("❌ Error al confirmar asiento:", error);
+      alert("Error al guardar los asientos contables.");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [rows, note, userId, entityId, canConfirm, isSaving, onSave]);
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">

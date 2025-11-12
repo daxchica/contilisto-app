@@ -15,9 +15,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["@netlify/functions"],
-    "baseUrl": "./src",
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["*"]
+      "@/*": ["src/*"]
     }
   },
   "include": [

@@ -50,3 +50,40 @@
 .btn--xs { padding: 4px 8px; font-size: 12px; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }
 .coa-col-narrow { width: 90px; }
+.coa-modal__table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+/* 🔹 Checkbox styling */
+.coa-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #2563eb; /* Tailwind blue-600 */
+}
+
+/* 🔹 Disabled (system) accounts: dimmed and tooltip cursor */
+.coa-checkbox.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 🔹 Differentiate visually between system and custom rows */
+.is-system td {
+  color: #6b7280; /* gray-500 */
+}
+
+.is-custom td {
+  color: #1f2937; /* gray-800 */
+}
+
+/* 🔹 Highlight selected row */
+tr.is-selected {
+  background-color: #ecfdf5; /* emerald-50 */
+}
+
+/* 🔹 Hover for better discoverability */
+.coa-modal__table tr:hover {
+  background-color: #f9fafb;
+}

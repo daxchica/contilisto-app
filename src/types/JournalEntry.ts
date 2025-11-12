@@ -1,7 +1,7 @@
 // src/types/JournalEntry.ts
 
 export type EntryKind = "income" | "expense" | "asset" | "liability" | "equity";
-export type EntrySource = "ai" | "ai-layout" | "manual" | "edited" | "initial";
+export type EntrySource = "ai" | "ai-layout" | "manual" | "edited" | "initial" | "learned";
 
 /** Journal line stored in cents for perfect math */
 export interface JournalEntry {
@@ -27,6 +27,14 @@ export interface JournalEntry {
     origin?: string;
     note?: string;
     counterpartyRUC?: string;
+    isReceivable?: boolean;
+    isPayable?: boolean;
+    requiresThirdParty?: boolean;
+    thirdParty?: string;
+    documentRef?: string;
+    issuerRUC?: string;
+    entityRUC?: string;
+    supplier_name?: string;
 }
 
 /** helper converters */

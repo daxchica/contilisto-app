@@ -1,3 +1,5 @@
+// src/services/journalService.ts
+
 import { db } from "../firebase-config";
 import {
   collection,
@@ -13,8 +15,8 @@ import * as pdfjsLib from "pdfjs-dist";
 import "../pdfWorker";
 
 import { extractInvoiceFromAPI } from "../services/extractInvoiceFromAPI";
-import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
-import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
+// import { extractInvoiceFromLayoutAPI } from "./extractInvoiceFromLayoutAPI";
+// import { extractTextBlocksFromPDF } from "../utils/extractTextBlocksFromPDF";
 
 import { fetchProcessedInvoice } from "./firestoreLogService";
 import {
@@ -70,6 +72,8 @@ export async function saveJournalEntries(
       credit: typeof rest.credit === "number" ? rest.credit : 0,
       description: rest.description || "",
       invoice_number: rest.invoice_number || "",
+      issuerRUC: rest.issuerRUC || "",
+      entityRUC: rest.entityRUC || "",
       account_code: rest.account_code || "",
       account_name: rest.account_name || "",
       date: rest.date || new Date().toISOString().slice(0, 10),
@@ -144,80 +148,98 @@ export async function getAlreadyProcessedInvoiceNumbers(entityId: string): Promi
  * Procesa un archivo PDF y extrae los asientos contables desde IA o LayoutAI.
  */
 export async function parsePDF(
-  
   file: File,
   userRUC: string,
   entityId: string,
   userId: string,
   entityType: string,
-  useLayoutAI: boolean = false
+  useLayoutAIOverride = false
 ): Promise<JournalEntry[]> {
-  console.log("parsePDF() fue llamado con archivo:", file.name);
-
   if (!file || !userRUC || !entityId || !userId || !entityType) {
     throw new Error("❌ Faltan parámetros obligatorios en parsePDF");
   }
 
   const transactionId = `TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-  
-  const processedInvoices = await getAlreadyProcessedInvoiceNumbers(entityId);
   const entries: JournalEntry[] = [];
 
+  // -------- 1) Try to grab linear text (fast, cheap) --------
+  let fullText = "";
   try {
-    if (useLayoutAI) {
-      const blocks = await extractTextBlocksFromPDF(file);
-      const aiEntries = await extractInvoiceFromLayoutAPI(blocks, userRUC, entityType);
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
 
-      const newOnly = aiEntries.filter(
-        (e) => e.invoice_number && !processedInvoices.has(e.invoice_number)
-      );
-
-      if (newOnly.length > 0) {
-        entries.push(...newOnly.map((e) => ({ 
-          ...e, 
-          transactionId, 
-          userId,
-        entityId 
-      })));
-      console.log(`Extraidos ${newOnly.length} asientos nuevos (LayoutAI)`);
-      } else {
-        console.warn("📭 Factura ya procesada anteriormente (LayoutAI)");
-      }
-    } else {
-      const buffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-      let fullText = "";
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        fullText += " " + (content.items as any[]).map((item: any) => item.str).join(" ");
-      }
-
-      const aiEntries = await extractInvoiceFromAPI(fullText, userRUC, entityType);
-
-      const newOnly = aiEntries.filter(
-        (e) => e.invoice_number && !processedInvoices.has(e.invoice_number)
-      );
-
-      if (newOnly.length > 0) {
-        entries.push(...newOnly.map((e) => ({ 
-          ...e, 
-          transactionId, 
-          userId,
-          entityId 
-        })));
-        console.log(`Extraidos ${newOnly.length} asientos nuevos (OCR)`);
-      } else {
-        console.warn("📭 Factura ya procesada anteriormente (OCR)");
-      }
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      // join, then de-duplicate accidental double tokens (common in SRI PDFs)
+      const pageStr = (content.items as any[]).map((it: any) => it.str).join(" ");
+      fullText += " " + pageStr.replace(/\b(\S+)\s+\1\b/g, "$1");
     }
-  } catch (err) {
-    console.error("❌ Error durante la extracción IA:", err);
-    throw err;
+    fullText = fullText.trim();
+  } catch (e) {
+    console.warn("⚠️ No se pudo extraer texto lineal del PDF:", e);
   }
 
-  return entries;
+  // -------- 2) Decide the most precise method --------
+  const hasText = fullText.length > 40;
+  const looksLikeSRIGrid =
+    /SUBTOTAL\s*\d{1,2}%/i.test(fullText) ||
+    /SUBTOTAL\s+SIN\s+IMPUESTOS/i.test(fullText) ||
+    /VALOR\s*TOTAL/i.test(fullText);
+  const textLooksNoisy =
+    /(\d[.,]\d{2}\s+\d[.,]\d{2})/.test(fullText) || // montos pegados
+    /\bIVA\b.*\bIVA\b/.test(fullText);             // duplicación
+
+  const shouldUseLayout =
+    useLayoutAIOverride ||
+    !hasText ||            // true scan → necesitamos coordenadas/vision
+    looksLikeSRIGrid ||    // tablas/resúmenes verticales
+    textLooksNoisy;        // orden/duplicación
+
+  // -------- 3) Run the best path first (precision > cost) --------
+  try {
+    // -------- 3) Run the AI text extraction (precision mode) --------
+    try {
+      const aiEntries = await extractInvoiceFromAPI(fullText, userRUC, entityType);
+      entries.push(
+        ...aiEntries.map(e => ({
+          ...e,
+          transactionId,
+          userId,
+          entityId,
+        }))
+      );
+    } catch (err) {
+      console.error("❌ Error in AI text extraction route:", err);
+    }
+
+    // -------- 4) Fallback if nothing came back (rare) --------
+    if (entries.length === 0 && hasText) {
+      console.warn("⚙️ Fallback: usando ruta de texto porque layout no devolvió datos.");
+      try {
+        const aiEntries = await extractInvoiceFromAPI(fullText, userRUC, entityType);
+        entries.push(
+          ...aiEntries.map(e => ({
+            ...e,
+            transactionId,
+            userId,
+            entityId,
+          }))
+        );
+      } catch (err) {
+        console.error("❌ Fallback texto también falló:", err);
+      }
+    }
+
+    // -------- 5) (Optional) Vision OCR only if no text at all --------
+    // Implement extractInvoiceFromVisionAPI(file, userRUC, entityType) sólo para escaneados reales.
+    // if (entries.length === 0 && !hasText) { ... }
+
+    return entries;
+  } catch (err) {
+    console.error("Error general en parsePDF:", err);
+    return [];
+  }
 }
 
 /**

@@ -85,28 +85,112 @@ const LEGACY_5D_TO_OFFICIAL_7D: Record<string, string> = {
 // (extend continuously with what the OCR/AI emits)
 // ---------------------------
 const NAME_ALIASES_TO_CODE: Record<string, string> = {
-  // Purchases / generic spend
+  // --- 🧾 Compras y suministros generales ---
   "compras": "5020128",
+  "compra local": "5020128",
   "compras locales": "5020128",
   "compras de mercaderias": "5020128",
   "suministros": "5020128",
   "suministros y materiales": "5020128",
+  "materiales": "5020128",
+  "materiales de oficina": "5020128",
+  "papeleria": "5020128",
+  "útiles de oficina": "5020128",
+  "utensilios de limpieza": "5020128",
+  "articulos de aseo": "5020128",
+
+  // --- ⛽ Transporte y energía ---
+  "combustible": "5020112",
+  "combustibles": "5020112",
+  "gasolina": "5020112",
+  "diesel": "5020112",
+  "lubricantes": "5020113",
+  "aceites": "5020113",
+  "transporte": "5020215",
+  "fletes": "5020215",
+  "movilizacion": "5020215",
+  "viaje": "5020217",
+  "viaticos": "5020217",
+  "hospedaje": "5020217",
+  "alojamiento": "5020217",
+
+  // --- 🧰 Mantenimiento, reparaciones y servicios ---
+  "mantenimiento": "5020108",
+  "reparacion": "5020108",
+  "reparaciones": "5020108",
+  "servicio tecnico": "5020108",
+  "servicios profesionales": "5020105",
+  "asesoria": "5020105",
+  "consultoria": "5020105",
+  "honorarios": "5020105",
+  "comisiones": "5020110",
+
+  // --- 🏢 Arriendos, seguros, impuestos ---
+  "arriendo": "5020109",
+  "alquiler": "5020109",
+  "seguro": "5020114",
+  "seguros": "5020114",
+  "reaseguro": "5020114",
+  
+
+  // --- 📣 Publicidad y relaciones ---
+  "publicidad": "5020111",
+  "promocion": "5020111",
+  "marketing": "5020111",
+  "propaganda": "5020111",
+  "eventos": "5020111",
+  "agasajos": "5020216",
+
+  // --- 🧾 Servicios públicos ---
+  "energia": "5020218",
+  "luz": "5020218",
+  "agua": "5020218",
+  "telefono": "5020218",
+  "internet": "5020218",
+  "telecomunicaciones": "5020218",
 
   // ICE
   "ice": "5020220",
   "otros tributos": "5020220",
-  "otros impuestos a la produccion y consumo (ice)": "5020220",
+  "otros impuestos a la produccion y consumo (ice)": "5020220","impuesto": "5020220",
+  "tributo": "5020220",
+  "contribucion": "5020220",
+  "patente": "5020220",
 
-  // IVA crédito
+  // --- ⚖️ Impuestos y obligaciones ---
+  "iva compras": "1010501",
   "iva credito tributario": "1010501",
   "credito tributario a favor de la empresa (iva)": "1010501",
-  "iva compras": "1010501",
+  "impuesto a la renta": "5020220",
+  "retencion": "5020220",
 
-  // CxP
-  "cuentas por pagar comerciales locales": "201030102",
+  // --- 🧍‍♂️ Personal y remuneraciones ---
+  "sueldos": "5020205",
+  "remuneraciones": "5020205",
+  "honorarios personales": "5020205",
+  "beneficios sociales": "5020203",
+  "aportes iess": "5020202",
+  "fondo de reserva": "5020202",
+  "decimo tercero": "5020203",
+  "decimo cuarto": "5020203",
+
+  // --- 🏦 Financieros ---
+  "intereses": "5020301",
+  "interes": "5020301",
+  "gasto financiero": "5020301",
+  "servicio bancario": "5020301",
+  "comision bancaria": "5020302",
+
+  // --- 🧮 Cuentas por pagar / proveedores ---
+  "proveedor": "201030102",
   "proveedores": "201030102",
-  "proveedores locales": "201030102",
-  "proveedores nacionales": "201030102",
+  "cuentas por pagar comerciales locales": "201030102",
+  "cxp": "201030102",
+
+  // --- 💡 Fallbacks generales ---
+  "gasto general": "5020128",
+  "otros gastos": "5020128",
+  "varios": "5020128",
 };
 
 // ---------------------------
@@ -147,8 +231,33 @@ export function canonicalCodeFrom(input?: string): string | undefined {
   for (const [nKey, code] of nameToCode.entries()) if (nKey.startsWith(key)) return code;
   for (const [nKey, code] of nameToCode.entries()) if (nKey.includes(key)) return code;
 
+  // --------------------------------------------------
+  // 🧩 Fallback for guessed or AI-invented codes
+  // --------------------------------------------------
+  if (isNum(lead)) {
+    // try prefix matching (5090101 → 5020105 etc.)
+    if (lead.startsWith("509") || lead.startsWith("505") || lead.startsWith("507")) {
+      return "5020128"; // Otros gastos / materiales
+    }
+    if (lead.startsWith("504")) {
+      return "5020112"; // Combustibles
+    }
+    if (lead.startsWith("503")) {
+      return "5020211"; // Publicidad y promoción
+    }
+    if (lead.startsWith("506")) {
+      return "5020215"; // Transporte
+    }
+  }
+
+  // Generic last-resort fallback for expense-type unknowns
+  if (key.includes("gasto") || key.includes("servicio") || key.includes("material")) {
+    return "5020128";
+  }
+
   return;
 }
+
 
 export function canonicalPair(input: { code?: string; name?: string }): CanonicalAccount | { code?: string; name?: string } {
   let code = canonicalCodeFrom(input.code);

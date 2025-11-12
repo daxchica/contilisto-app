@@ -2,7 +2,14 @@
 // Source: Superintendencia de Compañías del Ecuador — Plan de Cuentas
 // DO NOT EDIT BY HAND.
 
-export type Account = { code: string; name: string };
+export type Account = { 
+  code: string; 
+  name: string;
+  level?: number;
+  isReceivable?: boolean;
+  isPayable?: boolean;
+  requiresThirdParty?: boolean; 
+};
 
 export const ECUADOR_COA: Account[] = [
   { code: "1", name: "ACTIVO" },
@@ -112,7 +119,7 @@ export const ECUADOR_COA: Account[] = [
   { code: "101020403", name: "ACTIVOS FINANCIEROS A VALOR RAZONABLE CON CAMBIOS EN OTRO RESULTADO INTEGRAL" },
   { code: "1010205", name: "DEUDORES COMERCIALES Y OTRAS CUENTAS POR COBRAR NO RELACIONADOS" },
   { code: "101020501", name: "DE ACTIVIDADES ORDINARIAS QUE GENEREN INTERESES" },
-  { code: "10102050101", name: "CUENTAS Y DOCUMENTOS A COBRAR A CLIENTES" },
+  { code: "10102050101", name: "CUENTAS Y DOCUMENTOS A COBRAR A CLIENTES", isReceivable: true, requiresThirdParty: true },
   { code: "10102050102", name: "CUENTAS Y DOCUMENTOS A COBRAR A TERCEROS" },
   { code: "101020502", name: "DE ACTIVIDADES ORDINARIAS QUE NO GENEREN INTERESES" },
   { code: "10102050201", name: "CUENTAS Y DOCUMENTOS A COBRAR A CLIENTES" },
@@ -135,7 +142,7 @@ export const ECUADOR_COA: Account[] = [
   { code: "10102050221", name: "OTRAS CUENTAS POR COBRAR NO RELACIONADAS" },
   { code: "1010206", name: "DOCUMENTOS Y CUENTAS POR COBRAR RELACIONADOS" },
   { code: "101020601", name: "POR COBRAR A ACCIONISTAS" },
-  { code: "101020603", name: "POR COBRAR A CLIENTES" },
+  { code: "101020603", name: "POR COBRAR A CLIENTES", isReceivable: true, requiresThirdParty: true },
   { code: "101020604", name: "OTRAS CUENTAS POR COBRAR RELACIONADAS" },
   { code: "1010207", name: "PROVISIÓN POR CUENTAS INCOBRABLES Y DETERIORO" },
   { code: "10103", name: "INVENTARIOS" },
@@ -244,8 +251,8 @@ export const ECUADOR_COA: Account[] = [
   { code: "20103", name: "CUENTAS Y DOCUMENTOS POR PAGAR" },
   { code: "2010301", name: "LOCALES" },
   { code: "201030101", name: "PRÉSTAMOS" },
-  { code: "201030102", name: "PROVEEDORES" },
-  { code: "201030103", name: "OTRAS" },
+  { code: "201030102", name: "PROVEEDORES", isPayable: true, requiresThirdParty: true },
+  { code: "201030103", name: "OTRAS", isPayable: true, requiresThirdParty: true },
   { code: "2010302", name: "DEL EXTERIOR" },
   { code: "201030201", name: "PRÉSTAMOS" },
   { code: "201030202", name: "PROVEEDORES" },
@@ -273,7 +280,7 @@ export const ECUADOR_COA: Account[] = [
   { code: "20108", name: "CUENTAS POR PAGAR A RELACIONADAS" },
   { code: "2010801", name: "LOCALES" },
   { code: "201080101", name: "PRÉSTAMOS DE ACCIONISTAS" },
-  { code: "201080103", name: "PROVEEDORES" },
+  { code: "201080103", name: "PROVEEDORES", isPayable: true, requiresThirdParty: true },
   { code: "201080104", name: "OTROS" },
   { code: "2010802", name: "DEL EXTERIOR" },
   { code: "201080201", name: "PRÉSTAMOS DE ACCIONISTAS" },
@@ -305,7 +312,7 @@ export const ECUADOR_COA: Account[] = [
   { code: "20202", name: "CUENTAS Y DOCUMENTOS POR PAGAR" },
   { code: "2020201", name: "LOCALES" },
   { code: "202020101", name: "PRÉSTAMOS" },
-  { code: "202020102", name: "PROVEEDORES" },
+  { code: "202020102", name: "PROVEEDORES", isPayable: true, requiresThirdParty: true },
   { code: "202020103", name: "OTRAS" },
   { code: "2020202", name: "DEL EXTERIOR" },
   { code: "202020201", name: "PRÉSTAMOS" },
@@ -317,7 +324,7 @@ export const ECUADOR_COA: Account[] = [
   { code: "20204", name: "CUENTAS POR PAGAR A RELACIONADAS" },
   { code: "2020401", name: "LOCALES" },
   { code: "202040101", name: "PRÉSTAMOS DE ACCIONISTAS" },
-  { code: "202040103", name: "PROVEEDORES" },
+  { code: "202040103", name: "PROVEEDORES", isPayable: true, requiresThirdParty: true },
   { code: "202040104", name: "OTROS" },
   { code: "2020402", name: "DEL EXTERIOR" },
   { code: "202040201", name: "PRÉSTAMOS DE ACCIONISTAS" },

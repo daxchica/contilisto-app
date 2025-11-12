@@ -14,7 +14,7 @@ export async function extractInvoiceDataWithLayoutAI(
   const today = new Date().toISOString().slice(0, 10);
 
   try {
-    const response = await fetch("/api/extract-invoice-layout", {
+    const response = await fetch("/.netlify/functions/extract-invoice-layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ blocks, userRUC }),

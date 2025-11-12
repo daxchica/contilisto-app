@@ -57,3 +57,39 @@ export async function getInvoiceLogs(entityId: string, ruc: string): Promise<str
 
   return Array.from(idsSet);
 }
+
+import { collection, getDocs, query, where } from "firebase/firestore";
+import type { JournalEntry } from "../types/JournalEntry";
+
+/**
+ * 📦 Obtiene todas las facturas registradas de un proveedor específico
+ * según su RUC (issuerRUC), desde Firestore.
+ */
+export async function getInvoicesBySupplier(
+  entityId: string,
+  supplierRUC: string
+): Promise<JournalEntry[]> {
+  if (!entityId || !supplierRUC) {
+    console.warn("⚠️ getInvoicesBySupplier called without entityId or supplierRUC");
+    return [];
+  }
+
+  try {
+    const q = query(
+      collection(db, "entities", entityId, "journalEntries"),
+      where("issuerRUC", "==", supplierRUC)
+    );
+
+    const snapshot = await getDocs(q);
+    const entries: JournalEntry[] = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as JournalEntry[];
+
+    console.log(`📊 ${entries.length} registros encontrados para proveedor ${supplierRUC}`);
+    return entries;
+  } catch (err) {
+    console.error("❌ Error al obtener facturas del proveedor:", err);
+    return [];
+  }
+}

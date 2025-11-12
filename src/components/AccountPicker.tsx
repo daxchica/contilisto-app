@@ -116,6 +116,7 @@ export default function AccountPicker({
         ref={inputRef}
         value={editing ? q : selectedDisplay}
         placeholder={placeholder}
+        aria-label={placeholder || "Campo de busqueda de cuenta"}
         className={inputClassName}
         aria-autocomplete="list"
         aria-expanded={open}
@@ -143,17 +144,30 @@ export default function AccountPicker({
       />
 
       {open && (
-        <ul ref={listRef} role="listbox" className={listClassName}>
+        <ul 
+          ref={listRef} 
+          role="listbox" 
+          className={listClassName}
+          aria-activedescendant={open ? `option-${activeIdx}` : undefined}
+          aria-label="Lista de cuentas disponibles"
+        >
           {filtered.length === 0 && (
-            <li className="px-3 py-2 text-sm text-gray-500">Sin resultados</li>
+            <li
+              role="presentation" 
+              className="px-3 py-2 text-sm text-gray-500"
+            >
+              Sin resultados
+            </li>
           )}
           {filtered.map((a, i) => (
             <li
               key={`${a.code}-${i}`}
+              id={`option-${i}`}
               role="option"
+              tabIndex={-1}
               aria-selected={i === activeIdx}
               className={`cursor-pointer px-3 py-2 hover:bg-emerald-50 ${
-                i === activeIdx ? "bg-emerald-50" : ""
+                i === activeIdx ? "bg-emerald-100" : ""
               }`}
               onMouseEnter={() => setActiveIdx(i)}
               onMouseDown={(e) => {
