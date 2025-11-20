@@ -1,23 +1,22 @@
-// ./src/main.tsx
-
+// src/main.tsx
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { StrictMode } from "react";
-import { AuthProvider } from "./context/AuthContext.js";
+import { BrowserRouter } from "react-router-dom";
+
+import { AuthProvider } from "./context/AuthContext";
+import { SelectedEntityProvider } from "./context/SelectedEntityContext";
+
+import AppRoutes from "./App";
 import "./index.css";
-import { EntityProvider } from "./context/EntityContext.js";
-import App from './App';
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs"
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <AuthProvider>
-      <EntityProvider>
-      <App />
-      </EntityProvider>
+      <SelectedEntityProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </SelectedEntityProvider>
     </AuthProvider>
   </React.StrictMode>
 );

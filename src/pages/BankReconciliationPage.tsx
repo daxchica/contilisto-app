@@ -1,36 +1,64 @@
 // src/pages/BankReconciliationPage.tsx
 
 import React, { useState, useEffect } from "react";
-import { getAuth } from "firebase/auth";
-import { fetchEntities } from "../services/entityService";
-import { fetchJournalEntries } from "../services/journalService";
+import { fetchEntities, fetchJournalEntries } from "../services/entityService";
 import { fetchBankMovements } from "../services/bankMovementService";
-import { JournalEntry } from "../types/JournalEntry";
-import { BankMovement } from "../types/BankMovement";
-import BankReconciliation from "../components/BankReconciliation";
 
-interface Entity {
-  id: string;
-  name: string;
-  ruc: string;
-}
+import type { Entity } from "../types/Entity";
+import type { JournalEntry } from "../types/JournalEntry";
+import type { BankMovement } from "../types/bankTypes";
+
+import BankReconciliation from "../components/BankReconciliation";
+import { useAuth } from "../context/AuthContext";
 
 export default function BankReconciliationPage() {
-  const auth = getAuth();
+  const { user } = useAuth();
+
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
-  const [journalEntries, setSessionJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [bankMovements, setBankMovements] = useState<BankMovement[]>([]);
 
+  // Cargar entidades del usuario
   useEffect(() => {
-    fetchEntities().then(setEntities);
-  }, []);
+    if (!user?.uid) return;
 
+    (async () => {
+      try {
+        const list = await fetchEntities(user.uid);
+        setEntities(list);
+      } catch (err) {
+        console.error("Error fetching entities:", err);
+        setEntities([]);
+      }
+    })();
+  }, [user?.uid]);
+
+  // Cargar datos de conciliación para la entidad seleccionada
   useEffect(() => {
-    if (!selectedEntity) return;
+    const entityIdSafe = selectedEntity?.id ?? "";
 
-    fetchJournalEntries(selectedEntity.id).then(setSessionJournalEntries);
-    fetchBankMovements(selectedEntity.id).then(setBankMovements);
+    if (!entityIdSafe) {
+      setJournalEntries([]);
+      setBankMovements([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        const [journal, bank] = await Promise.all([
+          fetchJournalEntries(entityIdSafe),
+          fetchBankMovements(entityIdSafe),
+        ]);
+
+        setJournalEntries(journal);
+        setBankMovements(bank);
+      } catch (err) {
+        console.error("Error loading reconciliation data:", err);
+        setJournalEntries([]);
+        setBankMovements([]);
+      }
+    })();
   }, [selectedEntity]);
 
   return (
@@ -40,15 +68,16 @@ export default function BankReconciliationPage() {
       </h2>
 
       <select
-        aria-label="Selecciona una entidad"
+        aria-label="Selecciona una empresa"
         className="p-2 mb-6 border rounded"
         onChange={(e) => {
-          const ent = entities.find((x) => x.ruc === e.target.value);
-          setSelectedEntity(ent || null);
+          const ent = 
+            entities.find((x) => x.ruc === e.target.value) || null;
+          setSelectedEntity(ent);
         }}
         value={selectedEntity?.ruc || ""}
       >
-        <option value="">Selecciona una entidad</option>
+        <option value="">Selecciona una empresa</option>
         {entities.map((ent) => (
           <option key={ent.id} value={ent.ruc}>
             {ent.ruc} – {ent.name}

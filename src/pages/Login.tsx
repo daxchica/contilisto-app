@@ -1,10 +1,9 @@
-import { useEffect } from "react";
+// src/pages/Login.tsx
+import { useEffect, useState } from "react";
 import { auth } from "../firebase-config";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
 
 export default function Login() {
   const { user, loading } = useAuth();
@@ -14,16 +13,20 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  // ❌ Eliminamos navegación automática
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/dashboard");
+    if (!loading) {
+      // Solo informativo, sin redirect:
+      // console.log("Auth ready. User:", user);
     }
-  }, [user, loading]);
+  }, [loading, user]);
 
   const handleLogin = async () => {
+    setError("");
+
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/dashboard");
+      navigate("/empresas"); // ✔ redirige SOLO después de login válido
     } catch (err: any) {
       setError(err.message);
     }
@@ -33,7 +36,9 @@ export default function Login() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-blue-100">
       <div className="bg-white p-6 rounded shadow-md w-96">
         <h2 className="text-2xl mb-4 font-bold">Login</h2>
+
         {error && <p className="text-red-500 mb-4">{error}</p>}
+
         <input
           type="email"
           placeholder="Email"
@@ -41,6 +46,7 @@ export default function Login() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+
         <input
           type="password"
           placeholder="Password"
@@ -48,14 +54,21 @@ export default function Login() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+
         <button
           onClick={handleLogin}
           className="w-full bg-blue-600 text-white p-2 rounded"
         >
           Sign In
         </button>
+
+        <p className="text-sm mt-4 text-center">
+          ¿No tienes cuenta?{" "}
+          <Link to="/register" className="text-blue-600 hover:underline">
+            Regístrate aquí
+          </Link>
+        </p>
       </div>
     </div>
   );
 }
-

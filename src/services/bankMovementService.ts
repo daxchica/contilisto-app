@@ -1,68 +1,78 @@
-// services/bankMovementService.ts
+// src/services/bankMovementService.ts
 import { db, auth } from "../firebase-config";
-import { collection, addDoc, Timestamp, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  Timestamp,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 
-export interface BankMovement {
-  date: string; // ISO date string
-  description: string;
-  amount: number;
-  type: "INGRESO" | "EGRESO";
-  reference?: string;
-  reconciled: boolean;
-}
+import type { BankMovement } from "../types/bankTypes";
 
-export async function addBankMovement(entityId: string, movement: BankMovement) {
-  
+/* ------------------------------------------------------
+ * ADD BANK MOVEMENT
+ * ------------------------------------------------------ */
+export async function addBankMovement(
+  entityId: string,
+  movement: Omit<BankMovement, "id" | "createdAt" | "createdBy">
+): Promise<string> {
   try {
     const currentUser = auth.currentUser;
-    if (!currentUser)
-        throw new Error("Usuario no autenticado");
-    if (!entityId)
-        throw new Error("entityId es requerido");
+    if (!currentUser) throw new Error("Usuario no autenticado");
+    if (!entityId) throw new Error("entityId es requerido");
 
     const colRef = collection(db, "entities", entityId, "bank_movements");
 
-    const docData = {
-        ...movement,
-        type: movement.type.toUpperCase(),
-        uid: currentUser.uid,
-        timestamp: Timestamp.fromDate(new Date(movement.date)),
-        createdAt: Timestamp.now(),
+    const payload = {
+      ...movement,
+      entityId,
+      createdBy: currentUser.uid,
+      createdAt: Timestamp.now(),
+      date: movement.date,
+      amount: movement.amount,
+      type: movement.type, // "INGRESO" | "EGRESO"
+      status: movement.status ?? "recorded",
     };
 
-    const docRef = await addDoc(colRef, docData);
-    console.log("Movimiento bancario agregado con ID:", docRef.id);
-    return docRef.id;
+    const ref = await addDoc(colRef, payload);
+    return ref.id;
   } catch (err) {
-    console.error("Error al agregar movimiento:", err);
+    console.error("❌ Error al agregar movimiento:", err);
     throw err;
   }
 }
 
-export async function fetchBankMovements(entityId: string): Promise<(BankMovement & { id: string })[]> {
-    const currentUser = auth.currentUser;
+/* ------------------------------------------------------
+ * FETCH BANK MOVEMENTS
+ * ------------------------------------------------------ */
+export async function fetchBankMovements(
+  entityId: string
+): Promise<BankMovement[]> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Usuario no autenticado");
+  if (!entityId) throw new Error("entityId es requerido");
 
-    if (!currentUser) {
-        throw new Error("Usuario no autenticado");
-    }
+  const colRef = collection(db, "entities", entityId, "bank_movements");
+  const q = query(colRef, where("createdBy", "==", currentUser.uid));
 
-    if (!entityId) {
-        throw new Error("entityId es requerido");
-    }
-    const colRef = collection(db, "entities", entityId, "bank_movements");
-    const q = query(colRef, where("uid", "==", currentUser.uid));
-    const snapshot = await getDocs(q);
+  const snap = await getDocs(q);
 
-  return snapshot.docs.map(doc => {
-    const data = doc.data();
+  return snap.docs.map((d) => {
+    const data = d.data();
+
     return {
-      id: doc.id,
-      date: (data.timestamp?.toDate?.() ?? new Date()).toISOString().split("T")[0],
-      description: data.description,
-      amount: data.amount,
-      type: (data.type || "").toUpperCase() as "INGRESO" | "EGRESO",
-      reference: data.reference || "",
-      reconciled: data.reconciled ?? false,
-    };
+      id: d.id,
+      entityId,
+      bankAccountId: data.bankAccountId ?? undefined,
+      date: data.date,
+      description: data.description ?? "",
+      amount: data.amount ?? 0,
+      type: data.type ?? "INGRESO",
+      status: data.status ?? "recorded",
+      createdBy: data.createdBy ?? "",
+      createdAt: data.createdAt?.toDate?.().toISOString() ?? "",
+    } as BankMovement;
   });
 }

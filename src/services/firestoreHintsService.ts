@@ -79,7 +79,7 @@ export async function getAccountHint(
     }
 
     return docData;
-    } catch (err) {
+  } catch (err) {
     console.error("⚠️ Error in getAccountHint:", err);
     return null;
     }

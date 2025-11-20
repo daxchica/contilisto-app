@@ -81,8 +81,13 @@ export default function AccountPicker({
     onChange({ code: acc.code, name: acc.name });
     setOpen(false);
     setEditing(false);
-    // reflect the chosen value in the visible input
-    setQ(displayMode === "code" ? acc.code : displayMode === "code+name" ? `${acc.code} — ${acc.name}` : acc.name);
+    setQ(
+      displayMode === "code"
+        ? acc.code
+        : displayMode === "code+name"
+        ? `${acc.code} — ${acc.name}`
+        : acc.name
+    );
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
@@ -111,12 +116,12 @@ export default function AccountPicker({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" data-account-picker>
       <input
         ref={inputRef}
         value={editing ? q : selectedDisplay}
         placeholder={placeholder}
-        aria-label={placeholder || "Campo de busqueda de cuenta"}
+        aria-label={placeholder || "Campo de búsqueda de cuenta"}
         className={inputClassName}
         aria-autocomplete="list"
         aria-expanded={open}
@@ -124,8 +129,11 @@ export default function AccountPicker({
         onFocus={() => {
           setEditing(true);
           setOpen(true);
-          // when editing the "Código" field, start with the current code in the query
-          setQ(displayMode === "code" ? value?.code ?? "" : value?.name ?? "");
+          setQ(
+            displayMode === "code"
+              ? value?.code ?? ""
+              : value?.name ?? ""
+          );
         }}
         onChange={(e) => {
           setEditing(true);
@@ -134,7 +142,7 @@ export default function AccountPicker({
         }}
         onKeyDown={onKeyDown}
         onBlur={() => {
-          // let option click happen first
+          // permitimos que el click en la opción se procese primero
           setTimeout(() => {
             setOpen(false);
             setEditing(false);
@@ -144,16 +152,16 @@ export default function AccountPicker({
       />
 
       {open && (
-        <ul 
-          ref={listRef} 
-          role="listbox" 
+        <ul
+          ref={listRef}
+          role="listbox"
           className={listClassName}
           aria-activedescendant={open ? `option-${activeIdx}` : undefined}
           aria-label="Lista de cuentas disponibles"
         >
           {filtered.length === 0 && (
             <li
-              role="presentation" 
+              role="presentation"
               className="px-3 py-2 text-sm text-gray-500"
             >
               Sin resultados
@@ -175,7 +183,6 @@ export default function AccountPicker({
                 pick(a);
               }}
             >
-              {/* show code prominent, name below (helps both Código & Cuenta use cases) */}
               <div className="font-mono text-slate-900">{a.code}</div>
               <div className="text-xs text-slate-600">{a.name}</div>
             </li>

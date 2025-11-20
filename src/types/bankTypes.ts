@@ -1,4 +1,4 @@
-// src/types/BankTypes.ts
+// src/types/bankTypes.ts
 
 export interface BankAccount {
   id?: string;
@@ -24,6 +24,20 @@ export interface BankBookEntry {
   status: "issued" | "cleared" | "postdated" | "voided";
   relatedTo?: "accountsPayable" | "expense";
   linkedDocumentId?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+// Movimiento bancario simple usado en conciliación
+export interface BankMovement {
+  id: string;
+  entityId: string;
+  bankAccountId?: string;
+  date: string;          // ISO date string
+  amount: number;        // positive value
+  type: "INGRESO" | "EGRESO";
+  description: string;
+  status: "recorded" | "matched" | "pending" | "unknown";
   createdBy: string;
   createdAt: string;
 }

@@ -21,7 +21,19 @@ export default defineConfig({
     strictPort: true, // Prevents switching to other ports
     fs: { allow: ['..'] },
   },
-  optimizeDeps: { include: ["pdfjs-dist"]
+  optimizeDeps: {
+    exclude: [
+      "pdfjs-dist/legacy/build/pdf.worker.js",
+      "pdfjs-dist/legacy/build/pdf.js"
+    ],
   },
-  assetsInclude: ['**/*.old'],
+
+  build: {
+    rollupOptions: {
+      external: [
+        "pdfjs-dist/legacy/build/pdf.worker.js",
+        "pdfjs-dist/legacy/build/pdf.js"
+      ]
+    }
+  }
 });

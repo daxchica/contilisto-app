@@ -7,7 +7,7 @@ import { saveJournalEntries } from "../services/journalService";
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import AccountPicker from "./AccountPicker";
-import { canonicalCodeFrom, canonicalPair, normalizeEntry } from "../utils/accountPUCMap";
+import { canonicalPair, normalizeEntry } from "../utils/accountPUCMap";
 
 interface Props {
   entityId: string;
@@ -65,6 +65,17 @@ export default function ManualEntryModal({
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // 🆕 Supplier info
+  const [supplierName, setSupplierName] = useState<string>("");
+  const [issuerRUC, setIssuerRUC] = useState<string>("");
+
+  const accountsByCode = useMemo(() => {
+    const m = new Map<string, Account>();
+    accounts.forEach((a) => m.set(a.code, a));
+    return m;
+  }, [accounts]);
+
 
   // Totales
   const totals = useMemo(() => {
@@ -146,6 +157,8 @@ export default function ManualEntryModal({
         createdAt: r.createdAt || Date.now(),
         debit: Number(r.debit) || 0,
         credit: Number(r.credit) || 0,
+        issuerRUC: issuerRUC || undefined,
+        supplier_name: supplierName || undefined,
       }));
 
       console.log("✍️ Guardando asientos manuales:", cleaned.length);
@@ -225,6 +238,36 @@ export default function ManualEntryModal({
             </div>
           </div>
 
+          {/* Supplier */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                👤 Proveedor
+              </label>
+              <input
+                type="text"
+                className="w-full rounded border px-3 py-2"
+                placeholder="Ej: Comercial ABC S.A."
+                value={supplierName}
+                onChange={(e) => setSupplierName(e.target.value)}
+                disabled={isSaving}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                🧾 RUC
+              </label>
+              <input
+                type="text"
+                className="w-full rounded border px-3 py-2"
+                placeholder="0999999999001"
+                value={issuerRUC}
+                onChange={(e) => setIssuerRUC(e.target.value.trim())}
+                disabled={isSaving}
+              />
+            </div>
+          </div>
+
           {/* Fecha y descripción (comparten para todas las líneas) */}
           <div className="flex flex-wrap gap-4 mb-4 items-end">
             {/* Fecha */}
@@ -263,7 +306,7 @@ export default function ManualEntryModal({
             </div>
           </div>
 
-          {/* Simplified Table */}
+          {/* Table */}
           <div className="max-h-[60vh] overflow-auto rounded border">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
@@ -412,6 +455,7 @@ export default function ManualEntryModal({
                               _creditRaw: formatted, 
                             });
                           }}
+                          
                           onKeyDown={(ev) => {
                             if (ev.key === "Enter") {
                               ev.preventDefault();

@@ -2,10 +2,11 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
-import { fetchJournalEntries } from "../services/journalService";
+// import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
 import { exportAccountToPDF, exportAccountToCSV } from "../utils/exportUtils";
 import { Link } from "react-router-dom";
+import { fetchJournalEntries } from "@/services/journalService";
 
 function formatDate(dateString: string): string {
   const d = new Date(dateString);
@@ -32,15 +33,22 @@ export default function LedgerPage() {
       setEntries([]);
       return;
     }
-    setLoading(true);
-    fetchJournalEntries(entityId)
-      .then(setEntries)
-      .catch((err) => {
+
+    async function load() {
+      try {
+        setLoading(true);
+        const data = await fetchJournalEntries(entityId);
+        setEntries(data);
+      } catch (err) {
         console.error("Error al cargar asientos:", err);
         setEntries([]);
-      })
-      .finally(() => setLoading(false));
-  }, [entityId]);
+      } finally { 
+        setLoading(false);
+      }
+    }
+    
+    load();
+},  [entityId]);
 
   // Group and sort entries by account
   const groupedByAccount = useMemo(() => {

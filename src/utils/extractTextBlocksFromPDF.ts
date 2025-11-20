@@ -1,46 +1,66 @@
+// ============================================================================
 // src/utils/extractTextBlocksFromPDF.ts
+// FINAL — Extrae texto desde PDFs usando pdfjs-dist
+// ============================================================================
 
 import * as pdfjsLib from "pdfjs-dist";
-import type { TextBlock } from "../types/TextBlock";
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import "pdfjs-dist/build/pdf.worker";
 
-import pdfWorker from "pdfjs-dist/build/pdf.worker?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// ============================================================
+// TYPES
+// ============================================================
+export interface TextBlock {
+  page: number;
+  text: string;
+}
 
-export async function extractTextBlocksFromPDF(file: File): Promise<TextBlock[]> {
-  const blocks: TextBlock[] = [];
+export interface ExtractedPDFText {
+  fullText: string;
+  pages: TextBlock[];
+}
 
-  try{
-    const buffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+// ============================================================
+// MAIN FUNCTION
+// ============================================================
+export async function extractTextBlocksFromPDF(
+  base64: string
+): Promise<ExtractedPDFText> {
+  if (!base64) throw new Error("No base64 provided to extractTextBlocksFromPDF");
+
+  const pdfData = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+
+  try {
+    // Load PDF
+    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const pdf = await loadingTask.promise;
+
+    const pages: TextBlock[] = [];
+    let fullCollectedText = "";
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1.0 });
       const content = await page.getTextContent();
 
-      for (const item of content.items as TextItem[]) {
-        if (typeof item.str !== "string" || !item.transform || !item.str.trim()) continue;
+      const strings = content.items
+        .map((item: any) => item.str)
+        .filter(Boolean);
 
-        const [a, b, c, d, e, f] = item.transform;
-        const x = e;
-        const y = viewport.height - f; // invert Y
-        const fontHeight = Math.abs(d || 10);
-        const width = item.width ?? 0;
+      const pageText = strings.join(" ").trim();
 
-        blocks.push ({
-          text: item.str,
-          x,
-          y,
-          width,
-          height: fontHeight,
-          page: pageNum,
-        });
-      }
+      pages.push({
+        page: pageNum,
+        text: pageText,
+      });
+
+      fullCollectedText += "\n" + pageText;
     }
-    return blocks;
-  } catch (error) {
-    console.error("Error extracting text blocks from PDF:", error);
-    throw new Error("Failed to extract text blocks from PDF");
+
+    return {
+      fullText: fullCollectedText.trim(),
+      pages,
+    };
+  } catch (err) {
+    console.error("❌ Error extracting text from PDF:", err);
+    throw new Error("Failed to extract text from PDF");
   }
 }

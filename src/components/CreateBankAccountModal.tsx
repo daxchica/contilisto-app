@@ -1,31 +1,41 @@
 // src/components/CreateBankAccountModal.tsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 
-function CreateBankAccountModal({
+export interface CreateBankAccountModalProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (data: { name: string; number: string }) => Promise<void> | void;
+}
+
+export default function CreateBankAccountModal ({
   open,
   onClose,
   onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: (data: { name: string; number: string }) => void;
-}) {
-  const [name, setName] = React.useState("");
-  const [number, setNumber] = React.useState("");
+}: CreateBankAccountModalProps) {
+  const [name, setName] = useState("");
+  const [number, setNumber] = useState("");
+  const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     if (open) {
       setName("");
       setNumber("");
+      setSaving(false);
     }
   }, [open]);
 
   if (!open) return null;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !number.trim()) return;
-    onConfirm({ name: name.trim(), number: number.trim() });
+
+    try {
+      setSaving(true);
+      await onConfirm({ name: name.trim(), number: number.trim() });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
