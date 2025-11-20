@@ -19,7 +19,11 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["openai"]
+  external_node_modules = ["openai", "pdfjs-dist"]
+  included_files = [
+    "node_modules/pdfjs-dist/legacy/build/pdf.worker.js",
+    "node_modules/pdfjs-dist/legacy/build/pdf.js"
+  ]
 
 [build.environment]
   PYTHON_VERSION = "3.10"
