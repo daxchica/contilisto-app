@@ -62,7 +62,7 @@ export default function JournalPreviewModal({
   // metadata se usa solo para la cabecera y para prellenar la nota.
   // --------------------------------------------------------------------------
   useEffect(() => {
-    // Clonamos los asientos para no mutar la prop original
+    // 1. Clonamos los asientos para no mutar la prop original
     const cloned: JournalEntry[] = (entries || []).map((e) => ({ ...e }));
 
     // Aseguramos que cada línea tenga un id único (por si acaso)
@@ -73,12 +73,34 @@ export default function JournalPreviewModal({
 
     setLocalEntries(withIds);
 
-    // Nota inicial basada en la factura
+    // 2. Seleccionar SOLO el gasto principal:
+    //    - Cuenta cuyo código empieza en "5"
+    //    - Si hay varias, tomamos la primera
+
+    const gastoPrincipal = entries.find(e =>
+      typeof e.account_code === "string" &&
+      e.account_code.trim().startsWith("5")
+    );
+
+    // 3. Preparar texto del gasto (si existe)
+    const descripcionGasto =
+      gastoPrincipal?.account_name?.trim() || "";
+    
+    // 4. Obtener numero de factura
     const invoiceNumber =
       metadata?.invoice_number ||
       entries?.[0]?.invoice_number ||
       "";
-    setNote(invoiceNumber ? `Factura ${invoiceNumber}` : "");
+    
+    // 5. Construir glosa final
+    const glosa = 
+      invoiceNumber && descripcionGasto 
+        ? `Factura ${invoiceNumber} - ${descripcionGasto}` 
+        : invoiceNumber
+        ? `Factura ${invoiceNumber}`
+        : descripcionGasto;
+
+    setNote(glosa || "");
   }, [entries, metadata]);
 
   // --------------------------------------------------------------------------
@@ -231,7 +253,7 @@ export default function JournalPreviewModal({
         {/* HEADER */}
         <div className="drag-header bg-blue-600 text-white p-4 rounded-t-xl flex justify-between items-center cursor-move">
           <h2 className="text-lg font-bold">
-            Vista previa de asiento contable (OCR + Vision)
+            Vista previa de asiento contable IA
           </h2>
           <button
             onClick={onClose}
@@ -289,9 +311,8 @@ export default function JournalPreviewModal({
                   <th className="p-2 border">Fecha</th>
                   <th className="p-2 border">Código</th>
                   <th className="p-2 border">Cuenta</th>
-                  <th className="p-2 border">Descripción</th>
-                  <th className="p-2 border text-right">Débito</th>
-                  <th className="p-2 border text-right">Crédito</th>
+                  <th className="p-2 border text-right px-6">Débito</th>
+                  <th className="p-2 border text-right px-6">Crédito</th>
                   <th className="p-2 border w-10">✂</th>
                 </tr>
               </thead>
@@ -338,21 +359,7 @@ export default function JournalPreviewModal({
                       />
                     </td>
 
-                    {/* Descripción */}
-                    <td className="border p-1 align-top">
-                      <input
-                        type="text"
-                        className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
-                        value={e.description || ""}
-                        onChange={(ev) =>
-                          updateTextField(
-                            i,
-                            "description",
-                            ev.target.value
-                          )
-                        }
-                      />
-                    </td>
+                    
 
                     {/* Débito */}
                     <td className="border p-1 align-top text-right">
@@ -405,16 +412,23 @@ export default function JournalPreviewModal({
                 {/* Fila de totales */}
                 {localEntries.length > 0 && (
                   <tr className="bg-gray-100 font-semibold">
-                    <td className="border p-1 text-right" colSpan={4}>
+                    {/* Etiqueta Totales */}
+                    <td className="border px-8 text-right" colSpan={3}>
                       Totales:
                     </td>
-                    <td className="border p-1 text-right">
+
+                    {/* Total Debito */}
+                    <td className="border px-6 text-right">
                       {totalDebit.toFixed(2)}
                     </td>
-                    <td className="border p-1 text-right">
+
+                    {/* Total Credito */}
+                    <td className="border px-6 text-right">
                       {totalCredit.toFixed(2)}
                     </td>
-                    <td className="border p-1" />
+
+                    {/* Celda vacía para mantener alineación */}
+                    <td className="border px-3 py-1" />
                   </tr>
                 )}
               </tbody>
