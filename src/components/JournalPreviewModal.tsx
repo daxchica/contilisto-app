@@ -100,7 +100,7 @@ export default function JournalPreviewModal({
         ? `Factura ${invoiceNumber}`
         : descripcionGasto;
 
-    setNote(glosa || "");
+    if (!note) setNote(glosa || "");
   }, [entries, metadata]);
 
   // --------------------------------------------------------------------------
@@ -303,12 +303,44 @@ export default function JournalPreviewModal({
             </div>
           )}
 
+          {/* FECHA GENERAL DEL ASIENTO */}
+          <div className="mb-4 flex items-center justify-between gap-4">
+
+            {/* Etiqueta + Input fecha */}
+            <div className="flex items-center gap-3">
+              <label className="block text-sm font-medium mb-1">Fecha del asiento:</label>
+    
+              <input
+                type="date"
+                className="border rounded px-3 py-2 text-sm"
+                value={localEntries[0]?.date || ""}
+                onChange={(ev) => {
+                  const newDate = ev.target.value;
+                  setLocalEntries(prev =>
+                    prev.map(e => ({
+                      ...e,
+                      date: newDate,   // ← actualiza TODAS las líneas internamente
+                    }))
+                  );
+                }}
+              />
+            </div>
+            
+            {/* Botón para agregar línea */}
+              <button
+                type="button"
+                onClick={addEmptyLine}
+                className="px-3 py-1.5 text-xs md:text-sm bg-blue-50 text-blue-700 rounded border border-blue-300 hover:bg-blue-100"
+              >
+                ➕ Agregar línea
+              </button>
+          </div>
+
           {/* TABLA DE ASIENTOS */}
           <div className="border rounded-lg overflow-hidden">
             <table className="w-full text-xs md:text-sm">
               <thead className="bg-gray-200">
                 <tr>
-                  <th className="p-2 border">Fecha</th>
                   <th className="p-2 border">Código</th>
                   <th className="p-2 border">Cuenta</th>
                   <th className="p-2 border text-right px-6">Débito</th>
@@ -319,17 +351,6 @@ export default function JournalPreviewModal({
               <tbody>
                 {localEntries.map((e, i) => (
                   <tr key={e.id || i} className="odd:bg-white even:bg-gray-50">
-                    {/* Fecha */}
-                    <td className="border p-1 align-top">
-                      <input
-                        type="date"
-                        className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
-                        value={e.date || ""}
-                        onChange={(ev) =>
-                          updateTextField(i, "date", ev.target.value)
-                        }
-                      />
-                    </td>
 
                     {/* Código de cuenta */}
                     <td className="border p-1 align-top">
@@ -358,8 +379,6 @@ export default function JournalPreviewModal({
                         }
                       />
                     </td>
-
-                    
 
                     {/* Débito */}
                     <td className="border p-1 align-top text-right">
@@ -435,17 +454,22 @@ export default function JournalPreviewModal({
             </table>
           </div>
 
-          {/* Botón para agregar línea */}
-          <div className="mt-3 flex justify-between items-center">
-            <button
-              type="button"
-              onClick={addEmptyLine}
-              className="px-3 py-1.5 text-xs md:text-sm bg-blue-50 text-blue-700 rounded border border-blue-300 hover:bg-blue-100"
-            >
-              ➕ Agregar línea
-            </button>
+          {/* Nota + Input + Mensaje balanceado en una sola linea */}
+          <div className="mt-4 flex items-center gap-3">
+            
+            <label className="text-sm font-medium whitespace-nowrap">
+              Nota / Glosa:
+            </label>
 
-            <div className="text-xs md:text-sm">
+            <input
+              type="text"
+              className="flex-1 border rounded px-3 py-2 text-sm"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ej: Factura 001-001-000123456, almuerzo cliente XYZ"
+            />
+
+            <div className="text-xs md:text-sm whitespace-nowrap ml-2">
               {isBalanced ? (
                 <span className="text-green-600 font-semibold">
                   ✔ Asiento balanceado
@@ -455,21 +479,7 @@ export default function JournalPreviewModal({
                   ⚠ No balanceado (D - C = {diff.toFixed(2)})
                 </span>
               )}
-            </div>
           </div>
-
-          {/* Nota general */}
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-1">
-              Nota / Glosa:
-            </label>
-            <input
-              type="text"
-              className="w-full border rounded px-3 py-2 text-sm"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Ej: Factura 001-001-000123456, almuerzo cliente XYZ"
-            />
           </div>
         </div>
 
