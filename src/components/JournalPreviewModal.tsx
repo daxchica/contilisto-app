@@ -33,6 +33,11 @@ interface Props {
   onSave: (entries: JournalEntry[], note: string) => Promise<void>; // Guardar definitivo
 }
 
+// Tipo local: JournalEntry + control de picker de cuenta
+type LocalEntry = JournalEntry & {
+  showPicker?: boolean;
+};
+
 // ============================================================================
 // Utilidad: buscar cuenta por código (para futuras mejoras)
 // ============================================================================
@@ -54,7 +59,7 @@ export default function JournalPreviewModal({
   onSave,
 }: Props) {
   // Copia editable local de los asientos
-  const [localEntries, setLocalEntries] = useState<JournalEntry[]>([]);
+  const [localEntries, setLocalEntries] = useState<LocalEntry[]>([]);
   const [note, setNote] = useState<string>("");
 
   // --------------------------------------------------------------------------
@@ -63,12 +68,13 @@ export default function JournalPreviewModal({
   // --------------------------------------------------------------------------
   useEffect(() => {
     // 1. Clonamos los asientos para no mutar la prop original
-    const cloned: JournalEntry[] = (entries || []).map((e) => ({ ...e }));
+    const cloned: LocalEntry[] = (entries || []).map((e) => ({ ...e }));
 
     // Aseguramos que cada línea tenga un id único (por si acaso)
     const withIds = cloned.map((e) => ({
       ...e,
       id: e.id || crypto.randomUUID(),
+      showPicker: false,
     }));
 
     setLocalEntries(withIds);
@@ -77,9 +83,10 @@ export default function JournalPreviewModal({
     //    - Cuenta cuyo código empieza en "5"
     //    - Si hay varias, tomamos la primera
 
-    const gastoPrincipal = entries.find(e =>
-      typeof e.account_code === "string" &&
-      e.account_code.trim().startsWith("5")
+    const gastoPrincipal = entries.find(
+      (e) =>
+        typeof e.account_code === "string" &&
+        e.account_code.trim().startsWith("5")
     );
 
     // 3. Preparar texto del gasto (si existe)
@@ -132,7 +139,7 @@ export default function JournalPreviewModal({
   // Cambiar campo genérico de texto (descripción, código, nombre de cuenta, etc.)
   function updateTextField(
     index: number,
-    field: keyof JournalEntry,
+    field: keyof LocalEntry,
     value: string
   ) {
     setLocalEntries((prev) => {
@@ -163,7 +170,7 @@ export default function JournalPreviewModal({
   }
 
   // (Opcional futuro) sin usar aún, pero preparado para AccountSearchInput
-  function updateAccountByCode(index: number, code: string) {
+  function updateAccountByCode( index: number, code: string) {
     const acc = findAccountByCode(accounts, code);
     setLocalEntries((prev) => {
       const next = [...prev];
@@ -208,7 +215,8 @@ export default function JournalPreviewModal({
           metadata?.invoiceDate || prev[0]?.invoiceDate || today,
         entityRUC: metadata?.buyerRUC || "",
         source: "vision",
-      } as JournalEntry,
+        showPicker: false,
+      } as LocalEntry,
     ]);
   }
 
@@ -305,7 +313,6 @@ export default function JournalPreviewModal({
 
           {/* FECHA GENERAL DEL ASIENTO */}
           <div className="mb-4 flex items-center justify-between gap-4">
-
             {/* Etiqueta + Input fecha */}
             <div className="flex items-center gap-3">
               <label className="block text-sm font-medium mb-1">Fecha del asiento:</label>
@@ -365,19 +372,62 @@ export default function JournalPreviewModal({
                     </td>
 
                     {/* Nombre de cuenta */}
-                    <td className="border p-1 align-top">
+                    <td className="border p-1 align-top relative">
+                      <div className="relative">
                       <input
                         type="text"
                         className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
                         value={e.account_name || ""}
-                        onChange={(ev) =>
-                          updateTextField(
-                            i,
-                            "account_name",
+                        onChange={(ev) => 
+                          updateTextField( 
+                            i, 
+                            "account_name", 
                             ev.target.value
                           )
                         }
+                        onFocus={() => 
+                          setLocalEntries(prev => {
+                            const next = [...prev];
+                            next[i] = { ...next[i], showPicker: true };
+                            return next;
+                          })
+                        }
                       />
+
+                      {/* DROPDOWN */}
+                      {e.showPicker && (
+                        <div
+                          className="absolute z-50 mt-1 w-full bg-white border rounded shadow-lg max-h-40 overflow-y-auto"
+                          onMouseLeave={() =>
+                            setLocalEntries(prev => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], showPicker: false };
+                              return next;
+                            })
+                          }
+                        >
+                          {accounts.map((acc) => (
+                            <div
+                              key={acc.code}
+                              className="px-2 py-1 cursor-pointer hover:bg-blue-100 text-xs"
+                              onClick={() => {
+                                updateTextField(i, "account_name", acc.name);
+                                updateTextField(i, "account_code", acc.code);
+
+                                setLocalEntries(prev => {
+                                  const next = [...prev];
+                                  next[i].showPicker = true;
+                                  return next;
+                                });
+                              }}
+                            >
+                              <strong>{acc.code}</strong> — {acc.name}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     </td>
 
                     {/* Débito */}
@@ -479,7 +529,7 @@ export default function JournalPreviewModal({
                   ⚠ No balanceado (D - C = {diff.toFixed(2)})
                 </span>
               )}
-          </div>
+            </div>
           </div>
         </div>
 

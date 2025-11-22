@@ -16,7 +16,7 @@ const fmtUSD = (n: number) =>
     minimumFractionDigits: 2,
    }).format(n || 0);
 
-export default function TrialBalance({ entries }: Props) {
+export default function TrialBalance({ entries, startDate, endDate }: Props) {
   const initialBalances = useInitialBalances();
   // Agrupar por cuenta
   const rows = useMemo(() => {

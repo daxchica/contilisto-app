@@ -16,6 +16,7 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
 
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   // -------------------------------------------------------------------------
   // VALIDACIONES
@@ -50,7 +51,7 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
   // -------------------------------------------------------------------------
   // DROP HANDLER
   // -------------------------------------------------------------------------
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     if (disabled) return;
@@ -58,7 +59,12 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
     setIsDragging(false);
 
     const valid = validateFiles(e.dataTransfer.files);
-    onFilesSelected(valid);
+    if (!valid) return;
+    setIsLoading(true);
+    
+    await Promise.resolve(onFilesSelected(valid));
+
+    setIsLoading(false);
   };
 
   // -------------------------------------------------------------------------
@@ -84,55 +90,79 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
   };
 
   // -------------------------------------------------------------------------
+  // INPUT CHANGE
+  // -------------------------------------------------------------------------
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valid = validateFiles(e.target.files);
+
+    if (!valid) return;
+
+    setIsLoading(true);
+
+    await Promise.resolve(onFilesSelected(valid));
+
+    setIsLoading(false);
+  };
+
+  // -------------------------------------------------------------------------
   // RENDER
   // -------------------------------------------------------------------------
   return (
     <div className="w-full">
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={handleClick}
-        className={`
-          w-full border-2 border-dashed rounded-xl p-10 text-center transition
-          ${
-            disabled
-              ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-              : isDragging
-              ? "border-blue-500 bg-blue-100 cursor-pointer"
-              : "border-blue-400 bg-blue-50/50 hover:bg-blue-100 cursor-pointer"
-          }
-        `}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          onChange={(e) => {
-            const valid = validateFiles(e.target.files);
-            onFilesSelected(valid);
-          }}
-        />
+      {/* WRAPPER PARA EL DROPBOX + SPINNER */}
+      <div className="relative">
 
-        <div className="text-gray-700 flex flex-col items-center gap-2">
-          <span className="text-5xl">📄</span>
+        {/* DROPZONE */}
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={handleClick}
+          className={`
+            w-full border-2 border-dashed rounded-xl p-10 text-center transition
+            ${
+              disabled
+                ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                : isDragging
+                ? "border-blue-500 bg-blue-100 cursor-pointer"
+                : "border-blue-400 bg-blue-50/50 hover:bg-blue-100 cursor-pointer"
+            }
+          `}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={handleFileChange}
+          />
 
-          {disabled ? (
-            <p className="text-gray-400 text-base">
-              Selecciona una empresa para habilitar la carga de PDFs.
-            </p>
-          ) : (
-            <>
-              <p className="text-gray-700 font-semibold text-base">
-                Arrastra tu factura PDF aquí
+          <div className="text-gray-700 flex flex-col items-center gap-2">
+            <span className="text-5xl">📄</span>
+
+            {disabled ? (
+              <p className="text-gray-400 text-base">
+                Selecciona una empresa para habilitar la carga de PDFs.
               </p>
-              <p className="text-gray-600 text-sm">o haz clic para seleccionar</p>
-            </>
+            ) : (
+              <>
+                <p className="text-gray-700 font-semibold text-base">
+                  Arrastra tu factura PDF aquí
+                </p>
+                <p className="text-gray-600 text-sm">o haz clic para seleccionar</p>
+              </>
+            )}
+          </div>
+          {/* SPINNER OVERLAY */}
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded-xl">
+              <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            </div>
           )}
         </div>
       </div>
 
+      {/* ERROR MESSAGE */}
       {errorMessage && (
         <div className="mt-2 text-red-600 font-medium text-sm">{errorMessage}</div>
       )}
