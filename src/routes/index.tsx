@@ -5,6 +5,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import EntitiesDashboard from "../pages/EntitiesDashboard";
 import FinancialsPage from "../pages/FinancialsPage";
+import FinancialStatements from "@/pages/FinancialStatements";
 import LedgerPage from "@/pages/LedgerPage";
 import BankBookPage from "../pages/BankBookPage";
 import Login from "../pages/Login";
@@ -36,7 +37,7 @@ export default function AppRoutes() {
         path="/estados-financieros" 
         element={
           <MainLayout>
-            <FinancialsPage />
+            <FinancialStatements />
           </MainLayout>
         } 
       />

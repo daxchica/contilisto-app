@@ -7,6 +7,7 @@ import PnLSummary from "../components/PnLSummary";
 import BalanceSheet from "../components/BalanceSheet";
 import InitialBalancePanel from "../components/InitialBalancePanel";
 import TrialBalance from "../components/TrialBalance";
+import { fetchJournalEntries } from "@/services/journalService";
 
 // import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
@@ -14,70 +15,120 @@ import { JournalEntry } from "../types/JournalEntry";
 type Tab = "comprobacion" | "estado" | "balance";
 
 export default function FinancialStatements() {
+  // -------------------------------------------
+  // Selected entity context
+  // -------------------------------------------
   const { entity } = useSelectedEntity();
   const entityId = entity?.id ?? "";
-  const entityName = useMemo(() => entity?.name ?? "", [entity?.name]);
-  const entityRuc   = useMemo(() => entity?.ruc  ?? "", [entity?.ruc]);
+  const entityName = entity?.name ?? "";
+  const entityRuc = entity?.ruc ?? "";
 
+  // -------------------------------------------
+  // Journal entries
+  // -------------------------------------------
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // -------------------------------------------
+  // Tabs — Option B (browser-style)
+  // -------------------------------------------
   const [activeTab, setActiveTab] = useState<Tab>("comprobacion");
 
-  // filtros de fecha (globales)
+  // -------------------------------------------
+  // Date filters PER REPORT (Option B)
+  // -------------------------------------------
   const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate]     = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
+  // ------------------------------------
+  // Load entries (currently disabled)
+  // ------------------------------------
   useEffect(() => {
     if (!entityId) {
       setEntries([]);
       return;
     }
     setLoading(true);
-//    fetchJournalEntries(entityId)
-//      .then(setEntries)
-//      .catch((err) => {
-//        console.error("Error loading journal entries:", err);
-//        setEntries([]);
-//      })
-//      .finally(() => setLoading(false));
+
+    fetchJournalEntries(entityId)
+      .then((data) => {
+        console.log("Loaded journal entries:", data);
+        setEntries(data);
+      })
+      .catch((err) => {
+        console.error("Error loading journal entries:", err);
+        setEntries([]);
+      })
+      .finally(() => {
+        setLoading(false);
+    });
   }, [entityId]);
 
+  // ------------------------------------
+  // Helper: returns filtered entries for a tab
+  // ------------------------------------
   const filteredEntries = useMemo(() => {
     if (!startDate && !endDate) return entries;
+    
     const from = startDate ? new Date(startDate) : null;
-    const to   = endDate   ? new Date(endDate)   : null;
+    const to   = endDate ? new Date(endDate)   : null;
+
     return entries.filter((e) => {
-      const d = e.date ? new Date(e.date) : null;
-      if (!d) return false;
+      
+      if (!e.date) return false;
+      const d = new Date(e.date);
+
       if (from && d < from) return false;
       if (to && d > to) return false;
+      
       return true;
     });
   }, [entries, startDate, endDate]);
 
+  // -------------------------------------------
+  // Calculate the PnL result (needed for Balance Sheet)
+  // -------------------------------------------
   const resultadoDelEjercicio = useMemo(() => {
   const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
-    entries
+    filteredEntries
       .filter((e) => (e.account_code || "").startsWith(prefix))
       .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
   const ventas = sumByPrefix("7", "credit");
   const gastos = sumByPrefix("5", "debit");
-  const utilidadNeta = ventas - gastos;
-  return utilidadNeta;
-}, [entries]);
+  return ventas - gastos;
+}, [filteredEntries]);
 
-  const renderContent = () => {
+  // ------------------------------------
+  // Render the selected tab content
+  // ------------------------------------
+  const renderReport = () => {
     if (loading) return <p className="text-blue-600 animate-pulse">⏳ Cargando registros contables...</p>;
-    if (!filteredEntries.length) return <p className="text-gray-500 italic">No hay registros en el rango seleccionado.</p>;
+    if (!filteredEntries.length) 
+      return <p className="text-gray-500 italic">No hay registros en el rango seleccionado.</p>;
 
-    if (activeTab === "comprobacion") return <TrialBalance entries={filteredEntries} />;
-    if (activeTab === "estado")       return <PnLSummary   entries={filteredEntries} />;
-    if (activeTab === "balance")      return <BalanceSheet entries={filteredEntries} resultadoDelEjercicio={resultadoDelEjercicio} entityId={entityId} />;
+    if (activeTab === "comprobacion") 
+      return <TrialBalance entries={filteredEntries} />;
 
-    return null;
+    if (activeTab === "estado")
+      return <PnLSummary entries={filteredEntries} />;
+
+    if (activeTab === "balance") 
+        return (
+          <BalanceSheet 
+            entries={filteredEntries} 
+            resultadoDelEjercicio={resultadoDelEjercicio} 
+            entityId={entityId}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        );
+        return null; 
   };
 
+  // ------------------------------------
+  // If no entity is selected
+  // ------------------------------------
   if (!entityId) {
     return (
       <div className="pt-24 px-4 min-h-screen flex justify-center">
@@ -92,77 +143,92 @@ export default function FinancialStatements() {
     );
   }
 
+  // ------------------------------------
+  // RENDER
+  // ------------------------------------
   return (
       <div className="pt-24 px-4 min-h-screen flex justify-center">
         <div className="w-full max-w-5xl">
+
+          {/* PAGE TITLE */}
           <h1 className="text-2xl font-bold text-blue-700 mb-2 text-center">📊 Estados Financieros</h1>
           <p className="text-base text-gray-600 mb-8 text-center">
-            Entidad: <strong>{entityRuc}</strong> — {entityName}
+            Empresa: <strong>{entityRuc}</strong> — {entityName}
           </p>
 
-          {/* Panel de Saldos Iniciales */}
+          {/* INITIAL BALANCE PANEL */}
           <div className="mb-8">
             <InitialBalancePanel entityId={entityId} userId="" accounts={[]}/>
           </div>
 
-          {/* Filtros globales */}
-          <div className="bg-white border rounded-lg shadow p-4 mb-6">
-            <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
-              <div className="flex items-center gap-2">
-                <label htmlFor="fi" className="text-sm text-gray-700">Desde</label>
-                <input
-                  id="fi"
-                  type="date"
-                  className="border rounded px-2 py-1"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label htmlFor="ff" className="text-sm text-gray-700">Hasta</label>
-                <input
-                  id="ff"
-                  type="date"
-                  className="border rounded px-2 py-1"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
-              {(startDate || endDate) && (
-                <button
-                  className="text-sm text-blue-700 underline"
-                  onClick={() => { setStartDate(""); setEndDate(""); }}
-                >
-                  Limpiar rango
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex justify-center gap-6 border-b mb-6">
+          {/* BROWSER STYLE TABS */}
+          <div className="flex justify-center gap-8 border-b pb-2">
             {[
               { id: "comprobacion", label: "Balance de Comprobación" },
-              { id: "estado",       label: "Estado de Resultados" },
-              { id: "balance",      label: "Balance General" },
+              { id: "estado", label: "Estado de Resultados" },
+              { id: "balance", label: "Balance General" }
             ].map((t) => (
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id as Tab)}
-                className={`pb-2 font-medium ${
-                  activeTab === t.id
-                    ? "border-b-2 border-blue-700 text-blue-700"
-                    : "text-gray-500 hover:text-blue-600"
-                }`}
+                className={`
+                  px-4 py-2 rounded-t-md
+                  ${activeTab === t.id
+                    ? "bg-white border border-b-0 text-blue-700 font-semibold"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"}
+                `}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-        {/* Contenido */}
+           {/* DATE FILTER FOR ACTIVE TAB */}
+        <div className="bg-white border rounded-lg shadow p-4 mb-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
+
+            {/* From Date */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-700">Desde</label>
+              <input
+                type="date"
+                className="border rounded px-2 py-1"
+                value={startDate}
+                onChange={(e) =>
+                  setStartDate(e.target.value)}
+              />
+            </div>
+
+            {/* Unitl Date */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-700">Hasta</label>
+              <input
+                type="date"
+                className="border rounded px-2 py-1"
+                value={endDate}
+                onChange={(e) =>
+                  setEndDate(e.target.value)}
+              />
+            </div>
+
+          {/* Clear */}
+            {(startDate || endDate) && (
+              <button
+                className="text-sm text-blue-700 underline"
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}
+              >
+                Limpiar rango
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Report Content */}
         <div className="bg-white shadow rounded p-6 mb-16">
-          {renderContent()}
+          {renderReport()}
         </div>
       </div>
     </div>

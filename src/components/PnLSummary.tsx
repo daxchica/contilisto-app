@@ -8,6 +8,8 @@ import { PUCExpenseStructure } from "../utils/accountPUCMap";
 
 interface Props {
   entries: JournalEntry[];
+  startDate?: string;
+  endDate?: string;
   onResultChange?: (result: number) => void;
 }
 
@@ -19,7 +21,30 @@ const NON_PREFIX_EXPENSE_CODES = EXPENSE_CODES.filter(
   (code) => !code.startsWith("5")
 );
 
-export default function PnLSummary({ entries, onResultChange }: Props) {
+export default function PnLSummary({ 
+  entries,
+  startDate,
+  endDate, 
+  onResultChange 
+}: Props) {
+  // ---------------------------------------------------------
+  // DATE FILTERING (solo PnL, no hay balance inicial aquí)
+  // ---------------------------------------------------------
+  const filteredEntries = useMemo(() => {
+    if (!startDate && !endDate) return entries;
+
+    const from = startDate ? new Date(startDate) : null;
+    const to = endDate ? new Date(endDate) : null;
+
+    return entries.filter((e) => {
+      if (!e.date) return false;
+      const d = new Date(e.date);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }, [entries, startDate, endDate]);
+
   const isIncomeOrExpenseAccount = (accountCode?: string) => {
     if (!accountCode) return false;
     const first = accountCode.charAt(0);
@@ -27,12 +52,12 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
   };
 
   const sumByCode = (codes: string[], side: "debit" | "credit") =>
-    entries
+    filteredEntries
       .filter((e) => codes.includes(e.account_code || ""))
       .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
   const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
-    entries
+    filteredEntries
       .filter(
         (e) => 
           (e.account_code || "").startsWith(prefix) &&
@@ -52,7 +77,7 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
 
   // 🔍 Extract individual expense lines
   const detailedExpenses = useMemo(() => {
-    const expenses = entries.filter(
+    const expenses = filteredEntries.filter(
       (e) =>
         e.account_code &&
         ["5", "6", "7"].includes(e.account_code.charAt(0)) &&
@@ -92,7 +117,7 @@ export default function PnLSummary({ entries, onResultChange }: Props) {
       utilidadBruta,
       utilidadNeta,
     };
-  }, [entries, detailedExpenses]);
+  }, [filteredEntries, detailedExpenses]);
 
   // 👉 Send net result to BalanceSheet
   useEffect(() => {

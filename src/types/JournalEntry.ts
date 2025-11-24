@@ -3,7 +3,7 @@
 // Tipo central de asiento contable — ARQUITECTURA CONTILISTO v1.0
 // ============================================================================
 
-export type EntrySource = "ai" | "manual" | "edited" | "vision";
+export type EntrySource = "ai" | "manual" | "edited" | "vision" | "initial";
 
 export type JournalType = "expense" | "income" | "liability";
 

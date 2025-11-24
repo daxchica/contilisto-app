@@ -7,13 +7,23 @@ import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
 import ECUADOR_COA from "../../shared/coa/ecuador_coa";
 import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries";
+import { useInitialBalances } from "@/hooks/useInitialBalances";
 
-const COLUMNS = ["Código", "Cuenta", "Saldo Inicial", "Débito", "Crédito", "Saldo"] as const;
+const COLUMNS = [
+  "Código", 
+  "Cuenta", 
+  "Saldo Inicial", 
+  "Débito", 
+  "Crédito", 
+  "Saldo"
+] as const;
 
 interface Props {
   entries: JournalEntry[];
-  resultadoDelEjercicio: number;
+  resultadoDelEjercicio?: number;
   entityId: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 type Row = {
@@ -35,21 +45,97 @@ function getParentCode(code: string): string | null {
   return code.slice(0, code.length - 2);
 }
 
-export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId }: Props) {
+export default function BalanceSheet({ 
+  entries, 
+  resultadoDelEjercicio: resultadoProp,
+  entityId,
+  startDate,
+  endDate,
+}: Props) {
   const [level, setLevel] = useState(5);
   const [collapsedCodes, setCollapsedCodes] = useState<Set<string>>(new Set());
+  const initialBalances = useInitialBalances();
 
+  // -----------------------------------------------
+  // Toggle collapse state for hierarchical accounts
+  // -----------------------------------------------
   const toggleCollapse = (code: string) => {
     const updated = new Set(collapsedCodes);
     updated.has(code) ? updated.delete(code) : updated.add(code);
     setCollapsedCodes(updated);
   };
 
+  // ---------------------------------------------------------
+  // DATE FILTERING (Balance Inicial SIEMPRE incluido)
+  // ---------------------------------------------------------
+  const filteredEntries = useMemo(() => {
+    // Primero filtramos por entidad
+    const byEntity = entries.filter((e) => e.entityId === entityId);
+
+    if (!startDate && !endDate) return byEntity;
+
+    const from = startDate ? new Date(startDate) : null;
+    const to = endDate ? new Date(endDate) : null;
+
+    return byEntity.filter((e) => {
+      // Si es balance inicial, siempre entra
+      
+      if (e.source === "initial") return false;
+      
+      if (!e.date) return false;
+      const d = new Date(e.date);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }, [entries, entityId, startDate, endDate]);
+
+  // ---------------------------------------------------------
+  // Group operations (using filtered debit/credit movements)
+  // ---------------------------------------------------------
   const groupedEntries = useMemo(
-    () => groupEntriesByAccount(entries.filter(e => e.entityId === entityId)), 
-    [entries, entityId]
+    () => groupEntriesByAccount(filteredEntries), 
+    [filteredEntries]
   );
 
+  // ---------------------------------------------------------
+  // Account initial balances (NEVER filtered by date)
+  // ---------------------------------------------------------
+  const initialByCode = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    for (const b of initialBalances) {
+      const code = (b.account_code || "").trim();
+      if (!code) continue;
+      
+      // si initialBalances trae entityId, lo filtramos
+      const balEntityId = (b as any).entityId as string | undefined;
+      if (balEntityId && balEntityId !== entityId) continue;
+
+      map[code] = (map[code] || 0) + Number(b.initial_balance || 0);
+    }
+    return map;
+  }, [initialBalances, entityId]);
+
+  // ---------------------------------------------------------------------
+  // Net result of the fiscal period (if not provided externally via prop)
+  // ---------------------------------------------------------------------
+  const resultadoDelEjercicio = useMemo(() => {
+    if (typeof resultadoProp === "number") return resultadoProp;
+
+    const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
+      filteredEntries
+        .filter((e) => (e.account_code || "").startsWith(prefix))
+        .reduce((acc, e) => acc + Number(e[side] || 0), 0);
+
+    const ventas = sumByPrefix("7", "credit");
+    const gastos = sumByPrefix("5", "debit");
+    return ventas - gastos;
+  }, [resultadoProp, filteredEntries]);
+
+  // -------------------------------------------------------------------------
+  // Construct hierarchical Balance Sheet following Ecuadorian PUC structure
+  // -------------------------------------------------------------------------
   const groupedAccounts = useMemo(() => {
     // Only 1/2/3 groups; restrict Patrimonio to (301,306,307*)
     const eligible = ECUADOR_COA.filter(acc => {
@@ -82,7 +168,7 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
       map.set(code, {
         code,
         name: acc.name,
-        initialBalance: isLeaf(code) ? g.initial : 0,
+        initialBalance: initialByCode[code] || 0,
         debit: isLeaf(code) ? g.debit : 0,
         credit: isLeaf(code) ? g.credit : 0,
         balance: 0, // filled after roll-up
@@ -91,7 +177,7 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
       });
     }
 
-    // 2️⃣ Add resultado del ejercicio
+    // 2️⃣ Inject "Resultado del Ejercicio" and detail accounts
     if (!map.has("307")) {
       map.set("307", {
         code: "307",
@@ -141,7 +227,7 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
       });
     }
 
-    // Make sure parents referenced by injected nodes exist in children map (for roll-up)
+    // Ensure parent-child relations exist in the map
     for (const row of map.values()) {
       if (row.parent) {
         if (!childrenByParent.has(row.parent)) childrenByParent.set(row.parent, []);
@@ -153,11 +239,14 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
 
     // 3️⃣ Bottom-up propagation (aggregate child balances)
     const allCodes = Array.from(map.keys()).sort((a, b) => b.length - a.length);
+
     for (const code of allCodes) {
       const row = map.get(code)!;
       if (!row.parent) continue;
+
       const parent = map.get(row.parent);
       if (!parent) continue;
+
       parent.initialBalance += row.initialBalance;
       parent.debit += row.debit;
       parent.credit += row.credit;
@@ -165,10 +254,11 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
 
   // 4) Compute balances using the group rule
   for (const row of map.values()) {
-    const first = row.code.charAt(0);
-    if (first === "1") {
+    const group = row.code.charAt(0);
+
+    if (group === "1") {
       row.balance = row.initialBalance + row.debit - row.credit;
-    } else if (first === "2" || first === "3") {
+    } else if (group === "2" || group === "3") {
       row.balance = row.initialBalance - row.debit + row.credit;
     } else {
       row.balance = 0;
@@ -176,10 +266,10 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
   }
   
   // 5️⃣ Apply visualization level filter
-  const filtered = Array.from(map.values()).filter((acc) => acc.level <= level);
-  // Sort
-  return filtered.sort((a, b) => a.code.localeCompare(b.code));
-}, [groupedEntries, resultadoDelEjercicio, level]);
+  return Array.from(map.values())
+    .filter((acc) => acc.level <= level)
+    .sort((a, b) => a.code.localeCompare(b.code));
+}, [groupedEntries, initialByCode, resultadoDelEjercicio, level]);
 
   // Collapse visibility
   const isVisible = (acc: Row) => {
@@ -190,10 +280,13 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
     return true;
   };
 
-  // Exportar a PDF
+  // ---------------------------------------------------------
+  // EXPORT FUNCTIONS
+  // ---------------------------------------------------------
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Balance General", 14, 14);
+
     autoTable(doc, {
       startY: 20,
       head: [[...COLUMNS]],
@@ -224,13 +317,18 @@ export default function BalanceSheet({ entries, resultadoDelEjercicio, entityId 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.setAttribute("download", "balance-general.csv");
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  // -------------------------------
+  // RENDER
+  // -------------------------------
   return (
     <div className="p-4">
       <div className="flex flex-wrap justify-between items-center mb-4 gap-2">

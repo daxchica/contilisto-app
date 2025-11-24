@@ -7,6 +7,8 @@ import { useInitialBalances } from "../hooks/useInitialBalances";
 
 type Props = {
   entries: JournalEntry[];
+  startDate?: string;
+  endDate?: string;
 };
 
 const fmtUSD = (n: number) =>
@@ -18,7 +20,30 @@ const fmtUSD = (n: number) =>
 
 export default function TrialBalance({ entries, startDate, endDate }: Props) {
   const initialBalances = useInitialBalances();
-  // Agrupar por cuenta
+  
+  // ---------------------------------------------------------
+  // DATE FILTERING
+  // ---------------------------------------------------------
+  const filteredEntries = useMemo(() => {
+    if (!startDate && !endDate) return entries;
+
+    const from = startDate ? new Date(startDate) : null;
+    const to = endDate ? new Date(endDate) : null;
+
+    return entries.filter((e) => {
+      if (!e.date) return false;
+      const d = new Date(e.date);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }, [entries, startDate, endDate]);
+
+   // ---------------------------------------------------------
+  // AGRUPAR POR CUENTA
+  // - Balance inicial viene de initialBalances (no se filtra por fecha)
+  // - Débito/Crédito de movimientos filtrados por rango
+  // ---------------------------------------------------------
   const rows = useMemo(() => {
     const map = new Map<
       string,
@@ -56,7 +81,9 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
       const code = (e.account_code || "").trim();
       const name = (e.account_name || "").trim() || "(Sin nombre)";
       if (!code) continue;
+
       const key = `${code}||${name}`;
+
       if (!map.has(key)) {
         map.set(key, {
           account_code: code,
@@ -67,9 +94,9 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
           balance: 0,
         });
       }
-      const r = map.get(key)!;
-      r.debit += Number(e.debit || 0);
-      r.credit += Number(e.credit || 0);
+      const row = map.get(key)!;
+      row.debit += Number(e.debit || 0);
+      row.credit += Number(e.credit || 0);
     }
 
     // 3. Calcular saldos finales
@@ -80,7 +107,7 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
     return Array.from(map.values()).sort((a, b) =>
       a.account_code.localeCompare(b.account_code, "es")
     );
-  }, [entries, initialBalances]);
+  }, [filteredEntries, initialBalances]);
 
   // Totales
   const totals = useMemo(
@@ -111,7 +138,16 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
 
     (doc as any).autoTable({
       startY: y,
-      head: [["Código", "Cuenta", "Balance Inicial", "Débito", "Crédito", "Saldo"]],
+      head: [
+        [
+          "Código", 
+          "Cuenta", 
+          "Balance Inicial", 
+          "Débito", 
+          "Crédito", 
+          "Saldo"
+        ]
+      ],
       body: rows.map((r) => [
         r.account_code,
         r.account_name,
@@ -143,6 +179,9 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
     doc.save("Balance_de_Comprobacion.pdf");
   };
 
+  // ---------------------------------------------------------
+  // RENDER
+  // ---------------------------------------------------------
   return (
     <div className="flex justify-center">
       <div className="w-full max-w-4xl bg-white shadow rounded p-6">
