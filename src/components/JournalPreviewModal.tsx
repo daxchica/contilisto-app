@@ -1,21 +1,28 @@
 // ============================================================================
 // src/components/JournalPreviewModal.tsx
-// ARQUITECTURA CONTILISTO v1.0
+// CONTILISTO ARCHITECTURE v1.0
 //
-// Rol de este componente:
-// - Recibir entries ya construidos por el backend (OCR + Vision + Prompt).
-// - Mostrar los datos clave de la factura (metadata).
-// - Permitir al usuario revisar y AJUSTAR:
-//     • Código de cuenta
-//     • Nombre de cuenta
-//     • Descripción
-//     • Débito / Crédito
-// - Validar que el asiento esté balanceado.
-// - Enviar entries + nota al padre mediante onSave().
+// Component role:
+// - Receive journal entries already built by the backend (OCR + Vision + Prompt).
+// - Show key invoice metadata.
+// - Let the user REVIEW and ADJUST:
+//     • Account code
+//     • Account name
+//     • Description
+//     • Debit / Credit
+// - Validate that the journal entry is balanced.
+// - Send entries + note back to parent via onSave().
 //
-// IMPORTANTE ACv1:
-// - Aquí NO volvemos a clasificar ni a reconstruir el asiento desde cero.
-// - La lógica contable vive en el backend (extract-invoice-vision.ts).
+// IMPORTANT ACv1:
+// - We DO NOT re-classify or rebuild the journal from scratch here.
+// - Accounting logic lives in the backend (extract-invoice-vision.ts).
+//
+// NEW RULE (Option A - Leaf Only):
+// - The user can ONLY select leaf accounts (last level of the chart).
+// - Dropdowns show ONLY leaf accounts.
+// - Parent accounts cannot be selected.
+// - No free-text: if user types a code/name that does not resolve to a leaf
+//   account, the field is cleared on blur.
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -38,16 +45,25 @@ type LocalEntry = JournalEntry & {
   showPicker?: boolean;
 };
 
-// ============================================================================
-// Utilidad: buscar cuenta por código (para futuras mejoras)
-// ============================================================================
-function findAccountByCode(accounts: Account[], code: string): Account | null {
-  if (!code) return null;
-  return accounts.find((a) => a.code === code) || null;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Returns true if this account is a "leaf" (no children in the chart). */
+function isLeafAccount(account: Account, all: Account[]): boolean {
+  return !all.some(
+    (other) =>
+      other.code !== account.code && other.code.startsWith(account.code)
+  );
+}
+
+/** Normalize a string for comparison/search (code or name). */
+function normalize(text: string | undefined | null): string {
+  return (text || "").toLowerCase().trim();
 }
 
 // ============================================================================
-// COMPONENTE PRINCIPAL
+// MAIN COMPONENT
 // ============================================================================
 export default function JournalPreviewModal({
   entries,
@@ -58,19 +74,30 @@ export default function JournalPreviewModal({
   onClose,
   onSave,
 }: Props) {
-  // Copia editable local de los asientos
+  // Local editable copy of entries
   const [localEntries, setLocalEntries] = useState<LocalEntry[]>([]);
   const [note, setNote] = useState<string>("");
 
+  // Precompute LEAF accounts only (last level)
+  const leafAccounts = useMemo(
+    () => accounts.filter((acc) => isLeafAccount(acc, accounts)),
+    [accounts]
+  );
+
+  const leafCodesSet = useMemo(
+    () => new Set(leafAccounts.map((a) => a.code)),
+    [leafAccounts]
+  );
+
   // --------------------------------------------------------------------------
-  // Inicialización: usamos SIEMPRE los entries que vienen del backend.
-  // metadata se usa solo para la cabecera y para prellenar la nota.
+  // Initialization: ALWAYS use entries from backend.
+  // metadata only used for header + default note.
   // --------------------------------------------------------------------------
   useEffect(() => {
-    // 1. Clonamos los asientos para no mutar la prop original
+    // 1. Clone entries so we do not mutate the original prop
     const cloned: LocalEntry[] = (entries || []).map((e) => ({ ...e }));
 
-    // Aseguramos que cada línea tenga un id único (por si acaso)
+    // 2. Ensure each line has a unique id
     const withIds = cloned.map((e) => ({
       ...e,
       id: e.id || crypto.randomUUID(),
@@ -79,39 +106,34 @@ export default function JournalPreviewModal({
 
     setLocalEntries(withIds);
 
-    // 2. Seleccionar SOLO el gasto principal:
-    //    - Cuenta cuyo código empieza en "5"
-    //    - Si hay varias, tomamos la primera
-
-    const gastoPrincipal = entries.find(
+    // 3. Try to detect main expense line (code starting with "5")
+    const mainExpense = entries.find(
       (e) =>
         typeof e.account_code === "string" &&
         e.account_code.trim().startsWith("5")
     );
-
-    // 3. Preparar texto del gasto (si existe)
-    const descripcionGasto =
-      gastoPrincipal?.account_name?.trim() || "";
     
-    // 4. Obtener numero de factura
+    const expenseDescription = mainExpense?.account_name?.trim() || "";
+    
+    // 4. Extract invoice number
     const invoiceNumber =
-      metadata?.invoice_number ||
-      entries?.[0]?.invoice_number ||
-      "";
+      metadata?.invoice_number || entries?.[0]?.invoice_number || "";
     
-    // 5. Construir glosa final
+    // 5. Build default note
     const glosa = 
-      invoiceNumber && descripcionGasto 
-        ? `Factura ${invoiceNumber} - ${descripcionGasto}` 
+      invoiceNumber && expenseDescription 
+        ? `Factura ${invoiceNumber} - ${expenseDescription}` 
         : invoiceNumber
         ? `Factura ${invoiceNumber}`
-        : descripcionGasto;
+        : expenseDescription;
 
-    if (!note) setNote(glosa || "");
+    // Only set default note if it was empty (avoid overriding user edits
+    // when reopening the modal with the same data).
+    setNote((prev) => (prev ? prev : glosa || ""));
   }, [entries, metadata]);
 
   // --------------------------------------------------------------------------
-  // Totales y balance
+  // Totals and balance
   // --------------------------------------------------------------------------
   const { totalDebit, totalCredit, isBalanced, diff } = useMemo(() => {
     const d = localEntries.reduce(
@@ -133,26 +155,22 @@ export default function JournalPreviewModal({
   }, [localEntries]);
 
   // --------------------------------------------------------------------------
-  // Handlers de edición
+  // Generic field helpers
   // --------------------------------------------------------------------------
 
-  // Cambiar campo genérico de texto (descripción, código, nombre de cuenta, etc.)
-  function updateTextField(
-    index: number,
-    field: keyof LocalEntry,
-    value: string
+  function patchEntry(index: number, patch: Partial<LocalEntry>
   ) {
     setLocalEntries((prev) => {
       const next = [...prev];
       next[index] = {
         ...next[index],
-        [field]: value,
+        ...patch,
       };
       return next;
     });
   }
 
-  // Cambiar campo numérico (debit / credit)
+  // Change numeric field (debit / credit)
   function updateNumberField(
     index: number,
     field: "debit" | "credit",
@@ -169,26 +187,113 @@ export default function JournalPreviewModal({
     });
   }
 
-  // (Opcional futuro) sin usar aún, pero preparado para AccountSearchInput
-  function updateAccountByCode( index: number, code: string) {
-    const acc = findAccountByCode(accounts, code);
+  // Apply a leaf account to a given row
+  function applyLeafAccount(index: number, account: Account | null) {
     setLocalEntries((prev) => {
       const next = [...prev];
-      next[index] = {
-        ...next[index],
-        account_code: code,
-        account_name: acc?.name || next[index].account_name,
-      };
+      if (!account) {
+        next[index] = {
+          ...next[index],
+          account_code: "",
+          account_name: "",
+        };
+      } else {
+        next[index] = {
+          ...next[index],
+          account_code: account.code,
+          account_name: account.name,
+        };
+      }
       return next;
     });
   }
 
-  // Eliminar una línea (por ejemplo, si la IA agregó algo extra)
+  // Called when user types in account code input
+  function handleCodeChange(index: number, rawCode: string) {
+    patchEntry(index, {
+      account_code: rawCode,
+      showPicker: true,
+    });
+  }
+
+  // Called when code input loses focus: enforce leaf-only + no free text
+  function handleCodeBlur(index: number) {
+    setLocalEntries((prev) => {
+      const next = [...prev];
+      const entry = next[index];
+      const raw = (entry.account_code || "").trim();
+
+      const exactMatch = leafAccounts.find((a) => a.code === raw);
+
+      if (!raw || !exactMatch) {
+        // Invalid code -> clear both fields
+        entry.account_code = "";
+        entry.account_name = "";
+      } else {
+        entry.account_code = exactMatch.code;
+        entry.account_name = exactMatch.name;
+      }
+
+      entry.showPicker = false;
+      return next;
+    });
+  }
+
+  // When the user types in the account name
+  function handleNameChange(index: number, value: string) {
+    patchEntry(index, {
+      account_name: value,
+      showPicker: true,
+    });
+  }
+
+  // Called when name input loses focus: enforce leaf-only + no free text
+  function handleNameBlur(index: number) {
+    setLocalEntries((prev) => {
+      const next = [...prev];
+      const entry = next[index];
+      const raw = normalize(entry.account_name);
+
+      if (!raw) {
+        entry.account_code = "";
+        entry.account_name = "";
+        entry.showPicker = false;
+        return next;
+      }
+
+      // 1) Exact name match
+      let match = leafAccounts.find((a) => normalize(a.name) === raw);
+
+      // 2) If no exact match and there is ONE partial match, accept it
+      if (!match) {
+        const partials = leafAccounts.filter((a) =>
+          normalize(a.name).includes(raw)
+        );
+        if (partials.length === 1) {
+          match = partials[0];
+        }
+      }
+
+      if (!match) {
+        // No valid leaf account -> clear
+        entry.account_code = "";
+        entry.account_name = "";
+      } else {
+        entry.account_code = match.code;
+        entry.account_name = match.name;
+      }
+
+      entry.showPicker = false;
+      return next;
+    });
+  }
+
+  // Remove a line (for example, if AI added something extra)
   function removeLine(index: number) {
     setLocalEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // Agregar una nueva línea vacía
+  // Add an empty line
   function addEmptyLine() {
     const today =
       localEntries[0]?.date ||
@@ -227,6 +332,27 @@ export default function JournalPreviewModal({
     if (!isBalanced) {
       alert(
         "⚠ El asiento no está balanceado. Revisa la diferencia entre Débito y Crédito."
+      );
+      return;
+    }
+
+    // Enforce "leaf-only" rule on save
+    const invalidLines = localEntries.filter(
+      (e) => !leafCodesSet.has((e.account_code || "").trim())
+    );
+
+    if (invalidLines.length > 0) {
+      const invalidCodes = Array.from(
+        new Set(
+          invalidLines
+            .map((e) => (e.account_code || "").trim())
+            .filter(Boolean)
+        )
+      ).join(", ");
+
+      alert(
+        `⚠ Solo se permiten cuentas de último nivel (hoja).\n` +
+          `Revisa las líneas con códigos no válidos: ${invalidCodes || "sin código"}.`
       );
       return;
     }
@@ -311,9 +437,8 @@ export default function JournalPreviewModal({
             </div>
           )}
 
-          {/* FECHA GENERAL DEL ASIENTO */}
+          {/* GLOBAL DATE FOR THE JOURNAL */}
           <div className="mb-4 flex items-center justify-between gap-4">
-            {/* Etiqueta + Input fecha */}
             <div className="flex items-center gap-3">
               <label className="block text-sm font-medium mb-1">Fecha del asiento:</label>
     
@@ -333,7 +458,7 @@ export default function JournalPreviewModal({
               />
             </div>
             
-            {/* Botón para agregar línea */}
+            {/* ADD LINE BUTON */}
               <button
                 type="button"
                 onClick={addEmptyLine}
@@ -343,9 +468,9 @@ export default function JournalPreviewModal({
               </button>
           </div>
 
-          {/* TABLA DE ASIENTOS */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-xs md:text-sm">
+          {/* JOURNAL TABLE */}
+          <div className="border rounded-lg overflow-visible relative">
+            <table className="w-full table-auto text-xs md:text-sm">
               <thead className="bg-gray-200">
                 <tr>
                   <th className="p-2 border">Código</th>
@@ -356,67 +481,65 @@ export default function JournalPreviewModal({
                 </tr>
               </thead>
               <tbody>
-                {localEntries.map((e, i) => (
-                  <tr key={e.id || i} className="odd:bg-white even:bg-gray-50">
+                {localEntries.map((e, i) => {
+                  // Build suggestions list for dropdown (leaf accounts only)
+                  const codeQuery = normalize(e.account_code);
+                  const nameQuery = normalize(e.account_name);
+                  const query = codeQuery || nameQuery;
 
-                    {/* Código de cuenta */}
+                  const suggestions = query
+                    ? leafAccounts.filter(
+                        (acc) => 
+                          normalize(acc.code).includes(query) ||
+                          normalize(acc.name).includes(query)
+                      )
+                    : leafAccounts.slice(0, 50);
+
+                  return (
+                  <tr key={e.id || i} className="odd:bg-white even:bg-gray-50">
+                    {/* Account code */}
                     <td className="border p-1 align-top">
                       <input
                         type="text"
                         className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
                         value={e.account_code || ""}
                         onChange={(ev) =>
-                          updateAccountByCode(i, ev.target.value)
+                          handleCodeChange(i, ev.target.value)
                         }
+                        onBlur={() => handleCodeBlur(i)}
                       />
                     </td>
 
-                    {/* Nombre de cuenta */}
-                    <td className="border p-1 align-top relative">
+                    {/* Account name + dropdown */}
+                    <td className="border p-1 align-top relative w-80 max-w-xs">
                       <div className="relative">
+                      {/* ACCOUNT NAME INPUT */}
                       <input
                         type="text"
                         className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
                         value={e.account_name || ""}
                         onChange={(ev) => 
-                          updateTextField( 
-                            i, 
-                            "account_name", 
-                            ev.target.value
-                          )
-                        }
-                        onFocus={() => 
-                          setLocalEntries(prev => {
-                            const next = [...prev];
-                            next[i] = { ...next[i], showPicker: true };
-                            return next;
-                          })
-                        }
+                          handleNameChange(i, ev.target.value)}
+                        onBlur={() => handleNameBlur(i)}
+                        onFocus={() => patchEntry(i, { showPicker: true })}
                       />
 
-                      {/* DROPDOWN */}
-                      {e.showPicker && (
+                      {/* DROPDOWN (leaf accounts only) */}
+                      {e.showPicker && suggestions.length > 0 && (
                         <div
                           className="absolute z-50 mt-1 w-full bg-white border rounded shadow-lg max-h-40 overflow-y-auto"
-                          onMouseLeave={() =>
-                            setLocalEntries(prev => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], showPicker: false };
-                              return next;
-                            })
-                          }
                         >
-                          {accounts.map((acc) => (
+                          {suggestions.map((acc) => (
                             <div
                               key={acc.code}
                               className="px-2 py-1 cursor-pointer hover:bg-blue-100 text-xs"
-                              onClick={() => {
-                                updateTextField(i, "account_name", acc.name);
-                                updateTextField(i, "account_code", acc.code);
-
-                                setLocalEntries(prev => {
+                              onMouseDown={() => {
+                                // IMPORTANT: use onMouseDown so blur does NOT fire first
+                                setLocalEntries((prev) => {
                                   const next = [...prev];
-                                  next[i].showPicker = true;
+                                  next[i].account_code = acc.code;
+                                  next[i].account_name = acc.name;
+                                  next[i].showPicker = false;
                                   return next;
                                 });
                               }}
@@ -427,86 +550,86 @@ export default function JournalPreviewModal({
                         </div>
                       )}
                     </div>
+                  </td>
 
-                    </td>
 
-                    {/* Débito */}
-                    <td className="border p-1 align-top text-right">
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-full border rounded px-1 py-0.5 text-right text-xs md:text-sm"
-                        value={
-                          e.debit === undefined || e.debit === null
-                            ? ""
-                            : e.debit
-                        }
-                        onChange={(ev) =>
-                          updateNumberField(i, "debit", ev.target.value)
-                        }
-                      />
-                    </td>
+                      {/* Débito */}
+                      <td className="border p-1 align-top text-right">
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full border rounded px-1 py-0.5 text-right text-xs md:text-sm"
+                          value={
+                            e.debit === undefined || e.debit === null
+                              ? ""
+                              : e.debit
+                          }
+                          onChange={(ev) =>
+                            updateNumberField(i, "debit", ev.target.value)
+                          }
+                        />
+                      </td>
 
-                    {/* Crédito */}
-                    <td className="border p-1 align-top text-right">
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="w-full border rounded px-1 py-0.5 text-right text-xs md:text-sm"
-                        value={
-                          e.credit === undefined || e.credit === null
-                            ? ""
-                            : e.credit
-                        }
-                        onChange={(ev) =>
-                          updateNumberField(i, "credit", ev.target.value)
-                        }
-                      />
-                    </td>
+                      {/* Crédit */}
+                      <td className="border p-1 align-top text-right">
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full border rounded px-1 py-0.5 text-right text-xs md:text-sm"
+                          value={
+                            e.credit === undefined || e.credit === null
+                              ? ""
+                              : e.credit
+                          }
+                          onChange={(ev) =>
+                            updateNumberField(i, "credit", ev.target.value)
+                          }
+                        />
+                      </td>
 
-                    {/* Eliminar línea */}
-                    <td className="border p-1 text-center align-top">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="text-red-600 hover:text-red-800 text-xs"
-                        title="Eliminar línea"
-                      >
-                        ✖
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      {/* Remove líne */}
+                      <td className="border p-1 text-center align-top">
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          className="text-red-600 hover:text-red-800 text-xs"
+                          title="Eliminar línea"
+                        >
+                          ✖
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
 
-                {/* Fila de totales */}
+                {/* Totals row */}
                 {localEntries.length > 0 && (
                   <tr className="bg-gray-100 font-semibold">
-                    {/* Etiqueta Totales */}
-                    <td className="border px-8 text-right" colSpan={3}>
+                    {/* Total Label */}
+                    <td className="border px-8 py-2 text-right" colSpan={2}>
                       Totales:
                     </td>
 
-                    {/* Total Debito */}
-                    <td className="border px-6 text-right">
+                    {/* Total Debit */}
+                    <td className="border px-6 py-2 text-right">
                       {totalDebit.toFixed(2)}
                     </td>
 
-                    {/* Total Credito */}
-                    <td className="border px-6 text-right">
+                    {/* Total Credit */}
+                    <td className="border px-6 py-2 text-right">
                       {totalCredit.toFixed(2)}
                     </td>
 
-                    {/* Celda vacía para mantener alineación */}
-                    <td className="border px-3 py-1" />
+                    {/* Emty cell for UI */}
+                    <td className="border" />
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Nota + Input + Mensaje balanceado en una sola linea */}
+          {/* Note + balance message */}
           <div className="mt-4 flex items-center gap-3">
-            
             <label className="text-sm font-medium whitespace-nowrap">
               Nota / Glosa:
             </label>

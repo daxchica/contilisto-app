@@ -2,16 +2,13 @@
 // Source: Superintendencia de Compañías del Ecuador — Plan de Cuentas
 // DO NOT EDIT BY HAND.
 
-export type Account = { 
-  code: string; 
-  name: string;
-  level?: number;
-  isReceivable?: boolean;
-  isPayable?: boolean;
-  requiresThirdParty?: boolean; 
-};
+import type { Account } from "@/types/AccountTypes";
 
-export const ECUADOR_COA: Account[] = [
+interface RawAccount extends Omit<Account, "level"> {
+  level?: number;
+}
+
+const RAW_COA: RawAccount[] = [
   { code: "1", name: "ACTIVO" },
   { code: "101", name: "ACTIVO CORRIENTE" },
   { code: "10101", name: "EFECTIVO Y EQUIVALENTES DE EFECTIVO" },
@@ -576,4 +573,10 @@ export const ECUADOR_COA: Account[] = [
   { code: "502030404", name: "OTROS" },
   { code: "5020305", name: "GASTOS POR SERVICIOS" },
 ];
+
+const ECUADOR_COA: Account[] = RAW_COA.map(acc => ({
+  ...acc,
+  level: acc.level ?? acc.code.length
+}));
+
 export default ECUADOR_COA;

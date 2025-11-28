@@ -31,7 +31,7 @@ import type { JournalEntry } from "../types/JournalEntry";
 import type { Entity } from "../types/Entity";
 
 import { createEntity, fetchEntities } from "../services/entityService";
-import { saveJournalEntries } from "@/services/journalService";
+import { fetchJournalEntries, saveJournalEntries } from "@/services/journalService";
 
 import {
   deleteInvoicesFromFirestoreLog,
@@ -47,7 +47,7 @@ import {
 } from "../services/localLogService";
 
 import { fetchCustomAccounts } from "../services/chartOfAccountsService";
-import ECUADOR_COA from "../../shared/coa/ecuador_coa";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 
 /* ============================================================
  * Utility: Convert file to BASE64 (PDF → base64 string)
@@ -206,7 +206,7 @@ export default function EntitiesDashboard() {
   const [showAddEntity, setShowAddEntity] = useState(false);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
-  const [loadingJournal] = useState(false);
+  const [loadingJournal, setLoadingJournal] = useState(false);
 
   const { entity: globalEntity, setEntity } = useSelectedEntity();
 
@@ -307,6 +307,37 @@ export default function EntitiesDashboard() {
   useEffect(() => {
     loadAccounts();
   }, [loadAccounts]);
+
+  /* ============================================================
+   * Load JOURNAL entries for current entity
+   * ============================================================ */
+  useEffect(() => {
+    if (!selectedEntityIdSafe) {
+      setSessionJournal([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoadingJournal(true);
+        const entries = await fetchJournalEntries(selectedEntityIdSafe);
+        if (!cancelled) {
+          setSessionJournal(entries);
+        }
+      } catch (err) {
+        console.error("❌ Error cargando asientos contables:", err);
+        if (!cancelled) setSessionJournal([]);
+      } finally {
+        if (!cancelled) setLoadingJournal(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntityIdSafe, logRefreshTrigger]);
 
   /* ============================================================
    * Delete Selected (JournalTable) — pendiente integración

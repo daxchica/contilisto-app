@@ -1,6 +1,6 @@
 // src/components/ChartOfAccountsModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import ECUADOR_COA from "../../shared/coa/ecuador_coa";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import {
   createSubaccount,
   fetchCustomAccounts,

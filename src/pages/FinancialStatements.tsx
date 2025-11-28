@@ -9,8 +9,8 @@ import InitialBalancePanel from "../components/InitialBalancePanel";
 import TrialBalance from "../components/TrialBalance";
 import { fetchJournalEntries } from "@/services/journalService";
 
-// import { fetchJournalEntries } from "../services/journalService";
 import { JournalEntry } from "../types/JournalEntry";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 
 type Tab = "comprobacion" | "estado" | "balance";
 
@@ -158,7 +158,11 @@ export default function FinancialStatements() {
 
           {/* INITIAL BALANCE PANEL */}
           <div className="mb-8">
-            <InitialBalancePanel entityId={entityId} userId="" accounts={[]}/>
+            <InitialBalancePanel 
+              entityId={entityId} 
+              userId={"initial-balance"}
+              accounts={ECUADOR_COA}
+            />
           </div>
 
           {/* BROWSER STYLE TABS */}

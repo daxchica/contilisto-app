@@ -5,7 +5,7 @@ import { formatAmount } from "../utils/accountingUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
-import ECUADOR_COA from "../../shared/coa/ecuador_coa";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries";
 import { useInitialBalances } from "@/hooks/useInitialBalances";
 

@@ -1,11 +1,11 @@
 // components/InitialBalancePanel.tsx
 
 import React, { useState } from "react";
-import ManualBalanceForm from "./ManualBalanceForm";
+import ManualBalanceForm, { Entry as ManualBalanceEntry } from "./ManualBalanceForm";
 import BalancePDFUploader from "./BalancePDFUploader";
 import BalanceSheet from "./BalanceSheet";
-import { JournalEntry } from "../types/JournalEntry";
-import { Account } from "../../shared/coa/ecuador_coa";
+import type { JournalEntry } from "../types/JournalEntry";
+import type { Account } from "../types/AccountTypes";
 
 interface Props {
   entityId: string;
@@ -13,11 +13,71 @@ interface Props {
   accounts: Account[];
 }
 
-export default function InitialBalancePanel({ entityId }: Props) {
+export default function InitialBalancePanel({ entityId, accounts }: Props) {
+
   const [showPanel, setShowPanel] = useState(false);
   const [balanceEntries, setBalanceEntries] = useState<JournalEntry[]>([]);
   const [showSavedMessage, setShowSavedMessage] = useState(false);
 
+  // --------------------------------------------------------------------------
+  // Merge helper (evita duplicados por account_code + entityId)
+  // --------------------------------------------------------------------------
+  const mergeEntries = (
+    prev: JournalEntry[],
+    incoming: JournalEntry[]
+  ): JournalEntry[] => {
+    const result = [...prev];
+
+    incoming.forEach((entry) => {
+      const exists = result.some(
+        (e) =>
+          e.account_code === entry.account_code && 
+          e.entityId === entry.entityId
+      );
+      if (!exists) result.push(entry);
+    });
+
+    return result;
+  };
+
+  // --------------------------------------------------------------------------
+  // Manejar envío MANUAL (desde ManualBalanceForm)
+  // --------------------------------------------------------------------------
+  const handleManualSubmit = (entries: ManualBalanceEntry[]) => {
+    const now = Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+
+    const normalized: JournalEntry[] = entries.map((e) => ({
+      id: crypto.randomUUID(),
+      entityId,
+      account_code: e.account_code,
+      account_name: e.account_name,
+      debit: e.debit ?? 0,
+      credit: e.credit ?? 0,
+      description: "Asiento de Balance Inicial (manual)",
+      date: e.date || today,
+      source: "initial" as const,
+      createdAt: now,
+    }));
+    
+    // Opcional: evitar duplicados por account_code
+    const unique = normalized.filter(
+      (entry) => 
+        !balanceEntries.some(
+          (e) => 
+            e.account_code === entry.account_code && 
+            e.entityId === entry.entityId
+        )
+    );
+
+    setBalanceEntries((prev) => mergeEntries(prev, normalized));
+    setShowSavedMessage(true);
+    setTimeout(() => setShowSavedMessage(false), 3000);
+  };
+
+  // --------------------------------------------------------------------------
+  // Manejar BALANCE desde PDF
+  // --------------------------------------------------------------------------
   const handleUpload = (entries: JournalEntry[]) => {
     const now = Date.now();
 
@@ -29,16 +89,17 @@ export default function InitialBalancePanel({ entityId }: Props) {
       description: e.description ?? "Asiento de Balance Inicial",
       date: e.date || new Date().toISOString().slice(0, 10),
     }));
-    
-    // Opcional: evitar duplicados por account_code
-    const unique = normalized.filter(
-      (entry) => !balanceEntries.some((e) => e.account_code === entry.account_code && e.entityId === entry.entityId)
-    );
-    setBalanceEntries((prev) => [...prev, ...unique]);
+
+    setBalanceEntries((prev) => mergeEntries(prev, normalized));
     setShowSavedMessage(true);
     setTimeout(() => setShowSavedMessage(false), 3000);
   };
 
+  console.log("📌 Accounts recibidos en InitialBalancePanel:", accounts.length);
+
+  // --------------------------------------------------------------------------
+  // RENDER
+  // --------------------------------------------------------------------------
   return (
     <div className="mt-8 border rounded shadow p-4 bg-white">
       <div className="flex items-center justify-between">
@@ -56,37 +117,33 @@ export default function InitialBalancePanel({ entityId }: Props) {
         )}
       </div>
 
-        {showPanel && (
-          <div className="mt-4 space-y-6">
-            {/* Formulario Manual */}
-            <ManualBalanceForm 
-              entityId={entityId}
-              onSubmit={(entries) => {
-                const asJournal: JournalEntry[] = entries.map((e) => ({
-                  ...e,
-                  entityId,
-                  date: e.date || new Date().toISOString().slice(0, 10),
-                  createdAt: Date.now(),
-                  source: "initial" as const,
-                  description: "Asiento de Balance Inicial",
-                }));
-                handleUpload(asJournal);
-              }} 
-            />
+      {showPanel && (
+        <div className="mt-4 space-y-6">
+          {/* MANUAL FORM */}
+          <ManualBalanceForm 
+            entityId={entityId}
+            accounts={accounts}
+            onSubmit={handleManualSubmit}
+          />
+
+            {/* UPLOAD PDF */}
             <BalancePDFUploader onUploadComplete={handleUpload} />
 
-
-            {/* Vista previa del Balance Inicial */}
+            {/* BALANCE PREVIEW */}
             {balanceEntries.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-lg font-semibold text-blue-700 mb-2">
                   Vista previa del Balance Inicial
                 </h3>
-                <BalanceSheet entries={balanceEntries} resultadoDelEjercicio={0} entityId={entityId}/>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                <BalanceSheet 
+                  entries={balanceEntries} 
+                  resultadoDelEjercicio={0} 
+                  entityId={entityId}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
   }
