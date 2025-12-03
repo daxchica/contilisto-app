@@ -50,7 +50,7 @@ export default function NavBar() {
         {/* Navigation Links */}
         {isLoggedIn && !isLandingPage && (
           <div className="flex space-x-6 text-sm">
-            <Link to="/empresas" className="hover:text-blue-300">
+            <Link to="/contabilidad" className="hover:text-blue-300">
               Tablero</Link>
             <Link to="/libro-mayor" className="hover:text-blue-300">
               Libro Mayor</Link>

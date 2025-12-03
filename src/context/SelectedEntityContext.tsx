@@ -1,51 +1,48 @@
 // src/context/SelectedEntityContext.tsx
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { EntityType } from "../types/Entity";
+import React, { createContext, useContext, useState } from "react";
+import type { Entity } from "@/types/Entity";
 
-type SelectedEntity = {
-  id: string;
-  ruc: string;
-  name: string;
-  type: EntityType;
-} | null;
+interface SelectedEntityContextType {
+  selectedEntity: Entity | null;
+  setSelectedEntity: (entity: Entity | null) => void;
 
-type Ctx = {
-  entity: SelectedEntity | null;
-  setEntity: (e: SelectedEntity | null) => void;
-};
+  entity: Entity | null;
+  setEntity: (entity: Entity | null) => void;
+}
 
-const SelectedEntityContext = createContext<Ctx | undefined>(undefined);
+export const SelectedEntityContext = createContext<SelectedEntityContextType>({
+  selectedEntity: null,
+  setSelectedEntity: () => {},
 
-const LS_KEY = "contilisto:selected_entity";
+  entity: null,
+  setEntity: () => {},
+});
 
 export const SelectedEntityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [entity, setEntity] = useState<SelectedEntity>(null);
+    const [entity, setEntity] = useState<Entity | null>(null);
     
-    useEffect(() => {
-        const raw = localStorage.getItem(LS_KEY);
-        if (raw) {
-          try { 
-              const parsed = JSON.parse(raw);
-              if (parsed && parsed.id && parsed.ruc && parsed.type) {
-                setEntity(parsed);
-              }
-            } catch {
-              console.warn("Invalid entity in localStorage");
-            }
-          }
-        }, []);
- 
-    useEffect(() => {
-    if (entity) localStorage.setItem(LS_KEY, JSON.stringify(entity));
-    else localStorage.removeItem(LS_KEY);
-  }, [entity]);
-
-   const value = useMemo<Ctx>(() => ({ entity, setEntity }), [entity]);
-   return <SelectedEntityContext.Provider value={value}>{children}</SelectedEntityContext.Provider>;
+    return (
+      <SelectedEntityContext.Provider 
+        value={{ 
+          entity, 
+          setEntity,
+          
+          selectedEntity: entity,
+          setSelectedEntity: setEntity,
+        }}
+      >
+        {children}
+      </SelectedEntityContext.Provider>
+    );
 };
+ 
 
-export function useSelectedEntity() {
+export const useSelectedEntity = () => {
   const ctx = useContext(SelectedEntityContext);
-  if (!ctx) throw new Error("useSelectedEntity must be used within SelectedEntityProvider");
+
+  if (!ctx) {
+    throw new Error("useSelectedEntity must be used inside SelectedEntityProvider");
+  }
+
   return ctx;
-}
+};

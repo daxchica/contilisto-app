@@ -18,7 +18,7 @@
 │   │   └── JournalPreviewModal.tsx          # [✅] Modal para revisar y confirmar los asientos contables
 │
 │   ├── pages/
-│   │   └── EntitiesDashboard.tsx            # [✅] Vista principal de entidades, integra PDFUploader y tabla
+│   │   └── AccountingDashboard.tsx            # [✅] Vista principal de entidades, integra PDFUploader y tabla
 │
 │   ├── services/
 │   │   ├── journalService.ts                # [✅] Procesamiento y guardado de asientos contables

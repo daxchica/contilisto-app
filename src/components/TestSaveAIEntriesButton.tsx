@@ -4,7 +4,8 @@ import { useState } from "react";
 import { saveJournalEntries } from "../services/journalService";
 import { v4 as uuidv4 } from "uuid";
 import { getAuth } from "firebase/auth";
-import { useSelectedEntity } from "../hooks/useSelectedEntity";
+import { useSelectedEntity } from "../context/SelectedEntityContext";
+import type { JournalEntry } from "../types/JournalEntry";
 
 export default function TestSaveAIEntriesButton() {
   const { selectedEntity } = useSelectedEntity();
@@ -20,7 +21,7 @@ export default function TestSaveAIEntriesButton() {
     setLoading(true);
     const today = new Date().toISOString().split("T")[0];
 
-    const entries = [
+    const entries: JournalEntry[] = [
       {
         id: uuidv4(),
         date: today,
@@ -34,7 +35,7 @@ export default function TestSaveAIEntriesButton() {
         source: "ai",
         entityId: selectedEntity.id,
         userId: user.uid,
-        createdAt: new Date().toISOString(),
+        createdAt: Date.now(),
       },
       {
         id: uuidv4(),
@@ -49,7 +50,7 @@ export default function TestSaveAIEntriesButton() {
         source: "ai",
         entityId: selectedEntity.id,
         userId: user.uid,
-        createdAt: new Date().toISOString(),
+        createdAt: Date.now(),
       },
       {
         id: uuidv4(),
@@ -64,12 +65,12 @@ export default function TestSaveAIEntriesButton() {
         source: "ai",
         entityId: selectedEntity.id,
         userId: user.uid,
-        createdAt: new Date().toISOString(),
+        createdAt: Date.now(),
       },
     ];
 
     try {
-      await saveJournalEntries(entries);
+      await saveJournalEntries(selectedEntity.id, entries, user.uid);
       console.log("✅ Asientos guardados correctamente en Firestore");
       alert("✅ Asientos AI de prueba guardados exitosamente.");
     } catch (err) {

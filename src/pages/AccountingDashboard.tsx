@@ -14,8 +14,8 @@ import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 
-import NavBar from "@/components/NavBar";
-import Footer from "@/components/Footer";
+import NavBar from "@/layouts/NavBar";
+import Footer from "@/components/footer/Footer";
 
 import JournalTable from "../components/JournalTable";
 import ManualEntryModal from "../components/ManualEntryModal";
@@ -186,7 +186,7 @@ function InvoiceLogDropdown({
 /* ============================================================
  * MAIN PAGE — ENTITIES DASHBOARD
  * ============================================================ */
-export default function EntitiesDashboard() {
+export default function AccountingDashboard() {
   const [user] = useAuthState(auth);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
@@ -611,8 +611,6 @@ export default function EntitiesDashboard() {
           }}
         />
       </div>
-      {/* FOOTER */}
-      <Footer />
     </>
   );
 }

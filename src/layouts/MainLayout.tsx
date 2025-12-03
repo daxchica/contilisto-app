@@ -1,19 +1,23 @@
 // src/layouts/MainLayout.tsx
-import React from "react";
-import NavBar from "../components/NavBar";
-import Footer from "../components/Footer";
+import React, { ReactNode } from "react";
+import Sidebar from "@/components/sidebar/Sidebar";
 
-export default function MainLayout({ children }: { children: React.ReactNode }) {
+interface Props {
+  children: ReactNode;
+}
+
+export default function MainLayout({ children }: Props) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <NavBar />
+    <div className="flex h-screen bg-gray-100">
+      <Sidebar />
 
-      {/* Padding para que el contenido no quede debajo del navbar */}
-      <main className="flex-1 pt-20 px-4">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col">
 
-      <Footer />
+        {/* Padding para que el contenido no quede debajo del navbar */}
+        <main className="p-6 overflow-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

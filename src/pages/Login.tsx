@@ -26,7 +26,7 @@ export default function Login() {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/empresas"); // ✔ redirige SOLO después de login válido
+      navigate("/contabilidad"); // ✔ redirige SOLO después de login válido
     } catch (err: any) {
       setError(err.message);
     }

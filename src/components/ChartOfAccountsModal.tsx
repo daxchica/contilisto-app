@@ -130,7 +130,7 @@ export default function ChartOfAccountsModal({ entityId, onClose }: Props) {
         } satisfies CustomAccount,
       ]);
 
-      // ✅ Refresh event for EntitiesDashboard
+      // ✅ Refresh event for AccountingDashboard
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("refreshAccounts"));
       }
@@ -154,7 +154,7 @@ export default function ChartOfAccountsModal({ entityId, onClose }: Props) {
       await deleteCustomAccount(entityId, code);
       setCustom((prev) => prev.filter((c) => c.code !== code));
 
-      // ✅ Refresh event for EntitiesDashboard
+      // ✅ Refresh event for AccountingDashboard
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("refreshAccounts"));
       }

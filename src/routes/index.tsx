@@ -1,68 +1,136 @@
 // src/routes/index.tsx
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 
-import MainLayout from "@/layouts/MainLayout";
-import EntitiesDashboard from "../pages/EntitiesDashboard";
-import FinancialsPage from "../pages/FinancialsPage";
+import AppLayout from "@/layouts/AppLayout";
+import LedgerLayout from "@/layouts/LedgerLayout";
+
+import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import Register from "@/pages/Register";
+
+import DashboardHome from "@/pages/DashboardHome";
+import ClientsPage from "@/pages/ClientsPage";
+import InvoicePage from "@/pages/InvoicePage";
+import AccountingDashboard from "@/pages/AccountingDashboard";
 import FinancialStatements from "@/pages/FinancialStatements";
 import LedgerPage from "@/pages/LedgerPage";
-import BankBookPage from "../pages/BankBookPage";
-import Login from "../pages/Login";
-import Register from "../pages/Register";
-import NotFound from "../pages/NotFound";
-import Landing from "../pages/Landing";
+import BankBookPage from "@/pages/BankBookPage";
+import CarteraCobro from "@/pages/CarteraCobro";
+import Proveedores from "@/pages/Proveedores";
+import Declaraciones from "@/pages/Declaraciones";
+import FlujoCaja from "@/pages/FlujoCaja";
+import NotFound from "@/pages/NotFound";
 
 export default function AppRoutes() {
   return (
     <Routes>
 
-      {/* Landing pública */}
+      {/* Public */}
       <Route path="/" element={<Landing />} />
-      
-      {/* Auth & registro */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
-      {/* Módulos Contilisto */}
-      <Route 
-        path="/empresas" 
+      {/* Ledger-only Pages */}
+      <Route
+        path="/contabilidad"
         element={
-          <MainLayout>
-            <EntitiesDashboard />
-          </MainLayout>
-        } 
+          <AppLayout>
+            <AccountingDashboard />
+         </AppLayout>
+        }
       />
-      <Route 
-        path="/estados-financieros" 
+      <Route
+        path="/libro-mayor"
         element={
-          <MainLayout>
-            <FinancialStatements />
-          </MainLayout>
-        } 
-      />
-      <Route 
-        path="/libro-mayor" 
-        element={
-          <MainLayout>
+          <LedgerLayout>
             <LedgerPage />
-          </MainLayout>
-        } 
+          </LedgerLayout>
+        }
       />
-      <Route 
-        path="/libro-bancos" 
-        element=
-          {
-          <MainLayout>
-            <BankBookPage />
-          </MainLayout>
-        } 
-      />
-      
-      {/* Redirecciones limpias */}
-      <Route path="/dashboard" element={<Navigate to="/empresas" replace />} />
 
-      {/* Redirecciones y 404 */}
+      {/* App Pages */}
+      <Route
+        path="/dashboard"
+        element={
+          <AppLayout>
+            <DashboardHome />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/clientes"
+        element={
+          <AppLayout>
+            <ClientsPage />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/facturacion"
+        element={
+          <AppLayout>
+            <InvoicePage />
+         </AppLayout>
+        }
+      />
+
+      <Route
+        path="/cartera"
+        element={
+          <AppLayout>
+            <CarteraCobro />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/proveedores"
+        element={
+          <AppLayout>
+            <Proveedores />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/estados-financieros"
+        element={
+          <LedgerLayout>
+            <FinancialStatements />
+          </LedgerLayout>
+        }
+      />
+
+      <Route
+        path="/libro-bancos"
+        element={
+          <LedgerLayout>
+            <BankBookPage />
+          </LedgerLayout>
+        }
+      />
+
+      <Route
+        path="/impuestos"
+        element={
+          <AppLayout>
+            <Declaraciones />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/flujo-caja"
+        element={
+          <AppLayout>
+            <FlujoCaja />
+          </AppLayout>
+        }
+      />
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
