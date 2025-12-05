@@ -13,6 +13,7 @@ import React, {
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "../firebase-config";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
+import { fetchEntities } from "@/services/entityService";
 
 import NavBar from "@/layouts/NavBar";
 import Footer from "@/components/footer/Footer";
@@ -20,7 +21,7 @@ import Footer from "@/components/footer/Footer";
 import JournalTable from "../components/JournalTable";
 import ManualEntryModal from "../components/ManualEntryModal";
 import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
-import AddEntityModal from "../components/AddEntityModal";
+
 import JournalPreviewModal from "../components/JournalPreviewModal";
 import PDFDropzone from "../components/PDFDropzone";
 
@@ -30,7 +31,6 @@ import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 import type { Entity } from "../types/Entity";
 
-import { createEntity, fetchEntities } from "../services/entityService";
 import { fetchJournalEntries, saveJournalEntries } from "@/services/journalService";
 
 import {
@@ -188,6 +188,7 @@ function InvoiceLogDropdown({
  * ============================================================ */
 export default function AccountingDashboard() {
   const [user] = useAuthState(auth);
+  const userIdSafe = user?.uid ?? "";
   const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState("");
 
@@ -203,7 +204,6 @@ export default function AccountingDashboard() {
 
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
-  const [showAddEntity, setShowAddEntity] = useState(false);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
   const [loadingJournal, setLoadingJournal] = useState(false);
@@ -243,48 +243,24 @@ export default function AccountingDashboard() {
   /* ============================================================
    * Derived
    * ============================================================ */
-  const currentEntity = useMemo(
-    () => entities.find((e) => e.id === selectedEntityId) ?? null,
-    [selectedEntityId, entities]
-  );
+  const currentEntity = globalEntity;
+  const entityId = globalEntity?.id ?? "";
+  const entityRUC = globalEntity?.ruc ?? "";
+  const entityType = globalEntity?.type ?? "servicios";
 
-  const selectedEntityIdSafe = selectedEntityId || "";
-  const currentEntityRUC = currentEntity?.ruc ?? "";
-  const currentEntityType = currentEntity?.type ?? "servicios";
-  const userIdSafe = user?.uid ?? auth.currentUser?.uid ?? "";
-
-  /* ============================================================
-   * Sync global entity (context)
-   * ============================================================ */
-  useEffect(() => {
-    setSelectedEntityId(globalEntity?.id ?? "");
-  }, [globalEntity?.id]);
-
-  useEffect(() => {
-    if (currentEntity) {
-      setEntity({
-        id: currentEntity.id ?? "",
-        ruc: currentEntity.ruc ?? "",
-        name: currentEntity.name ?? "",
-        type: currentEntity.type ?? "servicios",
-      });
-    } else {
-      setEntity(null);
-    }
-  }, [currentEntity, setEntity]);
-
+  
   /* ============================================================
    * Load accounts (PUC oficial + custom)
    * [ACv1] Usado por JournalPreviewModal y ManualEntryModal
    * ============================================================ */
   const loadAccounts = useCallback(async () => {
-    if (!selectedEntityId) {
+    if (!globalEntity?.id) {
       setAccounts([]);
       return;
     }
 
     try {
-      const custom = await fetchCustomAccounts(selectedEntityId);
+      const custom = await fetchCustomAccounts(globalEntity.id);
       const merged: Account[] = [
         ...ECUADOR_COA.map((a) => ({
           ...a,
@@ -302,7 +278,7 @@ export default function AccountingDashboard() {
       console.error("❌ Error loading accounts:", err);
       setAccounts([]);
     }
-  }, [selectedEntityId]);
+  }, [globalEntity?.id]);
 
   useEffect(() => {
     loadAccounts();
@@ -312,7 +288,7 @@ export default function AccountingDashboard() {
    * Load JOURNAL entries for current entity
    * ============================================================ */
   useEffect(() => {
-    if (!selectedEntityIdSafe) {
+    if (!globalEntity?.id) {
       setSessionJournal([]);
       return;
     }
@@ -322,7 +298,7 @@ export default function AccountingDashboard() {
     (async () => {
       try {
         setLoadingJournal(true);
-        const entries = await fetchJournalEntries(selectedEntityIdSafe);
+        const entries = await fetchJournalEntries(entityId);
         if (!cancelled) {
           setSessionJournal(entries);
         }
@@ -337,7 +313,7 @@ export default function AccountingDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedEntityIdSafe, logRefreshTrigger]);
+  }, [entityId, logRefreshTrigger]);
 
   /* ============================================================
    * Delete Selected (JournalTable) — pendiente integración
@@ -362,7 +338,7 @@ export default function AccountingDashboard() {
   const handlePdfFilesSelected = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      if (!currentEntityRUC) {
+      if (!entityRUC) {
         alert("Selecciona una entidad antes de cargar un PDF.");
         return;
       }
@@ -375,8 +351,8 @@ export default function AccountingDashboard() {
       try {
         const data = await extractInvoiceVision(
           base64,
-          currentEntityRUC,
-          currentEntityType
+          entityRUC,
+          entityType
         );
 
         if (!data) {
@@ -386,7 +362,7 @@ export default function AccountingDashboard() {
 
         // [ACv1] Validación de duplicado ANTES del modal (log local)
         if (data.invoice_number) {
-          const already = getProcessedInvoices(currentEntityRUC);
+          const already = getProcessedInvoices(entityRUC);
           if (already.has(data.invoice_number)) {
             const proceed = window.confirm(
               `⚠️ La factura ${data.invoice_number} ya fue procesada para esta empresa.\n\n¿Deseas volver a cargarla de todos modos?`
@@ -398,8 +374,8 @@ export default function AccountingDashboard() {
         // [ACv1] Guardamos metadata COMPLETA (cruda), no sólo campos sueltos
         setPreviewMetadata({
           ...data,
-          entityRUC: currentEntityRUC,
-          entityType: currentEntityType,
+          entityRUC: entityRUC,
+          entityType: entityType,
         });
 
         // [ACv1] Entries desde el backend:
@@ -413,7 +389,7 @@ export default function AccountingDashboard() {
         );
       }
     },
-    [currentEntityRUC, currentEntityType]
+    [entityRUC, entityType]
   );
 
   /* ============================================================
@@ -430,6 +406,11 @@ export default function AccountingDashboard() {
         {/* MAIN CONTENT */}
         <main className="pb-6 max-w-screen-xl mx-auto px-4">
           {/* Header */}
+          {!globalEntity && (
+            <div className="p-4 bg-yellow-100 rounded border border-yellow-300 text-yellow-900 text-sm mb-4">
+              Selecciona una empresa desde el menú <strong>Empresas</strong> para ver información contable.
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-blue-900 flex items-center">
               <span className="mr-2 text-3xl">📊</span> Contilisto Tablero de Entidades
@@ -437,7 +418,7 @@ export default function AccountingDashboard() {
 
             <button
               onClick={() => setShowAccountsModal(true)}
-              disabled={!selectedEntityId}
+              disabled={!globalEntity?.id}
               className="px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-50"
             >
               📚 Ver Plan de Cuentas
@@ -448,14 +429,18 @@ export default function AccountingDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* LEFT */}
             <div>
-              <button
+            {/*}  <button
                 onClick={() => setShowAddEntity(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-3"
               >
                 ➕ Agregar Entidad
-              </button>
+              </button> */}
 
-              <select
+            <div className="mb-3 p-3 bg-gray-100 border rounded text-gray-600 text-sm">
+              Para agregar una empresa, usa el menú <strong>Empresas</strong> en el Sidebar.
+            </div>
+
+          {/*}    <select
                 id="entity-select"
                 value={selectedEntityId}
                 onChange={(e) => setSelectedEntityId(e.target.value)}
@@ -467,18 +452,18 @@ export default function AccountingDashboard() {
                     {e.ruc} - {e.name}
                   </option>
                 ))}
-              </select>
+              </select> */}
 
               <DevLogResetButton
                 entityId={selectedEntityId}
-                ruc={currentEntityRUC}
+                ruc={entityRUC}
                 onReset={() => setLogRefreshTrigger((p) => p + 1)}
               />
 
-              {selectedEntityIdSafe && currentEntityRUC && (
+              {entityId && entityRUC && (
                 <InvoiceLogDropdown
                   entityId={selectedEntityId}
-                  ruc={currentEntityRUC}
+                  ruc={entityRUC}
                   onDelete={() => setLogRefreshTrigger((p) => p + 1)}
                   logRefreshTrigger={logRefreshTrigger}
                 />
@@ -489,13 +474,13 @@ export default function AccountingDashboard() {
             <div>
               <button
                 onClick={() => setShowManualModal(true)}
-                disabled={!selectedEntityId}
+                disabled={!globalEntity?.id}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 mb-3"
               >
                 ➕ Carga Manual
               </button>
 
-              {selectedEntityIdSafe && currentEntityRUC ? (
+              {entityId && entityRUC ? (
                 <PDFDropzone
                   disabled={false}
                   onFilesSelected={handlePdfFilesSelected}
@@ -521,19 +506,19 @@ export default function AccountingDashboard() {
         )}
 
         {/* MODALS */}
-        {showAccountsModal && selectedEntityId && (
+        {showAccountsModal && globalEntity?.id && (
           <ChartOfAccountsModal
-            entityId={selectedEntityIdSafe}
+            entityId={entityId}
             onClose={() => setShowAccountsModal(false)}
             accounts={accounts}
             onUploadComplete={loadAccounts}
           />
         )}
 
-        {showManualModal && selectedEntityId && (
+        {showManualModal && globalEntity?.id && (
           <ManualEntryModal
             onClose={() => setShowManualModal(false)}
-            entityId={selectedEntityIdSafe}
+            entityId={entityId}
             userId={userIdSafe}
             onAddEntries={handleManualEntriesAdded}
             accounts={accounts}
@@ -554,7 +539,7 @@ export default function AccountingDashboard() {
             entries={previewEntries}
             metadata={previewMetadata}
             accounts={accounts}
-            entityId={selectedEntityIdSafe}
+            entityId={entityId}
             userId={userIdSafe}
             onClose={() => {
               setShowPreviewModal(false);
@@ -562,7 +547,7 @@ export default function AccountingDashboard() {
             }}
             onSave={async (entries, note) => {
               // Guardar en Firestore
-              await saveJournalEntries(selectedEntityIdSafe, entries, userIdSafe);
+              await saveJournalEntries(entityId, entries, userIdSafe);
 
               // [ACv1] Actualizar sesión local (JournalTable)
               setSessionJournal((prev) => [...prev, ...entries]);
@@ -573,8 +558,8 @@ export default function AccountingDashboard() {
                 .filter((n): n is string => !!n);
 
               for (const num of invoiceNumbers) {
-                await fetchProcessedInvoice(selectedEntityIdSafe, num);
-                logProcessedInvoice(currentEntityRUC, num);
+                await fetchProcessedInvoice(entityId, num);
+                logProcessedInvoice(entityRUC, num);
               }
 
               setLogRefreshTrigger((p) => p + 1);
@@ -587,7 +572,7 @@ export default function AccountingDashboard() {
         )}
 
         {/* MODAL — CREAR EMPRESA */}
-        <AddEntityModal
+  {/*}      <AddEntityModal
           isOpen={showAddEntity}
           onClose={() => setShowAddEntity(false)}
           onCreate={async ({ ruc, name, entityType }) => {
@@ -609,7 +594,7 @@ export default function AccountingDashboard() {
 
             alert("✔ Entidad creada");
           }}
-        />
+        /> */}
       </div>
     </>
   );

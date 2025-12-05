@@ -91,6 +91,16 @@ const monthlyExpenses = useMemo(() => {
 
 return (
   <>
+    {!selectedEntity?.id ? (
+      <div className="mb-6 p-4 bg-yellow-100 text-yellow-800 rounded-lg text-center">
+        ⚠️ Selecciona una empresa desde el menú superior para ver resultados.
+      </div>
+    ) : (
+      <div className="mb-6 p-4 bg-blue-50 text-blue-900 rounded-lg text-center font-medium">
+        Empresa seleccionada: <strong>{selectedEntity.name}</strong>
+      </div>
+    )}
+    
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
       <IncomeCard value={totalIncome} />
       <ExpenseCard value={totalExpenses} />

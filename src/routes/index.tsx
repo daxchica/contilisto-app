@@ -21,6 +21,7 @@ import Proveedores from "@/pages/Proveedores";
 import Declaraciones from "@/pages/Declaraciones";
 import FlujoCaja from "@/pages/FlujoCaja";
 import NotFound from "@/pages/NotFound";
+import CompaniesPage from "@/pages/CompaniesPage";
 
 export default function AppRoutes() {
   return (
@@ -127,6 +128,15 @@ export default function AppRoutes() {
         element={
           <AppLayout>
             <FlujoCaja />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/empresas" 
+        element={
+          <AppLayout>
+            <CompaniesPage />
           </AppLayout>
         }
       />
