@@ -11,6 +11,7 @@ export interface JournalEntry {
   // Identificadores
   id?: string;
   entityId?: string;
+  uid?: string;
   userId?: string;
   transactionId?: string;
 

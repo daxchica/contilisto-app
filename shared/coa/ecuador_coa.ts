@@ -6,6 +6,7 @@ import type { Account } from "@/types/AccountTypes";
 
 interface RawAccount extends Omit<Account, "level"> {
   level?: number;
+  isLastLevel?: boolean;
 }
 
 const RAW_COA: RawAccount[] = [
@@ -458,6 +459,8 @@ const RAW_COA: RawAccount[] = [
   { code: "5010501", name: "COSTOS DE ACUERDO A PORCENTAJES O GRADOS DE TERMINACIÓN" },
   { code: "502", name: "GASTOS" },
   { code: "50201", name: "GASTOS DE VENTA" },
+  { code: "5020101", name: "GASTOS EN SERVICIOS GENERALES" },
+  { code: "502010150", name: "GASTOS EN ALIMENTACION", isLastLevel: true },
   { code: "5020102", name: "APORTES A LA SEGURIDAD SOCIAL (INCLUIDO FONDO DE RESERVA)" },
   { code: "5020103", name: "BENEFICIOS SOCIALES E INDEMNIZACIONES" },
   { code: "5020104", name: "GASTO PLANES DE BENEFICIOS A EMPLEADOS" },

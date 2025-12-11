@@ -169,7 +169,7 @@ export default function InvoiceItemsTable({ items, onChange }: Props) {
                       updateItem(item.id, "ivaRate", Number(e.target.value))
                     }
                   >
-                    <option value={12}>15%</option>
+                    <option value={15}>15%</option>
                     <option value={12}>12%</option>
                     <option value={0}>0%</option>
                   </select>

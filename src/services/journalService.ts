@@ -69,6 +69,7 @@ export async function saveJournalEntries(
       ...e,
       id,
       entityId,
+      uid: userId,
       userId,
       transactionId,
       createdAt: Date.now(),
@@ -91,15 +92,26 @@ export async function deleteJournalEntriesByInvoiceNumber(
   entityId: string,
   invoiceNumbers: string[]
 ): Promise<void> {
-  if (!entityId || !invoiceNumbers.length) return;
+  if (!entityId || invoiceNumbers.length === 0) return;
 
   const colRef = collection(db, "entities", entityId, "journalEntries");
-  const qInv = query(colRef, where("invoice_number", "in", invoiceNumbers));
-  const snap = await getDocs(qInv);
 
-  const batch = writeBatch(db);
-  snap.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
+  // Firestore allows max 10 in array for "in" filter
+  const chunks = [];
+  for (let i = 0; i < invoiceNumbers.length; i += 10) {
+    chunks.push(invoiceNumbers.slice(i, i + 10));
+  }
+
+  for (const group of chunks) {
+    const q = query(colRef, where("invoice_number", "in", group));
+    const snap = await getDocs(q);
+
+    if (snap.empty) continue;
+
+    const batch = writeBatch(db);
+    snap.forEach(docSnap => batch.delete(docSnap.ref));
+    await batch.commit();
+  }
 }
 
 /* -----------------------------------------------------------

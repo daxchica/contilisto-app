@@ -23,6 +23,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "extract-json-from-string": "^1.0.1",
     "file-saver": "^2.0.5",
     "firebase": "^11.8.1",
     "jspdf": "^3.0.1",

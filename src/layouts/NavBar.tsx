@@ -35,54 +35,114 @@ export default function NavBar() {
   const isHome = location.pathname === "/";
 
   return (
-    <nav className="fixed top-0 left-0 w-full bg-blue-700 text-white shadow-md z-50">
-      <div className="px-6 py-3 flex items-center justify-between max-w-7xl mx-auto">
+    <nav 
+      className="
+        fixed 
+        top-0 left-64 right-0 
+        bg-blue-700 
+        text-white 
+        shadow-md 
+        z-40
+      "
+    >
+      <div 
+        className="
+          px-6 py-3 
+          flex 
+          items-center 
+          justify-center
+          relative
+        "
+      >
         
         {/* Logo */}
-        <div className="text-xl font-bold tracking-tight">
+    {/*}    <div className="text-xl font-bold tracking-tight">
           <NavLink to="/" className="hover:text-yellow-300 transition-all">
             Contilisto
           </NavLink>
-        </div>
+        </div> */}
 
         {/* Navigation Menu */}
         {isLoggedIn && !isHome && (
-          <div className="flex space-x-6 text-sm">
+          <div className="flex gap-6 text-sm font-semibold mx-auto">
 
             <NavLink
               to="/contabilidad"
-              className={({ isActive }) =>
-                isActive ? "text-yellow-300 font-bold" : "hover:text-yellow-200"
-              }
+              className="relative group"
             >
-              Tablero
+              {({ isActive }) => (
+                <div className="px-1 pb-1">
+                  <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
+                    Tablero
+                  </span>
+
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-[2px] w-3/4 -translate-x-1/2 rounded bg-yellow-300 transition-transform duration-300 ease-out ${
+                      isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                    }`}
+                  />
+                </div>
+              )}
             </NavLink>
 
+            {/** LIBRO MAYOR */}
             <NavLink
               to="/libro-mayor"
-              className={({ isActive }) =>
-                isActive ? "text-yellow-300 font-bold" : "hover:text-yellow-200"
-              }
+              className="relative group"
             >
-              Libro Mayor
+              {({ isActive }) => (
+                <div className="px-1 pb-1">
+                  <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
+                    Libro Mayor
+                  </span>
+
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-[2px] w-3/4 -translate-x-1/2 rounded bg-yellow-300 transition-transform duration-300 ease-out ${
+                      isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                    }`}
+                  />
+                </div>
+              )}
             </NavLink>
 
+            {/** LIBRO BANCOS */}
             <NavLink
-              to={entity?.id ? "/libro-bancos" : "/contabilidad"}
-              className={({ isActive }) =>
-                isActive ? "text-yellow-300 font-bold" : "hover:text-yellow-200"
-              }
+              to="/libro-bancos"
+              className="relative group"
             >
-              Libro Bancos
+              {({ isActive }) => (
+                <div className="px-1 pb-1">
+                  <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
+                    Libro Bancos
+                  </span>
+
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-[2px] w-3/4 -translate-x-1/2 rounded bg-yellow-300 transition-transform duration-300 ease-out ${
+                      isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                    }`}
+                  />
+                </div>
+              )}
             </NavLink>
 
+            {/** ESTADOS FINANCIEROS */}
             <NavLink
               to="/estados-financieros"
-              className={({ isActive }) =>
-                isActive ? "text-yellow-300 font-bold" : "hover:text-yellow-200"
-              }
+              className="relative group"
             >
-              Estados Financieros
+              {({ isActive }) => (
+                <div className="px-1 pb-1">
+                  <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
+                    Estados Financieros
+                  </span>
+
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-[2px] w-3/4 -translate-x-1/2 rounded bg-yellow-300 transition-transform duration-300 ease-out ${
+                      isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                    }`}
+                  />
+                </div>
+              )}
             </NavLink>
 
           </div>

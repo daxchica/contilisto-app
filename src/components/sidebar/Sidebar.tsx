@@ -55,7 +55,20 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="w-64 h-screen bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto">
+    <div 
+      className="
+        fixed
+        top-0 left-0
+        w-64 
+        h-screen 
+        bg-[#0A3558] 
+        text-white 
+        flex flex-col 
+        py-6 px-4 
+        overflow-y-auto
+        z-[100]
+      "
+    >
 
       {/* LOGO */}
       <div className="text-2xl font-bold mb-6 tracking-wide">

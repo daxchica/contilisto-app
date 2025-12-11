@@ -2,69 +2,79 @@
 // src/components/JournalPreviewModal.tsx
 // CONTILISTO ARCHITECTURE v1.0
 //
-// Component role:
-// - Receive journal entries already built by the backend (OCR + Vision + Prompt).
-// - Show key invoice metadata.
-// - Let the user REVIEW and ADJUST:
-//     • Account code
-//     • Account name
-//     • Description
-//     • Debit / Credit
-// - Validate that the journal entry is balanced.
-// - Send entries + note back to parent via onSave().
-//
-// IMPORTANT ACv1:
-// - We DO NOT re-classify or rebuild the journal from scratch here.
-// - Accounting logic lives in the backend (extract-invoice-vision.ts).
-//
-// NEW RULE (Option A - Leaf Only):
-// - The user can ONLY select leaf accounts (last level of the chart).
-// - Dropdowns show ONLY leaf accounts.
-// - Parent accounts cannot be selected.
-// - No free-text: if user types a code/name that does not resolve to a leaf
-//   account, the field is cleared on blur.
+// - Recibe asientos ya construidos por el backend (OCR + IA).
+// - Permite revisar y ajustar cuentas, débitos, créditos y glosa.
+// - Valida que el asiento esté balanceado.
+// - SOLO permite seleccionar cuentas hoja (último nivel).
+// - Aprende por proveedor qué cuenta de gasto se usa más (accountHints).
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from "react";
 import { Rnd } from "react-rnd";
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
+import {
+  fetchAccountHintsBySupplierRUC,
+  saveAccountHint,
+} from "@/services/accountHintService";
 
 interface Props {
-  entries: JournalEntry[];             // Asientos sugeridos por la IA (backend)
-  metadata: any;                       // Datos de factura (proveedor, totales, etc.)
-  accounts: Account[];                 // Plan de cuentas (PUC + personalizadas)
-  entityId: string;                    // Empresa actual (reservado para futuras mejoras)
-  userId: string;                      // Usuario actual (reservado para futuras mejoras)
-  onClose: () => void;                 // Cerrar sin guardar
-  onSave: (entries: JournalEntry[], note: string) => Promise<void>; // Guardar definitivo
+  entries: JournalEntry[];
+  metadata: any;
+  accounts: Account[];
+  entityId: string;
+  userId: string;
+  onClose: () => void;
+  onSave: (entries: JournalEntry[], note: string) => Promise<void>;
 }
 
-// Tipo local: JournalEntry + control de picker de cuenta
+// Local entry with UI flags
 type LocalEntry = JournalEntry & {
-  showPicker?: boolean;
+  showPicker?: boolean; // kept for compatibility, but main control is activePickerIndex
+};
+
+type Suggestion = {
+  code: string;
+  name: string;
+  isHint: boolean;
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Returns true if this account is a "leaf" (no children in the chart). */
+/** True si la cuenta es "hoja" (no tiene hijos). */
 function isLeafAccount(account: Account, all: Account[]): boolean {
+  // 1) Regla directa: si account trae explicitamente lastLevel marcamos hoja
+  if ((account as any).isLastLevel === true) return true;
+
+  // 2) Standard del PUC ecuatoriano: longitud >= 9 dígitos ya es subcuenta real
+  if (account.code.length >= 9) return true;
+
+  // 3) Si aún así tiene hijas reales → no la consideramos hoja
   return !all.some(
     (other) =>
       other.code !== account.code && other.code.startsWith(account.code)
   );
 }
 
-/** Normalize a string for comparison/search (code or name). */
+/** Normaliza texto para búsqueda (minúsculas, sin tildes, sin signos). */
 function normalize(text: string | undefined | null): string {
-  return (text || "").toLowerCase().trim();
+  return (text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim();
 }
+
+// Stopwords para mejorar matching semántico
+const STOPWORDS = ["en", "de", "la", "el", "por", "los", "las", "del", "para"];
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
+
 export default function JournalPreviewModal({
   entries,
   metadata,
@@ -74,72 +84,139 @@ export default function JournalPreviewModal({
   onClose,
   onSave,
 }: Props) {
-  // Local editable copy of entries
   const [localEntries, setLocalEntries] = useState<LocalEntry[]>([]);
   const [note, setNote] = useState<string>("");
-
-  // Precompute LEAF accounts only (last level)
-  const leafAccounts = useMemo(
-    () => accounts.filter((acc) => isLeafAccount(acc, accounts)),
-    [accounts]
+  const [hints, setHints] = useState<{ code: string; name: string }[]>([]);
+  const [activePickerIndex, setActivePickerIndex] = useState<number | null>(
+    null
   );
 
-  const leafCodesSet = useMemo(
-    () => new Set(leafAccounts.map((a) => a.code)),
-    [leafAccounts]
-  );
+  // Solo cuentas hoja + TODAS las cuentas que la IA ya usó en los asientos
+  const leafAccounts = useMemo(() => {
+    // 1) Hojas "normales" del plan de cuentas que llega por props
+    const baseLeaves = accounts.filter((acc) => isLeafAccount(acc, accounts));
+
+    // 2) Códigos que vienen en los asientos (IA)
+    const fromEntriesCodes = Array.from(
+      new Set(
+        (entries || [])
+          .map((e) => (e.account_code || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    const fromEntries: Account[] = fromEntriesCodes.map((code) => {
+      const existing = accounts.find((a) => a.code === code);
+      if (existing) return existing;
+
+      // Si el código no existe en `accounts`, construimos una cuenta "fantasma"
+      const entry = (entries || []).find(
+        (e) => (e.account_code || "").trim() === code
+      );
+      const name =
+        (entry?.account_name && entry.account_name.trim()) || `Cuenta ${code}`;
+
+      return {
+        code,
+        name,
+        isLastLevel: true, // la tratamos como hoja
+      } as any as Account;
+
+    });
+    
+    // 3) Unimos y eliminamos duplicados por código
+    const merged = [...baseLeaves, ...fromEntries];
+    const map = new Map<string, Account>();
+    for (const acc of merged) {
+      map.set(acc.code, acc);
+    }
+    return Array.from(map.values());
+  }, [accounts, entries]);
+
+  // Cuentas disponibles para el buscador (todas las hojas del plan)
+  const availableAccounts = useMemo(() => {
+    return accounts.filter((acc) => isLeafAccount(acc, accounts));
+  }, [accounts]);
 
   // --------------------------------------------------------------------------
-  // Initialization: ALWAYS use entries from backend.
-  // metadata only used for header + default note.
+  // Inicialización: asientos + glosa + hints por proveedor
   // --------------------------------------------------------------------------
   useEffect(() => {
-    // 1. Clone entries so we do not mutate the original prop
+    // 1) Clonar asientos
     const cloned: LocalEntry[] = (entries || []).map((e) => ({ ...e }));
-
-    // 2. Ensure each line has a unique id
     const withIds = cloned.map((e) => ({
       ...e,
       id: e.id || crypto.randomUUID(),
       showPicker: false,
     }));
-
     setLocalEntries(withIds);
 
-    // 3. Try to detect main expense line (code starting with "5")
+    // 2) Glosa por defecto
     const mainExpense = entries.find(
       (e) =>
         typeof e.account_code === "string" &&
         e.account_code.trim().startsWith("5")
     );
-    
     const expenseDescription = mainExpense?.account_name?.trim() || "";
-    
-    // 4. Extract invoice number
+
     const invoiceNumber =
       metadata?.invoice_number || entries?.[0]?.invoice_number || "";
-    
-    // 5. Build default note
-    const glosa = 
-      invoiceNumber && expenseDescription 
-        ? `Factura ${invoiceNumber} - ${expenseDescription}` 
+
+    const glosa =
+      invoiceNumber && expenseDescription
+        ? `Factura ${invoiceNumber} - ${expenseDescription}`
         : invoiceNumber
         ? `Factura ${invoiceNumber}`
         : expenseDescription;
 
-    // Only set default note if it was empty (avoid overriding user edits
-    // when reopening the modal with the same data).
     setNote((prev) => (prev ? prev : glosa || ""));
-  }, [entries, metadata]);
+
+    // 3) Cargar hints de Firestore por proveedor
+    async function loadHints() {
+      const supplierRUC = metadata?.issuerRUC;
+      if (!supplierRUC) return;
+
+      const data = await fetchAccountHintsBySupplierRUC(supplierRUC);
+
+      // 1) Mapeo básico desde Firestore
+      const mappedRaw = data.map((h: any) => ({
+        code: h.accountCode as string,
+        name: h.accountName as string,
+      }));
+
+      // 2) Si existe esa cuenta en el PUC, usamos SU nombre
+      const mapped = mappedRaw.map((h) => {
+        const coa = leafAccounts.find((acc) => acc.code === h.code);
+        return {
+          code: h.code,
+          name: coa?.name ?? h.name,
+        };
+      });
+
+      // 3) Preferimos el grupo 5xx del asiento actual si existe
+      const preferredExpense = entries.find(
+        (e) => e.account_code && e.account_code.startsWith("5")
+      );
+
+      if (preferredExpense?.account_code) {
+        const prefix = preferredExpense.account_code.slice(0, 3); // ej. "502"
+        const filtered = mapped.filter((h) => h.code.startsWith(prefix));
+        setHints(filtered.length > 0 ? filtered : mapped);
+      } else {
+        setHints(mapped);
+      }
+    }
+
+    loadHints().catch((err) =>
+      console.error("Error cargando accountHints:", err)
+    );
+  }, [entries, metadata, leafAccounts]);
 
   // --------------------------------------------------------------------------
-  // Totals and balance
+  // Totales y balance
   // --------------------------------------------------------------------------
   const { totalDebit, totalCredit, isBalanced, diff } = useMemo(() => {
-    const d = localEntries.reduce(
-      (sum, e) => sum + (Number(e.debit) || 0),
-      0
-    );
+    const d = localEntries.reduce((sum, e) => sum + (Number(e.debit) || 0), 0);
     const c = localEntries.reduce(
       (sum, e) => sum + (Number(e.credit) || 0),
       0
@@ -155,22 +232,16 @@ export default function JournalPreviewModal({
   }, [localEntries]);
 
   // --------------------------------------------------------------------------
-  // Generic field helpers
+  // Helpers de edición
   // --------------------------------------------------------------------------
-
-  function patchEntry(index: number, patch: Partial<LocalEntry>
-  ) {
+  function patchEntry(index: number, patch: Partial<LocalEntry>) {
     setLocalEntries((prev) => {
       const next = [...prev];
-      next[index] = {
-        ...next[index],
-        ...patch,
-      };
+      next[index] = { ...next[index], ...patch };
       return next;
     });
   }
 
-  // Change numeric field (debit / credit)
   function updateNumberField(
     index: number,
     field: "debit" | "credit",
@@ -187,113 +258,63 @@ export default function JournalPreviewModal({
     });
   }
 
-  // Apply a leaf account to a given row
-  function applyLeafAccount(index: number, account: Account | null) {
-    setLocalEntries((prev) => {
-      const next = [...prev];
-      if (!account) {
-        next[index] = {
-          ...next[index],
-          account_code: "",
-          account_name: "",
-        };
-      } else {
-        next[index] = {
-          ...next[index],
-          account_code: account.code,
-          account_name: account.name,
-        };
-      }
-      return next;
-    });
-  }
-
-  // Called when user types in account code input
   function handleCodeChange(index: number, rawCode: string) {
     patchEntry(index, {
       account_code: rawCode,
-      showPicker: true,
     });
   }
 
-  // Called when code input loses focus: enforce leaf-only + no free text
   function handleCodeBlur(index: number) {
+    // Validar / completar código sin cerrar forzadamente el picker
     setLocalEntries((prev) => {
       const next = [...prev];
       const entry = next[index];
       const raw = (entry.account_code || "").trim();
 
-      const exactMatch = leafAccounts.find((a) => a.code === raw);
-
-      if (!raw || !exactMatch) {
-        // Invalid code -> clear both fields
-        entry.account_code = "";
-        entry.account_name = "";
-      } else {
-        entry.account_code = exactMatch.code;
-        entry.account_name = exactMatch.name;
-      }
-
-      entry.showPicker = false;
-      return next;
-    });
-  }
-
-  // When the user types in the account name
-  function handleNameChange(index: number, value: string) {
-    patchEntry(index, {
-      account_name: value,
-      showPicker: true,
-    });
-  }
-
-  // Called when name input loses focus: enforce leaf-only + no free text
-  function handleNameBlur(index: number) {
-    setLocalEntries((prev) => {
-      const next = [...prev];
-      const entry = next[index];
-      const raw = normalize(entry.account_name);
-
       if (!raw) {
         entry.account_code = "";
         entry.account_name = "";
-        entry.showPicker = false;
         return next;
       }
 
-      // 1) Exact name match
-      let match = leafAccounts.find((a) => normalize(a.name) === raw);
-
-      // 2) If no exact match and there is ONE partial match, accept it
-      if (!match) {
-        const partials = leafAccounts.filter((a) =>
-          normalize(a.name).includes(raw)
-        );
-        if (partials.length === 1) {
-          match = partials[0];
-        }
+      // 1) Exact match
+      const exact = leafAccounts.find((a) => a.code === raw);
+      if (exact) {
+        entry.account_code = exact.code;
+        entry.account_name = exact.name;
+        return next;
       }
 
-      if (!match) {
-        // No valid leaf account -> clear
-        entry.account_code = "";
-        entry.account_name = "";
-      } else {
-        entry.account_code = match.code;
-        entry.account_name = match.name;
+      // 2) Partial match único
+      const partials = leafAccounts.filter((a) => a.code.startsWith(raw));
+      if (partials.length === 1) {
+        entry.account_code = partials[0].code;
+        entry.account_name = partials[0].name;
+        return next;
       }
 
-      entry.showPicker = false;
+      // 3) Dejar que el usuario elija en el picker
       return next;
     });
   }
 
-  // Remove a line (for example, if AI added something extra)
-  function removeLine(index: number) {
-    setLocalEntries((prev) => prev.filter((_, i) => i !== index));
+  function handleNameChange(index: number, value: string) {
+    patchEntry(index, {
+      account_name: value,
+    });
   }
 
-  // Add an empty line
+  function removeLine(index: number) {
+    setLocalEntries((prev) => prev.filter((_, i) => i !== index));
+    setActivePickerIndex((current) =>
+      current === index
+        ? null
+        : current !== null && current > index
+        ? current - 1
+        : current
+    );
+  }
+
   function addEmptyLine() {
     const today =
       localEntries[0]?.date ||
@@ -310,14 +331,13 @@ export default function JournalPreviewModal({
         account_name: "",
         debit: 0,
         credit: 0,
-        type: "expense", // por defecto; se puede ajustar luego si es ingreso
+        type: "expense",
         invoice_number:
           metadata?.invoice_number || prev[0]?.invoice_number || "",
         issuerRUC: metadata?.issuerRUC || prev[0]?.issuerRUC || "",
         issuerName: metadata?.issuerName || "",
         supplier_name: metadata?.supplier_name || "",
-        invoiceDate:
-          metadata?.invoiceDate || prev[0]?.invoiceDate || today,
+        invoiceDate: metadata?.invoiceDate || prev[0]?.invoiceDate || today,
         entityRUC: metadata?.buyerRUC || "",
         source: "vision",
         showPicker: false,
@@ -336,29 +356,51 @@ export default function JournalPreviewModal({
       return;
     }
 
-    // Enforce "leaf-only" rule on save
+    function isLeafCode(code: string) {
+      const trimmed = code.trim();
+      return leafAccounts.some((acc) => acc.code === trimmed);
+    }
+
     const invalidLines = localEntries.filter(
-      (e) => !leafCodesSet.has((e.account_code || "").trim())
+      (e) => !e.account_code || !isLeafCode(e.account_code)
     );
 
     if (invalidLines.length > 0) {
-      const invalidCodes = Array.from(
-        new Set(
-          invalidLines
-            .map((e) => (e.account_code || "").trim())
-            .filter(Boolean)
-        )
-      ).join(", ");
-
       alert(
-        `⚠ Solo se permiten cuentas de último nivel (hoja).\n` +
-          `Revisa las líneas con códigos no válidos: ${invalidCodes || "sin código"}.`
+        "⚠ Solo se permiten cuentas de último nivel (hoja). Verifica que los códigos no tengan cuentas hijas o inexistentes."
       );
       return;
     }
 
     try {
-      await onSave(localEntries, note || "");
+      const supplierRUC =
+        metadata?.issuerRUC || localEntries[0]?.issuerRUC || "";
+
+      if (supplierRUC) {
+        for (const line of localEntries) {
+          if (line.account_code?.startsWith("5")) {
+            await saveAccountHint({
+              supplierRUC,
+              accountCode: line.account_code,
+              accountName: line.account_name,
+              userId,
+            });
+          }
+        }
+      }
+
+      // 2) Normalizamos ANTES de enviar al padre
+      const fixedEntries: JournalEntry[] = localEntries.map((e) => ({
+        ...e,
+        entityId,
+        uid: userId,
+        userId,
+        description: note,
+        source: e.source ?? "edited",
+        createdAt: e.createdAt ?? Date.now(),
+      }));
+
+      await onSave(fixedEntries, note || "");
     } catch (err: any) {
       console.error("❌ Error en onSave desde JournalPreviewModal:", err);
       alert(err?.message || "Error guardando los asientos.");
@@ -371,18 +413,13 @@ export default function JournalPreviewModal({
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <Rnd
-        default={{
-          x: 100,
-          y: 40,
-          width: 900,
-          height: 600,
-        }}
+        default={{ x: 100, y: 40, width: 900, height: 600 }}
         minWidth={800}
         minHeight={480}
         disableDragging={false}
         enableResizing={false}
         dragHandleClassName="drag-header"
-        className="bg-white rounded-xl shadow-2xl flex flex-col"
+        className="bg-white rounded-xl shadow-2xl flex flex-col overflow-visible"
       >
         {/* HEADER */}
         <div className="drag-header bg-blue-600 text-white p-4 rounded-t-xl flex justify-between items-center cursor-move">
@@ -398,35 +435,28 @@ export default function JournalPreviewModal({
         </div>
 
         {/* BODY */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          {/* METADATA DE FACTURA */}
+        <div className="flex-1 p-6 overflow-visible">
+          {/* METADATA FACTURA */}
           {metadata && (
             <div className="mb-4 p-3 bg-gray-100 rounded text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
               <p>
-                <strong>Proveedor:</strong>{" "}
-                {metadata.issuerName || "—"}
+                <strong>Proveedor:</strong> {metadata.issuerName || "—"}
               </p>
               <p>
-                <strong>RUC Proveedor:</strong>{" "}
-                {metadata.issuerRUC || "—"}
+                <strong>RUC Proveedor:</strong> {metadata.issuerRUC || "—"}
               </p>
               <p>
-                <strong>Factura Nº:</strong>{" "}
-                {metadata.invoice_number || "—"}
+                <strong>Factura Nº:</strong> {metadata.invoice_number || "—"}
               </p>
               <p>
-                <strong>Fecha factura:</strong>{" "}
-                {metadata.invoiceDate || "—"}
+                <strong>Fecha factura:</strong> {metadata.invoiceDate || "—"}
               </p>
               <p>
                 <strong>Subtotal IVA:</strong>{" "}
-                {metadata.subtotal15 ??
-                  metadata.subtotal12 ??
-                  0}
+                {metadata.subtotal15 ?? metadata.subtotal12 ?? 0}
               </p>
               <p>
-                <strong>Subtotal 0%:</strong>{" "}
-                {metadata.subtotal0 ?? 0}
+                <strong>Subtotal 0%:</strong> {metadata.subtotal0 ?? 0}
               </p>
               <p>
                 <strong>IVA:</strong> {metadata.iva ?? 0}
@@ -437,38 +467,38 @@ export default function JournalPreviewModal({
             </div>
           )}
 
-          {/* GLOBAL DATE FOR THE JOURNAL */}
+          {/* FECHA GLOBAL + BOTÓN AGREGAR LÍNEA */}
           <div className="mb-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <label className="block text-sm font-medium mb-1">Fecha del asiento:</label>
-    
+              <label className="block text-sm font-medium mb-1">
+                Fecha del asiento:
+              </label>
               <input
                 type="date"
                 className="border rounded px-3 py-2 text-sm"
                 value={localEntries[0]?.date || ""}
                 onChange={(ev) => {
                   const newDate = ev.target.value;
-                  setLocalEntries(prev =>
-                    prev.map(e => ({
+                  setLocalEntries((prev) =>
+                    prev.map((e) => ({
                       ...e,
-                      date: newDate,   // ← actualiza TODAS las líneas internamente
+                      date: newDate,
                     }))
                   );
                 }}
               />
             </div>
-            
-            {/* ADD LINE BUTON */}
-              <button
-                type="button"
-                onClick={addEmptyLine}
-                className="px-3 py-1.5 text-xs md:text-sm bg-blue-50 text-blue-700 rounded border border-blue-300 hover:bg-blue-100"
-              >
-                ➕ Agregar línea
-              </button>
+
+            <button
+              type="button"
+              onClick={addEmptyLine}
+              className="px-3 py-1.5 text-xs md:text-sm bg-blue-50 text-blue-700 rounded border border-blue-300 hover:bg-blue-100"
+            >
+              ➕ Agregar línea
+            </button>
           </div>
 
-          {/* JOURNAL TABLE */}
+          {/* TABLA DE ASIENTOS */}
           <div className="border rounded-lg overflow-visible relative">
             <table className="w-full table-auto text-xs md:text-sm">
               <thead className="bg-gray-200">
@@ -482,76 +512,166 @@ export default function JournalPreviewModal({
               </thead>
               <tbody>
                 {localEntries.map((e, i) => {
-                  // Build suggestions list for dropdown (leaf accounts only)
                   const codeQuery = normalize(e.account_code);
                   const nameQuery = normalize(e.account_name);
-                  const query = codeQuery || nameQuery;
+                  const query = nameQuery || codeQuery;
 
-                  const suggestions = query
-                    ? leafAccounts.filter(
-                        (acc) => 
-                          normalize(acc.code).includes(query) ||
-                          normalize(acc.name).includes(query)
-                      )
-                    : leafAccounts.slice(0, 50);
+                  const isExpenseRow =
+                    (e.account_code || "").startsWith("5") ||
+                    normalize(e.account_name).includes("gasto");
+
+                  // 1) Lista base filtrada por query
+                  const filteredBase = query
+                    ? availableAccounts.filter((acc) => {
+                        const target =
+                          normalize(acc.name) + " " + normalize(acc.code);
+
+                        const qWords = query
+                          .split(" ")
+                          .map((w) => w.trim())
+                          .filter(
+                            (w) =>
+                              w.length >= 2 &&
+                              !STOPWORDS.includes(w.toLowerCase())
+                          );
+
+                        if (qWords.length === 0) return true;
+                        return qWords.every((word) => target.includes(word));
+                      })
+                    : availableAccounts;
+
+                  // 2) Hints por proveedor primero (si coincide con query)
+                  const hintSet = new Set<string>();
+                  const suggestionsFromHints: Suggestion[] =
+                    isExpenseRow && hints.length > 0
+                      ? hints
+                          .filter((h) => {
+                            if (!query) return true;
+                            const target =
+                              normalize(h.name) + " " + normalize(h.code);
+                            return target.includes(query);
+                          })
+                          .map((h) => {
+                            hintSet.add(h.code);
+                            return {
+                              code: h.code,
+                              name: h.name,
+                              isHint: true,
+                            };
+                          })
+                      : [];
+
+                  // 3) Resto de cuentas
+                  const suggestionsFromAccounts: Suggestion[] =
+                    filteredBase
+                      .filter((acc) => !hintSet.has(acc.code))
+                      .map((acc) => ({
+                        code: acc.code,
+                        name: acc.name,
+                        isHint: false,
+                      }));
+
+                  const suggestions: Suggestion[] = [
+                    ...suggestionsFromHints,
+                    ...suggestionsFromAccounts,
+                  ];
+
+                  const isOpen = activePickerIndex === i;
 
                   return (
-                  <tr key={e.id || i} className="odd:bg-white even:bg-gray-50">
-                    {/* Account code */}
-                    <td className="border p-1 align-top">
-                      <input
-                        type="text"
-                        className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
-                        value={e.account_code || ""}
-                        onChange={(ev) =>
-                          handleCodeChange(i, ev.target.value)
-                        }
-                        onBlur={() => handleCodeBlur(i)}
-                      />
-                    </td>
+                    <tr
+                      key={e.id || i}
+                      className="odd:bg-white even:bg-gray-50"
+                    >
+                      {/* Código */}
+                      <td className="border p-1 align-top">
+                        <input
+                          type="text"
+                          className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
+                          value={e.account_code || ""}
+                          onChange={(ev) => {
+                            handleCodeChange(i, ev.target.value);
+                          }}
+                          onBlur={() => handleCodeBlur(i)}
+                          onFocus={() => setActivePickerIndex(i)}
+                        />
+                      </td>
 
-                    {/* Account name + dropdown */}
-                    <td className="border p-1 align-top relative w-80 max-w-xs">
-                      <div className="relative">
-                      {/* ACCOUNT NAME INPUT */}
-                      <input
-                        type="text"
-                        className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
-                        value={e.account_name || ""}
-                        onChange={(ev) => 
-                          handleNameChange(i, ev.target.value)}
-                        onBlur={() => handleNameBlur(i)}
-                        onFocus={() => patchEntry(i, { showPicker: true })}
-                      />
+                      {/* Nombre de cuenta + dropdown */}
+                      <td
+                        className="border p-1 align-top relative w-80 max-w-xs"
+                        style={{ position: "relative", zIndex: 999999 }}
+                      >
+                        <div className="relative">
+                          <input
+                            type="text"
+                            className="w-full border rounded px-1 py-0.5 text-xs md:text-sm"
+                            value={e.account_name || ""}
+                            onChange={(ev) => {
+                              const value = ev.target.value;
+                              handleNameChange(i, value);
+                              setActivePickerIndex(i);
+                            }}
+                            onFocus={() => {
+                              setActivePickerIndex(i);
+                            }}
+                            onBlur={(ev) => {
+                              const target =
+                                ev.relatedTarget as HTMLElement | null;
 
-                      {/* DROPDOWN (leaf accounts only) */}
-                      {e.showPicker && suggestions.length > 0 && (
-                        <div
-                          className="absolute z-50 mt-1 w-full bg-white border rounded shadow-lg max-h-40 overflow-y-auto"
-                        >
-                          {suggestions.map((acc) => (
+                              // Si el blur viene de hacer click en una opción, no cerramos
+                              if (
+                                target &&
+                                target.dataset?.accountOption === "1"
+                              ) {
+                                return;
+                              }
+
+                              setActivePickerIndex(null);
+                            }}
+                          />
+
+                          {isOpen && suggestions.length > 0 && (
                             <div
-                              key={acc.code}
-                              className="px-2 py-1 cursor-pointer hover:bg-blue-100 text-xs"
-                              onMouseDown={() => {
-                                // IMPORTANT: use onMouseDown so blur does NOT fire first
-                                setLocalEntries((prev) => {
-                                  const next = [...prev];
-                                  next[i].account_code = acc.code;
-                                  next[i].account_name = acc.name;
-                                  next[i].showPicker = false;
-                                  return next;
-                                });
-                              }}
+                              className="absolute left-0 mt-1  w-full max-h-[350px] overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-2xl z-[9999] text-xs md:text-sm"
+                              style={{ top: "100%", position: "fixed" }}
                             >
-                              <strong>{acc.code}</strong> — {acc.name}
+                              {suggestions.map((acc) => (
+                                <div
+                                  key={acc.code}
+                                  data-account-option="1"
+                                  className={`px-2 py-1 cursor-pointer text-xs ${
+                                    acc.isHint
+                                      ? "bg-yellow-50 hover:bg-yellow-100 border-l-4 border-yellow-500"
+                                      : "hover:bg-blue-100"
+                                  }`}
+                                  onMouseDown={(ev) => {
+                                    // evitar blur antes de seleccionar
+                                    ev.preventDefault();
+                                  }}
+                                  onClick={() => {
+                                    setLocalEntries((prev) => {
+                                      const next = [...prev];
+                                      next[i].account_code = acc.code;
+                                      next[i].account_name = acc.name;
+                                      next[i].showPicker = false;
+                                      return next;
+                                    });
+                                    setActivePickerIndex(null);
+                                  }}
+                                >
+                                  <strong>{acc.code}</strong> — {acc.name}
+                                  {acc.isHint && (
+                                    <span className="text-yellow-700 ml-2 italic">
+                                      (Recomendado)
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </td>
-
+                      </td>
 
                       {/* Débito */}
                       <td className="border p-1 align-top text-right">
@@ -570,7 +690,7 @@ export default function JournalPreviewModal({
                         />
                       </td>
 
-                      {/* Crédit */}
+                      {/* Crédito */}
                       <td className="border p-1 align-top text-right">
                         <input
                           type="number"
@@ -587,7 +707,7 @@ export default function JournalPreviewModal({
                         />
                       </td>
 
-                      {/* Remove líne */}
+                      {/* Eliminar línea */}
                       <td className="border p-1 text-center align-top">
                         <button
                           type="button"
@@ -602,25 +722,17 @@ export default function JournalPreviewModal({
                   );
                 })}
 
-                {/* Totals row */}
                 {localEntries.length > 0 && (
                   <tr className="bg-gray-100 font-semibold">
-                    {/* Total Label */}
                     <td className="border px-8 py-2 text-right" colSpan={2}>
                       Totales:
                     </td>
-
-                    {/* Total Debit */}
                     <td className="border px-6 py-2 text-right">
                       {totalDebit.toFixed(2)}
                     </td>
-
-                    {/* Total Credit */}
                     <td className="border px-6 py-2 text-right">
                       {totalCredit.toFixed(2)}
                     </td>
-
-                    {/* Emty cell for UI */}
                     <td className="border" />
                   </tr>
                 )}
@@ -628,7 +740,7 @@ export default function JournalPreviewModal({
             </table>
           </div>
 
-          {/* Note + balance message */}
+          {/* GLOSA + ESTADO DE BALANCE */}
           <div className="mt-4 flex items-center gap-3">
             <label className="text-sm font-medium whitespace-nowrap">
               Nota / Glosa:
