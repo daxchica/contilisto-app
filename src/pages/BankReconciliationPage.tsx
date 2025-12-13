@@ -9,7 +9,7 @@ import type { JournalEntry } from "../types/JournalEntry";
 import type { BankMovement } from "../types/bankTypes";
 
 import BankReconciliation from "../components/BankReconciliation";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function BankReconciliationPage() {
   const { user } = useAuth();

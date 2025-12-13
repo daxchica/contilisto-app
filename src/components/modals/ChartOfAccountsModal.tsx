@@ -5,11 +5,10 @@ import {
   createSubaccount,
   fetchCustomAccounts,
   deleteCustomAccount,
-} from "../services/chartOfAccountsService";
-import type { Account, CustomAccount } from "../types/AccountTypes";
-import { auth } from "../firebase-config";
-import "./ChartOfAccountsModal.css";
-import { JournalEntry } from "../types/JournalEntry";
+} from "../../services/chartOfAccountsService";
+import type { Account, CustomAccount } from "../../types/AccountTypes";
+import { auth } from "../../firebase-config";
+import { JournalEntry } from "../../types/JournalEntry";
 
 interface Props {
   entityId: string;

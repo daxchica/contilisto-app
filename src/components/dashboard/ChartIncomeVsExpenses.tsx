@@ -54,7 +54,7 @@ export default function ChartIncomeVsExpenses({
         Ingresos vs Gastos
       </h3>
 
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={300}>
         <LineChart 
           data={data}
           margin={{ top: 10, right: 30, left: 10, bottom: 60 }}  

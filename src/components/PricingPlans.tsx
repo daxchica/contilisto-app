@@ -34,12 +34,12 @@ export default function PricingPlans() {
           </div>
 
           {/* Título */}
-          <h3 className="text-2xl font-bold">Plan Básico</h3>
+          <h3 className="text-2xl font-bold">Plan Estudiante</h3>
 
           {/* Precio grande */}
           <div className="flex justify-center items-baseline mt-2">
             <span className="text-6xl font-extrabold leading-none text-emerald-700">
-              $9.99
+              $0.00
             </span>
             <span className="text-lg ml-2 opacity-90">/ mes</span>
           </div>
@@ -91,7 +91,7 @@ export default function PricingPlans() {
             className="inline-block mt-6 rounded-xl bg-emerald-600 text-white px-5 py-3 font-semibold
                        hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-700"
           >
-            Inicia el Plan Básico
+            Inicia Plan
           </Link>
         </Wrapper>
 
@@ -99,8 +99,7 @@ export default function PricingPlans() {
         <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col items-center text-center ring-4 ring-indigo-400/30 hover:scale-[1.01]">
           {/* Badge */}
           <span
-            className="absolute -top-3 left-6 rounded-full bg-indigo-400 text-white text-xs font-semibold
-                       px-3 py-1 shadow"
+            className="absolute -top-3 left-6 rounded-full bg-indigo-400 text-white text-xs font-semibold px-3 py-1 shadow"
           >
             Más Popular
           </span>
@@ -111,11 +110,11 @@ export default function PricingPlans() {
           </div>
 
           {/* Título */}
-          <h3 className="text-2xl font-bold">Plan Profesional</h3>
+          <h3 className="text-2xl font-bold">Plan Contador</h3>
 
           {/* Precio grande */}
           <div className="flex justify-center items-baseline mt-2">
-            <span className="text-6xl font-extrabold leading-none">$29</span>
+            <span className="text-6xl font-extrabold leading-none">$29.00</span>
             <span className="text-lg ml-2 opacity-90">/ mes</span>
           </div>
 
@@ -136,6 +135,13 @@ export default function PricingPlans() {
                 <span className="mt-0.5">✅</span>
                 <p>500 movimientos contables al mes</p>
               </div>
+              
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Emisión de Anexos y Declaraciones SRI</p>
+              </div>
+              
+              
               <div className="flex items-start gap-2">
                 <span className="mt-0.5">✅</span>
                 <p>Estados financieros (ER y Balance)</p>
@@ -146,18 +152,15 @@ export default function PricingPlans() {
               </div>
               <div className="flex items-start gap-2">
                 <span className="mt-0.5">✅</span>
-                <p>Exportación a PDF y CSV</p>
+                <p>Hasta 3 usuarios autorizados</p>
               </div>
               <div className="flex items-start gap-2">
                 <span className="mt-0.5">✅</span>
-                <p>Soporte por email</p>
+                <p>Facturación Electrónica</p>
               </div>
             </div>
           </div>
 
-            <p className="mt-2 text-white-800/80">
-            Para profesionales contables.
-          </p>
           {/* CTA */}
           <Link
             to="/register?plan=pro"
@@ -165,7 +168,7 @@ export default function PricingPlans() {
             className="inline-block mt-6 rounded-xl border border-white/70 px-6 py-3 font-semibold
                        hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/50"
           >
-            Inicia tu plan
+            Inicia plan
           </Link>
         </Wrapper>
 
@@ -177,7 +180,10 @@ export default function PricingPlans() {
           </div>
 
           <h3 className="text-2xl font-bold">Plan Corporativo</h3>
-          <p className="mt-1 text-lg font-semibold text-white/90">Precio Personalizado</p>
+          <div className="flex justify-center items-baseline mt-2">
+          <p className="text-6xl font-extrabold leading-none">$69.00</p>
+          <span className="text-lg ml-2 opacity-90">/ mes</span>
+          </div>
 
           <div className="w-full mt-5">
             <div className="flex justify-center">
@@ -189,7 +195,27 @@ export default function PricingPlans() {
             <div className="bg-white/10 rounded-2xl p-5 mt-3 text-left max-w-sm mx-auto space-y-2">
               <div className="flex items-start gap-2">
                 <span className="mt-0.5">✅</span>
-                <p>Soporte dedicado</p>
+                <p>Soporte dedicado con IA</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Facturación Electrónica</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Emisión de declaraciones SRI</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Dashboard Profesional</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Hasta 5 usuarios autorizacos</p>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">✅</span>
+                <p>Soporte dedicado con IA</p>
               </div>
               <div className="flex items-start gap-2">
                 <span className="mt-0.5">✅</span>
@@ -208,7 +234,7 @@ export default function PricingPlans() {
             className="inline-block mt-6 rounded-xl bg-white text-slate-900 px-5 py-3 font-semibold
                        hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-white/70"
           >
-            Contáctanos
+            Inicia plan
           </Link>
         </Wrapper>
       </div>

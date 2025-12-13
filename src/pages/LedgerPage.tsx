@@ -21,12 +21,12 @@ function formatDate(dateString: string): string {
 }
 
 export default function LedgerPage() {
-  const { entity } = useSelectedEntity();
+  const { selectedEntity } = useSelectedEntity();
 
   // pull these from the selected entity (or empty if none)
-  const entityId = entity?.id ?? "";
-  const entityName = useMemo(() => entity?.name ?? "", [entity?.name]);
-  const entityRuc = useMemo(() => entity?.ruc ?? "", [entity?.ruc]);
+  const entityId = selectedEntity?.id ?? "";
+  const entityName = useMemo(() => selectedEntity?.name ?? "", [selectedEntity?.name]);
+  const entityRuc = useMemo(() => selectedEntity?.ruc ?? "", [selectedEntity?.ruc]);
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);

@@ -11,8 +11,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { Rnd } from "react-rnd";
-import type { Account } from "../types/AccountTypes";
-import type { JournalEntry } from "../types/JournalEntry";
+import type { Account } from "../../types/AccountTypes";
+import type { JournalEntry } from "../../types/JournalEntry";
 import {
   fetchAccountHintsBySupplierRUC,
   saveAccountHint,

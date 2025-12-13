@@ -1,48 +1,45 @@
 // src/context/SelectedEntityContext.tsx
-import React, { createContext, useContext, useState } from "react";
+
+import { 
+  createContext, 
+  useContext,
+  useEffect, 
+  useState, 
+  ReactNode 
+} from "react";
 import type { Entity } from "@/types/Entity";
+import { useAuth } from "./AuthContext";
 
 interface SelectedEntityContextType {
   selectedEntity: Entity | null;
-  setSelectedEntity: (entity: Entity | null) => void;
-
-  entity: Entity | null;
   setEntity: (entity: Entity | null) => void;
-}
-
-export const SelectedEntityContext = createContext<SelectedEntityContextType>({
-  selectedEntity: null,
-  setSelectedEntity: () => {},
-
-  entity: null,
-  setEntity: () => {},
-});
-
-export const SelectedEntityProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [entity, setEntity] = useState<Entity | null>(null);
-    
-    return (
-      <SelectedEntityContext.Provider 
-        value={{ 
-          entity, 
-          setEntity,
-          
-          selectedEntity: entity,
-          setSelectedEntity: setEntity,
-        }}
-      >
-        {children}
-      </SelectedEntityContext.Provider>
-    );
 };
- 
 
-export const useSelectedEntity = () => {
+const SelectedEntityContext = createContext<SelectedEntityContextType | null>(null);
+
+export function SelectedEntityProvider ({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const [selectedEntity, setSelectedEntity] = useState<any>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setSelectedEntity(null);
+    }
+  }, [user]);
+
+  return (
+    <SelectedEntityContext.Provider
+      value={{ 
+        selectedEntity, 
+        setEntity: setSelectedEntity, }}
+    >
+      {children}
+    </SelectedEntityContext.Provider>
+  );
+};
+
+export function useSelectedEntity() {
   const ctx = useContext(SelectedEntityContext);
-
-  if (!ctx) {
-    throw new Error("useSelectedEntity must be used inside SelectedEntityProvider");
-  }
-
+  if (!ctx) throw new Error("useSelectedEntity must be used within SelectedEntityProvider");
   return ctx;
-};
+}

@@ -7,9 +7,9 @@ import { auth } from "../firebase-config";
 type PlanKey = "starter" | "pro" | "enterprise";
 
 const PLAN_INFO: Record<PlanKey, { label: string; price: number | null; cta: string }> = {
-  starter:     { label: "Plan Básico",      price: 9.99, cta: "Suscribirse" },
-  pro:         { label: "Plan Profesional", price: 29,   cta: "Suscribirse" },
-  enterprise:  { label: "Plan Corporativo", price: null, cta: "Hablar con ventas" },
+  starter:     { label: "Plan Estudiantil", price: 0.00, cta: "Suscribirse" },
+  pro:         { label: "Plan Profesional", price: 29.99, cta: "Suscribirse" },
+  enterprise:  { label: "Plan Corporativo", price: 69.99, cta: "Suscribirse" },
 };
 
 export default function Register() {

@@ -18,10 +18,10 @@ export default function FinancialStatements() {
   // -------------------------------------------
   // Selected entity context
   // -------------------------------------------
-  const { entity } = useSelectedEntity();
-  const entityId = entity?.id ?? "";
-  const entityName = entity?.name ?? "";
-  const entityRuc = entity?.ruc ?? "";
+  const { selectedEntity } = useSelectedEntity();
+  const entityId = selectedEntity?.id ?? "";
+  const entityName = selectedEntity?.name ?? "";
+  const entityRuc = selectedEntity?.ruc ?? "";
 
   // -------------------------------------------
   // Journal entries

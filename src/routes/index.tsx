@@ -1,5 +1,6 @@
 // src/routes/index.tsx
 import React from "react";
+import RequireEntityRoute from "./RequireEntityRoute";
 import { Routes, Route } from "react-router-dom";
 
 import AppLayout from "@/layouts/AppLayout";
@@ -23,34 +24,38 @@ import FlujoCaja from "@/pages/FlujoCaja";
 import NotFound from "@/pages/NotFound";
 import CompaniesPage from "@/pages/CompaniesPage";
 
+import AdminLayout from "@/pages/admin/AdminLayout";
+import AdminDashboard from "@/pages/admin/AdminDashboard";
+import UsersPage from "@/pages/admin/UsersPage";
+import UserDetail from "@/pages/admin/UserDetail";
+import PlansConfig from "@/pages/admin/PlansCofig";
+import AuditLogs from "@/pages/admin/AuditLogs";
+
+import { AdminRoute } from "./AdminRoute";
+import { MasterRoute } from "./MasterRoute";
+
 export default function AppRoutes() {
   return (
     <Routes>
-
-      {/* Public */}
+      {/* ============================================================
+       * PUBLIC
+       * ============================================================ */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
-      {/* Ledger-only Pages */}
+      {/* ============================================================
+       * APP (USERS)
+       * ============================================================ */}
       <Route
-        path="/contabilidad"
+        path="/app"
         element={
           <AppLayout>
-            <AccountingDashboard />
-         </AppLayout>
+            <CompaniesPage />
+          </AppLayout>
         }
       />
-      <Route
-        path="/libro-mayor"
-        element={
-          <LedgerLayout>
-            <LedgerPage />
-          </LedgerLayout>
-        }
-      />
-
-      {/* App Pages */}
+      
       <Route
         path="/dashboard"
         element={
@@ -74,7 +79,7 @@ export default function AppRoutes() {
         element={
           <AppLayout>
             <InvoicePage />
-         </AppLayout>
+          </AppLayout>
         }
       />
 
@@ -97,20 +102,75 @@ export default function AppRoutes() {
       />
 
       <Route
+        path="/impuestos"
+        element={
+          <AppLayout>
+            <Declaraciones />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/flujo-caja"
+        element={
+          <AppLayout>
+            <FlujoCaja />
+          </AppLayout>
+        }
+      />
+
+      <Route
+        path="/empresas"
+        element={
+          <AppLayout>
+            <CompaniesPage />
+          </AppLayout>
+        }
+      />
+
+      {/* ============================================================
+       * CONTABILIDAD / LEDGER
+       * ============================================================ */}
+      <Route
+        path="/contabilidad"
+        element={
+          <RequireEntityRoute>
+            <AppLayout>
+              <AccountingDashboard />
+          </AppLayout>
+         </RequireEntityRoute>
+        }
+      />
+      <Route
+        path="/libro-mayor"
+        element={
+          <RequireEntityRoute>
+            <LedgerLayout>
+              <LedgerPage />
+            </LedgerLayout>
+          </RequireEntityRoute>
+        }
+      />
+
+      <Route
         path="/estados-financieros"
         element={
-          <LedgerLayout>
-            <FinancialStatements />
-          </LedgerLayout>
+          <RequireEntityRoute>
+            <LedgerLayout>
+              <FinancialStatements />
+            </LedgerLayout>
+          </RequireEntityRoute>
         }
       />
 
       <Route
         path="/libro-bancos"
         element={
-          <LedgerLayout>
-            <BankBookPage />
-          </LedgerLayout>
+          <RequireEntityRoute>
+            <LedgerLayout>
+              <BankBookPage />
+            </LedgerLayout>
+          </RequireEntityRoute>
         }
       />
 
@@ -141,6 +201,42 @@ export default function AppRoutes() {
         }
       />
 
+      {/* ============================================================
+       * ADMIN PANEL (ADMIN + MASTER)
+       * ============================================================ */}
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route index element={<AdminDashboard />} />
+        <Route path="users" element={<UsersPage />} />
+
+        {/* SOLO MASTER */}
+        <Route
+          path="plans"
+          element={
+            <MasterRoute>
+              <PlansConfig />
+            </MasterRoute>
+          }
+        />
+        <Route
+          path="audit"
+          element={
+            <MasterRoute>
+              <AuditLogs />
+            </MasterRoute>
+          }
+        />
+      </Route>
+
+      {/* ============================================================
+       * FALLBACK
+       * ============================================================ */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

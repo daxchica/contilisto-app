@@ -11,7 +11,7 @@ export default function NavBar() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  const { entity } = useSelectedEntity(); // 👈 Preserve selected company
+  const { selectedEntity } = useSelectedEntity(); // 👈 Preserve selected company
 
   useEffect(() => {
     const auth = getAuth();
@@ -153,9 +153,9 @@ export default function NavBar() {
           <div className="flex items-center space-x-4 text-sm">
 
             {/* Show selected entity name */}
-            {entity?.name && (
+            {selectedEntity?.name && (
               <span className="text-sm text-white/80 font-semibold">
-                {entity.name}
+                {selectedEntity.name}
               </span>
             )}
 

@@ -59,10 +59,10 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
   ]
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow h-[500px] overflow-auto">
+    <div className="bg-white p-6 rounded-xl shadow h-[500px]">
       <h3 className="text-gray-700 font-semibold mb-4">Distribución de gastos</h3>
 
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height={300}>
         <PieChart>
           <Pie
             data={grouped}

@@ -111,7 +111,7 @@ type TabView = "libro" | "conciliacion";
 export default function BankBookPage() {
   const auth = getAuth();
   const userId = auth.currentUser?.uid ?? "";
-  const { entity } = useSelectedEntity();
+  const { selectedEntity } = useSelectedEntity();
 
   const [selectedEntityId, setSelectedEntityId] = useState("");
   const [tab, setTab] = useState<TabView>("libro");
@@ -125,17 +125,17 @@ export default function BankBookPage() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const entityName = entity?.name ?? "";
-  const entityRuc = entity?.ruc ?? "";
+  const entityName = selectedEntity?.name ?? "";
+  const entityRuc = selectedEntity?.ruc ?? "";
 
   // Sincronizar entidad seleccionada desde el contexto global
   useEffect(() => {
-    setSelectedEntityId(entity?.id ?? "");
-  }, [entity?.id]);
+    setSelectedEntityId(selectedEntity?.id ?? "");
+  }, [selectedEntity?.id]);
 
   // Fetch cuentas bancarias
   useEffect(() => {
-    if (!entity?.id || !userId) {
+    if (!selectedEntity?.id || !userId) {
       setBankAccounts([]);
       setSelectedBankId("");
       return;
@@ -160,7 +160,7 @@ export default function BankBookPage() {
 
   // Fetch movimientos del libro bancario para la cuenta seleccionada
   useEffect(() => {
-    if (!entity?.id || !selectedBankId) {
+    if (!selectedEntity?.id || !selectedBankId) {
       setEntries([]);
       return;
     }
@@ -178,7 +178,7 @@ export default function BankBookPage() {
 
   // Fetch movimientos bancarios externos (para conciliación)
   useEffect(() => {
-    if (!entity?.id) {
+    if (!selectedEntity?.id) {
       setBankMovements([]);
       return;
     }
@@ -193,7 +193,7 @@ export default function BankBookPage() {
 
   // Fetch journal entries de la entidad (para conciliación)
   useEffect(() => {
-    if (!entity?.id) {
+    if (!selectedEntity?.id) {
       setJournalEntries([]);
       return;
     }
@@ -210,7 +210,7 @@ export default function BankBookPage() {
   }, [selectedEntityId]);
 
   // El usuario aún no ha seleccionado entidad en el dashboard
-  if (!entity?.id) {
+  if (!selectedEntity?.id) {
     return (
       <div className="pt-20 p-6">
         <h1 className="text-2xl font-bold mb-4">Libro Bancos</h1>
@@ -367,7 +367,7 @@ export default function BankBookPage() {
           open={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onConfirm={async ({ name, number }) => {
-            if (!userId || !entity?.id) return;
+            if (!userId || !selectedEntity?.id) return;
 
             await createBankAccount({
               entityId: selectedEntityId,

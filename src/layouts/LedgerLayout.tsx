@@ -1,7 +1,7 @@
 // src/layouts/LedgerLayout.tsx
 import React, { ReactNode } from "react";
 import Sidebar from "@/components/sidebar/Sidebar";
-import Navbar from "@/layouts/NavBar";
+import Navbar from "@/components/navbar/NavBar";
 import Footer from "@/components/footer/Footer";
 
 interface Props {

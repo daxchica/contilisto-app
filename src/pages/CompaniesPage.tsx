@@ -1,31 +1,46 @@
 // src/pages/CompaniesPage.tsx
 import React, { useEffect, useState } from "react";
-import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "@/firebase-config";
+import { useNavigate } from "react-router-dom";
 
-import { Entity } from "@/types/Entity";
+import type { Entity, EntityType } from "@/types/Entity"
+import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
-import { fetchEntities } from "@/services/entityService";
+import { fetchEntities, createEntity } from "@/services/entityService";
 
-import AddEntityModal from "@/components/AddEntityModal";
+import AddEntityModal from "@/components/modals/AddEntityModal";
+
+type CreateEntityPayload = {
+  ruc: string;
+  name: string;
+  entityType: EntityType;
+}
 
 export default function CompaniesPage() {
-  const [user] = useAuthState(auth);
+  const { user, loading } = useAuth();
   const { selectedEntity, setEntity } = useSelectedEntity();
 
   const [entities, setEntities] = useState<Entity[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const navigate = useNavigate();
 
   // Load entities
   useEffect(() => {
+    if (loading) return;
+    if (!user?.uid) return;
+
     const load = async () => {
-      if (!user?.uid) return;
+      
       const data = await fetchEntities(user.uid);
       setEntities(data);
     };
-
     load();
-  }, [user?.uid]);
+  }, [loading, user?.uid]);
+
+  console.log("AUTH LOADING:", loading);
+  console.log("AUTH USER UID:", user?.uid);
+  console.log("ENTITIES:", entities);
+
+  if (loading) return null;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -78,26 +93,25 @@ export default function CompaniesPage() {
         <AddEntityModal
           isOpen={true}
           onClose={() => setShowAddModal(false)}
-          onCreate={async ({ ruc, name, entityType }) => {
+          onCreate={async ({ ruc, name, entityType }: CreateEntityPayload) => {
             if (!user?.uid) return;
 
-            // Save
-            const resp = await fetch("/api/createEntity", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ruc: ruc.trim(),
-                name: name.trim(),
-                type: entityType,
-                uid: user.uid,
-              }),
+            const newEntityId = await createEntity({
+              ruc: ruc.trim(),
+              name: name.trim(),
+              type: entityType,
             });
-
-            await resp.json();
 
             // Refresh table
             const data = await fetchEntities(user.uid);
             setEntities(data);
+
+            // Auto-select just created company
+            const created = data.find(e => e.id === newEntityId);
+            if (created) {
+              setEntity(created);
+              navigate("/dashboard");
+            }
 
             alert("✔ Empresa agregada correctamente.");
             setShowAddModal(false);

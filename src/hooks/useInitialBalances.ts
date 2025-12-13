@@ -11,13 +11,13 @@ type InitialBalance = {
 };
 
 export function useInitialBalances(): InitialBalance[] {
-  const { entity } = useSelectedEntity();
+  const { selectedEntity } = useSelectedEntity();
   const [balances, setBalances] = useState<InitialBalance[]>([]);
 
   useEffect(() => {
     const load = async () => {
-      if (!entity?.id) return;
-      const map = await fetchInitialBalances(entity.id);
+      if (!selectedEntity?.id) return;
+      const map = await fetchInitialBalances(selectedEntity.id);
 
       // Convertir a array para el componente
       const array: InitialBalance[] = Object.values(map).map((b) => ({
@@ -29,7 +29,7 @@ export function useInitialBalances(): InitialBalance[] {
     };
 
     load();
-  }, [entity]);
+  }, [selectedEntity]);
 
   return balances;
 }

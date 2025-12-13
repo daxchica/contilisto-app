@@ -8,9 +8,9 @@ import type { JournalEntry } from "../types/JournalEntry";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 
 export default function FinancialsPage() {
-  const { entity } = useSelectedEntity(); // ← Empresa seleccionada globalmente
+  const { selectedEntity } = useSelectedEntity(); // ← Empresa seleccionada globalmente
 
-  const entityId = entity?.id ?? "";
+  const entityId = selectedEntity?.id ?? "";
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [resultadoDelEjercicio, setResultadoDelEjercicio] = useState(0);
 

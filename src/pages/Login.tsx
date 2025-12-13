@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { auth } from "../firebase-config";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Login() {
   const { user, loading } = useAuth();
@@ -26,7 +26,7 @@ export default function Login() {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/contabilidad"); // ✔ redirige SOLO después de login válido
+      navigate("/empresas"); // ✔ redirige SOLO después de login válido
     } catch (err: any) {
       setError(err.message);
     }

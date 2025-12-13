@@ -3,11 +3,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Rnd } from "react-rnd";
 import { v4 as uuidv4 } from "uuid";
-import { saveJournalEntries } from "../services/journalService";
-import type { Account } from "../types/AccountTypes";
-import type { JournalEntry } from "../types/JournalEntry";
-import AccountPicker from "./AccountPicker";
-import { canonicalPair, normalizeEntry } from "../utils/accountPUCMap";
+import { saveJournalEntries } from "../../services/journalService";
+import type { Account } from "../../types/AccountTypes";
+import type { JournalEntry } from "../../types/JournalEntry";
+import AccountPicker from "../AccountPicker";
+import { canonicalPair, normalizeEntry } from "../../utils/accountPUCMap";
 
 interface Props {
   entityId: string;

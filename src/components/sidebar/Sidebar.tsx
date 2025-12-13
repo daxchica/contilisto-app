@@ -5,7 +5,7 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { useEntities } from "@/hooks/useEntities";
 
 export default function Sidebar() {
-  const { selectedEntity, setSelectedEntity } = useSelectedEntity();
+  const { selectedEntity, setEntity } = useSelectedEntity();
   const { entities } = useEntities();
   const navigate = useNavigate();
 
@@ -27,7 +27,7 @@ export default function Sidebar() {
   }, []);
 
   const handleSelectEntity = (ent: any) => {
-    setSelectedEntity({
+    setEntity({
       id: ent.id,
       ruc: ent.ruc,
       name: ent.name,

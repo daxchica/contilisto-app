@@ -1,11 +1,13 @@
-import { useAuth } from "../context/AuthContext";
+// src/components/PrivateRoute.tsx
+import React from "react";
+import { useAuth } from "@/context/AuthContext";
 import { Navigate } from "react-router-dom";
 
-type PrivateRouteProps = {
-  children: JSX.Element;
-};
-
-export default function PrivateRoute({ children }: PrivateRouteProps) {
+export default function PrivateRoute({ 
+  children, 
+  }: {
+    children: React.ReactNode;
+  }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -16,5 +18,5 @@ export default function PrivateRoute({ children }: PrivateRouteProps) {
     );
   }
 
-  return user ? children : <Navigate to="/login" replace />;
+  return user ? <>{children} </> : <Navigate to="/login" replace />;
 }

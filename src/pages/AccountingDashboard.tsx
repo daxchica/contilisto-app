@@ -9,17 +9,18 @@ import React, {
   useCallback,
 } from "react";
 
-import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "../firebase-config";
+import { useNavigate } from "react-router-dom";
+
+import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 
-import NavBar from "@/layouts/NavBar";
+import NavBar from "@/components/navbar/NavBar";
 import Footer from "@/components/footer/Footer";
 
 import JournalTable from "../components/JournalTable";
-import ManualEntryModal from "../components/ManualEntryModal";
-import ChartOfAccountsModal from "../components/ChartOfAccountsModal";
-import JournalPreviewModal from "../components/JournalPreviewModal";
+import ManualEntryModal from "../components/modals/ManualEntryModal";
+import ChartOfAccountsModal from "../components/modals/ChartOfAccountsModal";
+import JournalPreviewModal from "../components/modals/JournalPreviewModal";
 import PDFDropzone from "../components/PDFDropzone";
 
 import type { Account } from "../types/AccountTypes";
@@ -39,7 +40,6 @@ import {
 import {
   deleteInvoicesFromLocalLog,
   logProcessedInvoice,
-  getProcessedInvoices
 } from "../services/localLogService";
 
 import { extractInvoiceVision } from "../services/extractInvoiceVisionService";
@@ -59,14 +59,16 @@ function fileToBase64(file: File): Promise<string> {
 
 
 export default function AccountingDashboard() {
-  const [user] = useAuthState(auth);
-  const userIdSafe = user?.uid ?? "";
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
 
-  const { entity: globalEntity } = useSelectedEntity();
+  const { selectedEntity: globalEntity } = useSelectedEntity();
 
   const entityId = globalEntity?.id ?? "";
   const entityRUC = globalEntity?.ruc ?? "";
   const entityType = globalEntity?.type ?? "servicios";
+
+  const userIdSafe = user?.uid ?? "";
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [sessionJournal, setSessionJournal] = useState<JournalEntry[]>([]);
@@ -81,9 +83,27 @@ export default function AccountingDashboard() {
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
+  // ============================================================================
+  // 🔒 GUARD: empresa requerida
+  // ============================================================================
+  useEffect(() => {
+    if (loading) return;
+
+    if (user && !entityId) {
+      navigate("/empresas", { replace: true });
+    }
+  }, [user, loading, entityId, navigate]);
+
+  // Evita render mientras redirige
+  if (loading) return null;
+  if (user && !entityId) return null;
+
   // LOAD ACCOUNTS
   const loadAccounts = useCallback(async () => {
-    if (!entityId) return setAccounts([]);
+    if (!entityId) { 
+      setAccounts([]);
+      return;
+    }
 
     const custom = await fetchCustomAccounts(entityId);
     setAccounts([...ECUADOR_COA, ...custom]);
@@ -96,7 +116,10 @@ export default function AccountingDashboard() {
 
   // LOAD JOURNAL
   useEffect(() => {
-    if (!entityId) return;
+    if (!entityId) {
+      setSessionJournal([]);
+      return;
+    }
 
     (async () => {
       const entries = await fetchJournalEntries(entityId);
@@ -104,6 +127,14 @@ export default function AccountingDashboard() {
     })();
   }, [entityId, logRefreshTrigger]);
 
+  useEffect(() => {
+  if (loading) return;
+
+  // Usuario logueado pero sin empresa → redirigir
+  if (user && !globalEntity) {
+    navigate("/empresas", { replace: true });
+  }
+}, [user, loading, globalEntity, navigate]);
 
   // DELETE
   const handleDeleteSelected = useCallback(async () => {

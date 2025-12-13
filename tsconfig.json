@@ -23,7 +23,7 @@
   "include": [
     "src",
     "netlify/functions"
-  ],
+, "netlify/functions_disabled/createCheckoutSession.ts", "netlify/functions_disabled/stripeWebhook.ts"  ],
   "exclude": [
     "node_modules",
     "dist"

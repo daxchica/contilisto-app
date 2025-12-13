@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { EntityType } from "../types/Entity";
-import "../styles/AddEntityModal.css";
+import type { EntityType } from "src/types/Entity.ts";
 
 type Props = {
   isOpen: boolean;
