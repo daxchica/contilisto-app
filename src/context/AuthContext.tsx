@@ -41,6 +41,15 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 /* ============================================================
+ * HELPERS
+ * ============================================================ */
+function normalizeRole(value: any): UserRole {
+  return value === "master" || value === "admin" || value === "user"
+    ? value
+    : "user";
+}
+
+/* ============================================================
  * PROVIDER
  * ============================================================ */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -49,6 +58,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
@@ -59,9 +70,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const userRef = doc(db, "users", firebaseUser.uid);
         const snap = await getDoc(userRef);
 
+        let resolvedUser: AppUser;
+
         if (!snap.exists()) {
-          // Usuario autenticado pero sin perfil aún
-          const defaultUser: AppUser = {
+          resolvedUser = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             role: "user",
@@ -72,29 +84,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isTestAccount: false,  
           };
 
-          await setDoc(userRef, defaultUser);
-          setUser(defaultUser);
-          setLoading(false);
-          return;
+          await setDoc(userRef, resolvedUser);
+        } else {
+          const data = snap.data();
+
+          resolvedUser = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            role: normalizeRole(data.role),
+            emailVerified: firebaseUser.emailVerified,
+            phoneVerified: data.phoneVerified ?? false,
+            planKey: data.planKey ?? "free",
+            planStatus: data.planStatus ?? "active",
+            isTestAccount: data.isTestAccount ?? false,
+          };
         }
 
-        const data = snap.data();
-
-        const role: UserRole =
-          data.role === "admin" || data.role === "master"
-            ? data.role
-            : "user";
-
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          role,
-          emailVerified: firebaseUser.emailVerified,
-          phoneVerified: data.phoneVerified ?? false,
-          planKey: data.planKey,
-          planStatus: data.planStatus,
-          isTestAccount: data.isTestAccount ?? false,
-        });
+        setUser(resolvedUser);
       } catch (error) {
         console.error("AuthContext error:", error);
         setUser(null);
@@ -102,7 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
       }
     });
-
+      
     return () => unsubscribe();
   }, []);
 

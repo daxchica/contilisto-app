@@ -8,7 +8,11 @@ export function MasterRoute({ children }: { children: ReactNode }) {
 
   if (loading) return null;
 
-  if (!user || user.role !== "master") {
+  if (!user) {
+    return <Navigate to="/" replace />
+  }
+
+  if (user.role !== "master") {
     return <Navigate to="/admin" replace />;
   }
 

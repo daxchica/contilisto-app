@@ -1,10 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { getAuth, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
+import { auth } from "@/firebase-config";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { useEntities } from "@/hooks/useEntities";
+import { useAuth } from "@/context/AuthContext";
+import type { Entity } from "@/types/Entity";
 
 export default function Sidebar() {
+  const { user } = useAuth();
+  const isMaster = user?.role === "master";
+
   const { selectedEntity, setEntity } = useSelectedEntity();
   const { entities } = useEntities();
   const navigate = useNavigate();
@@ -26,7 +32,7 @@ export default function Sidebar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const handleSelectEntity = (ent: any) => {
+  const handleSelectEntity = (ent: Entity) => {
     setEntity({
       id: ent.id,
       ruc: ent.ruc,
@@ -41,6 +47,12 @@ export default function Sidebar() {
   };
 
   const handleSecureNavigation = (path: string) => {
+    if (isMaster) {
+      alert("La cuenta master esta destinada al panel de administracion.");
+      navigate("/admin");
+      return;
+    }
+
     if (!selectedEntity) {
       alert("Debes seleccionar una empresa primero.");
       return;
@@ -49,9 +61,24 @@ export default function Sidebar() {
   };
 
   const logout = async () => {
-    const auth = getAuth();
-    await signOut(auth);
-    navigate("/", { replace: true });
+    try {
+      await signOut(auth);
+    } finally {
+      setEntity(null);
+      window.location.assign("/");
+    }
+  };
+
+  const guardLink = (e: React.MouseEvent) => {
+    if (isMaster) {
+      e.preventDefault();
+      navigate("/admin");
+      return;
+    }
+    if (!selectedEntity) {
+      e.preventDefault();
+      alert("Selecciona una empresa primero");
+    }
   };
 
   return (
@@ -76,20 +103,21 @@ export default function Sidebar() {
       </div>
 
       {/* SELECTOR DE EMPRESA */}
-      <div ref={dropdownRef} className="relative mb-8">
-        <button
-          onClick={() => setOpen(!open)}
-          className="w-full flex flex-col text-left bg-white/10 px-3 py-2 rounded-lg hover:bg-white/20 transition space-y-0"
-        >
-          <span className="font-semibold leading-tight">
-            {selectedEntity?.name ?? "Selecciona una empresa"}
-          </span>
-
-          {selectedEntity?.ruc && (
-            <span className="text-xs opacity-80 leading-tight">
-              {selectedEntity.ruc}
+      {!isMaster && (
+        <div ref={dropdownRef} className="relative mb-8">
+          <button
+            onClick={() => setOpen(!open)}
+            className="w-full flex flex-col text-left bg-white/10 px-3 py-2 rounded-lg hover:bg-white/20 transition space-y-0"
+          >
+            <span className="font-semibold leading-tight">
+              {selectedEntity?.name ?? "Selecciona una empresa"}
             </span>
-          )}
+
+            {selectedEntity?.ruc && (
+              <span className="text-xs opacity-80 leading-tight">
+                {selectedEntity.ruc}
+              </span>
+            )}
 
           <span className="self-end text-xs mt-1">
             {open ? "▲" : "▼"}
@@ -120,6 +148,7 @@ export default function Sidebar() {
           </div>
         )}
       </div>
+      )}
 
       {/* MENU */}
       <nav className="flex flex-col space-y-4">
@@ -138,13 +167,8 @@ export default function Sidebar() {
         </div>
 
         <NavLink
-          to={selectedEntity ? "/contabilidad" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/contabilidad" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -153,13 +177,8 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/facturacion" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/facturacion" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -168,13 +187,8 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/clientes" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/clientes" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -183,13 +197,8 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/proveedores" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/proveedores" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -198,18 +207,23 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/cartera" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/cartera" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
         >
           💼 Cartera de Cobro
+        </NavLink>
+
+        <NavLink
+          to={isMaster ? "/accountspayable" : selectedEntity ? "/accountspayable" : "#"}
+          onClick={guardLink}
+          className={({ isActive }) =>
+            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
+          }
+        >
+          💼 Documentos x Pagar
         </NavLink>
 
         {/* IMPUESTOS */}
@@ -218,13 +232,8 @@ export default function Sidebar() {
         </div>
 
         <NavLink
-          to={selectedEntity ? "/impuestos" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/impuestos" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -238,13 +247,8 @@ export default function Sidebar() {
         </div>
 
         <NavLink
-          to={selectedEntity ? "/flujo-caja" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/flujo-caja" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -253,13 +257,8 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/reportes" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/reportes" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -268,13 +267,8 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={selectedEntity ? "/bancos" : "#"}
-          onClick={(e) => {
-            if (!selectedEntity) {
-              e.preventDefault();
-              alert("Selecciona una empresa primero.");
-            }
-          }}
+          to={isMaster ? "/admin" : selectedEntity ? "/bancos" : "#"}
+          onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
@@ -287,14 +281,24 @@ export default function Sidebar() {
           Configuración
         </div>
 
-        <NavLink
-          to="/empresas"
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          🏢 Empresas
-        </NavLink>
+        {/* Master: link directo a admin */}
+        {isMaster ? (
+          <NavLink
+            to="/admin"
+            className={({ isActive }) => 
+              `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`}>
+                Admin Panel
+              </NavLink>
+            ) : (
+            <NavLink
+              to="/empresas"
+              className={({ isActive }) =>
+                `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
+              }
+            >
+              🏢 Empresas
+            </NavLink>
+            )}
       </nav>
 
       {/* LOGOUT AT BOTTOM */}

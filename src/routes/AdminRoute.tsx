@@ -8,8 +8,12 @@ export function AdminRoute({ children }: { children: ReactNode }) {
 
   if (loading) return null;
 
-  if (!user || (user.role !== "admin" && user.role !== "master")) {
-    return <Navigate to="/dashboard" replace />;
+  if (!user) {
+    return <Navigate to="/" replace />
+  }
+
+  if (user.role !== "admin" && user.role !== "master") {
+    return <Navigate to="/empresas" replace />;
   }
 
   return <>{children}</>;

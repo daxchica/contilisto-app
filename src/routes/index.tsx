@@ -1,5 +1,5 @@
 // src/routes/index.tsx
-import React from "react";
+
 import RequireEntityRoute from "./RequireEntityRoute";
 import { Routes, Route } from "react-router-dom";
 
@@ -26,13 +26,13 @@ import CompaniesPage from "@/pages/CompaniesPage";
 
 import AdminLayout from "@/pages/admin/AdminLayout";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
-import UsersPage from "@/pages/admin/UsersPage";
-import UserDetail from "@/pages/admin/UserDetail";
+import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
 import { AdminRoute } from "./AdminRoute";
 import { MasterRoute } from "./MasterRoute";
+import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 
 export default function AppRoutes() {
   return (
@@ -47,86 +47,16 @@ export default function AppRoutes() {
       {/* ============================================================
        * APP (USERS)
        * ============================================================ */}
-      <Route
-        path="/app"
-        element={
-          <AppLayout>
-            <CompaniesPage />
-          </AppLayout>
-        }
-      />
-      
-      <Route
-        path="/dashboard"
-        element={
-          <AppLayout>
-            <DashboardHome />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/clientes"
-        element={
-          <AppLayout>
-            <ClientsPage />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/facturacion"
-        element={
-          <AppLayout>
-            <InvoicePage />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/cartera"
-        element={
-          <AppLayout>
-            <CarteraCobro />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/proveedores"
-        element={
-          <AppLayout>
-            <Proveedores />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/impuestos"
-        element={
-          <AppLayout>
-            <Declaraciones />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/flujo-caja"
-        element={
-          <AppLayout>
-            <FlujoCaja />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/empresas"
-        element={
-          <AppLayout>
-            <CompaniesPage />
-          </AppLayout>
-        }
-      />
+      <Route path="/app" element={<AppLayout><CompaniesPage/></AppLayout>}/>
+      <Route path="/dashboard" element={<AppLayout><DashboardHome/></AppLayout>}/>
+      <Route path="/clientes" element={<AppLayout><ClientsPage/></AppLayout>}/>
+      <Route path="/facturacion" element={<AppLayout><InvoicePage/></AppLayout>}/>
+      <Route path="/cartera" element={<AppLayout><CarteraCobro/></AppLayout>}/>
+      <Route path="/accountspayable" element={<AppLayout><AccountsPayablePage/></AppLayout>}/>
+      <Route path="/proveedores"  element={ <AppLayout> <Proveedores/></AppLayout>}/>
+      <Route path="/impuestos" element={<AppLayout><Declaraciones /></AppLayout>}/>
+      <Route path="/flujo-caja" element={<AppLayout><FlujoCaja/></AppLayout>}/>
+      <Route path="/empresas" element={ <AppLayout><CompaniesPage/></AppLayout>}/>
 
       {/* ============================================================
        * CONTABILIDAD / LEDGER
@@ -174,33 +104,6 @@ export default function AppRoutes() {
         }
       />
 
-      <Route
-        path="/impuestos"
-        element={
-          <AppLayout>
-            <Declaraciones />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/flujo-caja"
-        element={
-          <AppLayout>
-            <FlujoCaja />
-          </AppLayout>
-        }
-      />
-
-      <Route
-        path="/empresas" 
-        element={
-          <AppLayout>
-            <CompaniesPage />
-          </AppLayout>
-        }
-      />
-
       {/* ============================================================
        * ADMIN PANEL (ADMIN + MASTER)
        * ============================================================ */}
@@ -213,7 +116,7 @@ export default function AppRoutes() {
         }
       >
         <Route index element={<AdminDashboard />} />
-        <Route path="users" element={<UsersPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
 
         {/* SOLO MASTER */}
         <Route

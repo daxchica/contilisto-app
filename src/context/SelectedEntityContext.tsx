@@ -10,7 +10,7 @@ import {
 import type { Entity } from "@/types/Entity";
 import { useAuth } from "./AuthContext";
 
-interface SelectedEntityContextType {
+export interface SelectedEntityContextType {
   selectedEntity: Entity | null;
   setEntity: (entity: Entity | null) => void;
 };

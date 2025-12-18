@@ -25,6 +25,7 @@ import PDFDropzone from "../components/PDFDropzone";
 
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
+import { upsertPayable } from "@/services/payablesService";
 
 import {
   fetchJournalEntries,

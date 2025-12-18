@@ -7,13 +7,7 @@
 import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 import { randomUUID } from "crypto";
-
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve(
-  "pdfjs-dist/legacy/build/pdf.worker.js"
-);
-
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import extractJson from "extract-json-from-string";
 
 const openai = new OpenAI({
@@ -37,15 +31,20 @@ interface ParsedInternal {
 // OCR PDF → Texto plano
 // ===========================================
 async function extractText(data: Uint8Array): Promise<string> {
-  const doc = await pdfjsLib.getDocument({ data }).promise;
-  let full = "";
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    disableWorker: true,
+  } as any);
 
+  const doc = await loadingTask.promise;
+
+  let full = "";
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const txt = await page.getTextContent();
     // Mantenemos todo en una sola "línea lógica"; los patrones
     // trabajarán sobre el texto normalizado completo.
-    full += txt.items
+    full += (txt.items as any[])
       .map((x: any) => ` ${x.str ?? ""}`)
       .join("")
       .replace(/\s+/g, " ");
@@ -266,6 +265,7 @@ function buildAccounting(entry: ParsedInternal) {
 export const handler: Handler = async (event) => {
   try {
     const { base64, userRUC } = JSON.parse(event.body || "{}");
+    const safeUserRuc = typeof userRUC === "string" ? userRUC : "";
 
     if (!base64) {
       return {
@@ -347,21 +347,34 @@ export const handler: Handler = async (event) => {
     // 4) Construcción de líneas contables
     const lines = buildAccounting(enriched);
 
+    const transactionId = randomUUID();
+
     const entries = lines.map((acc) => ({
       id: randomUUID(),
+      transactionId,
+
       account_code: acc.accountCode,
       account_name: acc.accountName,
       debit: acc.debit,
       credit: acc.credit,
-      date: enriched.invoiceDate,
+      
+      date: enriched.invoiceDate || new Date().toISOString().slice(0, 10),
+      
       description:
         enriched.concepto ||
         (enriched.invoice_number ? `Factura ${enriched.invoice_number}` : ""),
-      invoice_number: enriched.invoice_number,
-      issuerRUC: enriched.issuerRUC,
-      issuerName: enriched.issuerName,
+      
+        invoice_number: String(enriched.invoice_number || ""),
+      issuerRUC: String(enriched.issuerRUC || ""),
+      issuerName: String(enriched.issuerName || ""),
+      
       entityRUC: userRUC,
-      source: "vision"
+      source: "vision",
+     
+      supplier_name: enriched.issuerName || "",
+      status: "pending",
+      termDays: 30,
+      paymentsCount: 1,
     }));
 
     return {
