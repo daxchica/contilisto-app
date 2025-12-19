@@ -20,7 +20,7 @@ import BankBookPage from "@/pages/BankBookPage";
 import CarteraCobro from "@/pages/CarteraCobro";
 import Proveedores from "@/pages/Proveedores";
 import Declaraciones from "@/pages/Declaraciones";
-import FlujoCaja from "@/pages/FlujoCaja";
+import FlujoCaja from "@/pages/CashFlowPage";
 import NotFound from "@/pages/NotFound";
 import CompaniesPage from "@/pages/CompaniesPage";
 

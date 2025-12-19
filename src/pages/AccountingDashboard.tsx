@@ -30,7 +30,7 @@ import { upsertPayable } from "@/services/payablesService";
 import {
   fetchJournalEntries,
   saveJournalEntries,
-  deleteJournalEntriesByInvoiceNumber
+  deleteJournalEntriesByTransactionId
 } from "@/services/journalService";
 
 import {
@@ -144,31 +144,41 @@ export default function AccountingDashboard() {
       return;
     }
 
-    const invoiceNumbers = [
-      ...new Set(selectedEntries.map(e => e.invoice_number))
-    ].filter(Boolean) as string[];
+    const transactionId = 
+      selectedEntries[0].transactionId;
 
-    if (invoiceNumbers.length !== 1) {
+    if (!transactionId) {
       alert("Solo se puede eliminar una factura a la vez.");
       return;
     }
 
-    const invoice = invoiceNumbers[0];
+    const invoiceNumbers = Array.from(
+      new Set(selectedEntries.map(e => e.invoice_number).filter(Boolean)) 
+    ) as string[];
 
-    if (!confirm(`¿Eliminar factura ${invoice}?`)) return;
+    if (invoiceNumbers.length !== 1) {
+    alert("Solo se puede eliminar una factura a la vez.");
+    return;
+  }
 
-    await deleteJournalEntriesByInvoiceNumber(entityId, [invoice]);
+  const invoice = invoiceNumbers[0];
 
-    setSessionJournal(prev =>
-      prev.filter(e => e.invoice_number !== invoice)
-    );
+  if (!confirm(`¿Eliminar factura ${invoice}?`)) return;
 
-    deleteInvoicesFromLocalLog(entityRUC, [invoice]);
-    await deleteInvoicesFromFirestoreLog(entityId, [invoice]);
+  // 🔥 BORRADO REAL EN FIRESTORE
+  await deleteJournalEntriesByTransactionId(entityId, transactionId);
 
-    setLogRefreshTrigger(prev => prev + 1);
-  }, [selectedEntries, entityId, entityRUC]);
+  // 🔄 LIMPIEZA DE ESTADO LOCAL
+  setSessionJournal(prev =>
+    prev.filter(e => e.transactionId !== transactionId)
+  );
 
+  // 🧹 LIMPIEZA DE LOGS
+  deleteInvoicesFromLocalLog(entityRUC, [invoice]);
+  await deleteInvoicesFromFirestoreLog(entityId, [invoice]);
+
+  setLogRefreshTrigger(prev => prev + 1);
+}, [selectedEntries, entityId, entityRUC]);
 
   // FILE HANDLER
   const handlePdfFilesSelected = useCallback(async (files: FileList | null) => {

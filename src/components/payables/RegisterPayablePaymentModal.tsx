@@ -1,16 +1,34 @@
+// ============================================================================
 // src/components/payables/RegisterPayablePaymentModal.tsx
+// ---------------------------------------------------------------------------
+// Register payable payment (Accounts Payable)
+//
+// FLOW (ACCOUNTING SAFE):
+// 1) Create Bank Movement (Libro Bancos)  ← source of truth
+// 2) Create Journal Entry derived from bank movement
+// 3) Link Bank Movement → Journal transactionId
+//
+// USER-FACING (Spanish):
+// - Registra un pago real desde el banco y genera el asiento contable.
+// ============================================================================
+
 import React, { useEffect, useState } from "react";
 import { Rnd } from "react-rnd";
+
 import type { Payable } from "@/types/Payable";
 import { createPayablePaymentJournalEntry } from "@/services/journalService";
-
+import {
+  createBankMovement,
+  linkJournalTransaction,
+  type BankMovement,
+} from "@/services/bankMovementService";
 
 type Props = {
   isOpen: boolean;
   entityId: string;
   userId: string;
   payable: Payable | null;
-  bankAccounts: { code: string; name: string }[];
+  bankAccounts: { code: string; name: string }[]; // PUC bank accounts
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -50,24 +68,59 @@ export default function RegisterPayablePaymentModal({
 
       const value = Number(amount);
 
-      if (!entityId) throw new Error("entityId faltante");
-      if (!userId) throw new Error("userId faltante");
-      if (!p.id) throw new Error("payable inválido");
+      // ---------------------------
+      // Validations (Spanish)
+      // ---------------------------
+      if (!entityId) throw new Error("Empresa no seleccionada");
+      if (!userId) throw new Error("Usuario no válido");
+      if (!p.id) throw new Error("Cuenta por pagar inválida");
       if (!paymentDate) throw new Error("Fecha requerida");
       if (!bankAccount) throw new Error("Cuenta bancaria requerida");
-      if (value <= 0) throw new Error("Monto inválido");
-      if (value > p.balance)
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new Error("Monto inválido");
+      }
+      if (value > p.balance) {
         throw new Error("El monto excede el saldo pendiente");
+      }
 
-      await createPayablePaymentJournalEntry(
+      // =====================================================
+      // 1) Create Bank Movement (Libro Bancos)
+      // =====================================================
+      const movement: BankMovement = {
+        entityId,
+        // TEMP: using account_code as identifier until real bankAccountId exists
+        bankAccountId: bankAccount,
+        date: paymentDate,
+        amount: value, // normalized internally (negative for "out")
+        type: "out",
+        description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
+        createdBy: userId,
+
+        // Traceability (invoice reference by number)
+        relatedInvoiceId: p.invoiceNumber,
+      };
+
+      const bankMovementId = await createBankMovement(movement);
+
+      // =====================================================
+      // 2) Create Journal Entry (derived from bank movement)
+      // =====================================================
+      const transactionId = await createPayablePaymentJournalEntry(
         entityId,
         p,
         value,
         paymentDate,
         bankAccount,
-        userId
+        userId,
+        { bankMovementId }
       );
 
+      // =====================================================
+      // 3) Link Bank Movement → Journal transactionId
+      // =====================================================
+      await linkJournalTransaction(entityId, bankMovementId, transactionId);
+
+      // Done
       onSaved?.();
       onClose();
     } catch (e: any) {
@@ -99,7 +152,9 @@ export default function RegisterPayablePaymentModal({
                 {p.supplierName} • Factura {p.invoiceNumber}
               </p>
             </div>
-            <button onClick={onClose} disabled={saving}>✕</button>
+            <button onClick={onClose} disabled={saving}>
+              ✕
+            </button>
           </div>
 
           {/* BODY */}

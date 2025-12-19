@@ -6,7 +6,7 @@ import { fetchBankMovements } from "../services/bankMovementService";
 
 import type { Entity } from "../types/Entity";
 import type { JournalEntry } from "../types/JournalEntry";
-import type { BankMovement } from "../types/bankTypes";
+import type { BankMovement } from "../services/bankMovementService";
 
 import BankReconciliation from "../components/BankReconciliation";
 import { useAuth } from "@/context/AuthContext";

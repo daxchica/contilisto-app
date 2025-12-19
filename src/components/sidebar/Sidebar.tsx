@@ -267,7 +267,7 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/bancos" : "#"}
+          to={isMaster ? "/admin" : selectedEntity ? "/libro-bancos" : "#"}
           onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`

@@ -1,36 +1,38 @@
 // ============================================================================
 // src/types/JournalEntry.ts
-// Tipo central de asiento contable — ARQUITECTURA CONTILISTO v1.0
+// Central accounting entry type — CONTILISTO v1.0
 // ============================================================================
 
 export type EntrySource = "ai" | "manual" | "edited" | "vision" | "initial";
-
 export type JournalType = "expense" | "income" | "liability";
 
 export interface JournalEntry {
-  // Identificadores
+  // Identifiers
   id?: string;
   entityId?: string;
   uid?: string;
   userId?: string;
   transactionId?: string;
 
-  // Datos básicos
-  date: string;
+  // Compatibility aliases (do not rely on these in new code)
+  transaction_id?: string;
+
+  // Core fields
+  date: string; // YYYY-MM-DD
   description: string;
 
-  // Cuenta contable
+  // Chart of accounts
   account_code: string;
   account_name: string;
 
-  // Montos
+  // Amounts
   debit?: number;
   credit?: number;
 
-  // Tipo de asiento (puede venir vacío y se infiere luego)
+  // Optional classification
   type?: JournalType;
 
-  // Metadata de factura (opcionales para evitar errores TS)
+  // Invoice metadata (optional)
   invoice_number?: string;
   issuerRUC?: string;
   issuerName?: string;
@@ -38,7 +40,13 @@ export interface JournalEntry {
   invoiceDate?: string;
   entityRUC?: string;
 
-  // Origen del asiento
+  // Traceability (Bank Book -> Journal)
+  bankMovementId?: string; // links to entities/{entityId}/bankMovements/{bankMovementId}
+
+  // Notes / UI
+  comment?: string;
+
+  // Source
   source?: EntrySource;
   isManual?: boolean;
 

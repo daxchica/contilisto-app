@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { JournalEntry } from "../types/JournalEntry";
-import { BankMovement } from "../types/BankMovement";
+import { BankMovement } from "../services/bankMovementService";
 import { getAuth } from "firebase/auth";
 import { fetchEntities } from "../services/entityService";
 import { fetchBankMovements } from "../services/bankMovementService";
@@ -70,9 +70,12 @@ export default function BankReconciliation({ journalEntries, bankMovements }: Pr
             </tr>
           </thead>
           <tbody>
-            {bankMovements.map((mvt) => {
-              const isReconciled = reconciled.includes(mvt.id);
-              return (
+            {bankMovements
+              .filter((mvt): mvt is BankMovement & { id: string } => !!mvt.id)
+              .map((mvt) => {
+                const isReconciled = reconciled.includes(mvt.id);
+                
+                return (
                 <tr 
                   key={mvt.id} 
                   className={`border-t ${isReconciled ? "bg-green-100" : "hover:bg-gray-50"}`}

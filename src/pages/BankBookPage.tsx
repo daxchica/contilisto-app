@@ -4,7 +4,8 @@ import { getAuth } from "firebase/auth";
 import { Link } from "react-router-dom";
 
 import { useSelectedEntity } from "../context/SelectedEntityContext";
-import type { BankAccount, BankBookEntry, BankMovement } from "../types/bankTypes";
+import type { BankAccount, BankBookEntry } from "../types/bankTypes";
+import type { BankMovement } from "../services/bankMovementService";
 import type { JournalEntry } from "../types/JournalEntry";
 
 import {
@@ -178,7 +179,7 @@ export default function BankBookPage() {
 
   // Fetch movimientos bancarios externos (para conciliación)
   useEffect(() => {
-    if (!selectedEntity?.id) {
+    if (!selectedEntityId) {
       setBankMovements([]);
       return;
     }
