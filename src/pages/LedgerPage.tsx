@@ -140,9 +140,8 @@ export default function LedgerPage() {
   }
 
   return (
-    <div className="pt-20 p-6">
-      <div className="w-full max-w-6xl mx-auto">
-      
+    <div className="pt-8">
+      <div className="mx-auto w-full max-w-6xl px-4">
         {/* Title + Company's Name */}
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -324,6 +323,6 @@ export default function LedgerPage() {
         );
       })}
     </div>
-    </div>
+   </div> 
   );
 }

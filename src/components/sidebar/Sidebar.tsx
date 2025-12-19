@@ -83,18 +83,7 @@ export default function Sidebar() {
 
   return (
     <div 
-      className="
-        fixed
-        top-0 left-0
-        w-64 
-        h-screen 
-        bg-[#0A3558] 
-        text-white 
-        flex flex-col 
-        py-6 px-4 
-        overflow-y-auto
-        z-[100]
-      "
+      className="fixed top-0 left-0 w-64 h-screen bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto z-[100]"
     >
 
       {/* LOGO */}
@@ -257,7 +246,7 @@ export default function Sidebar() {
         </NavLink>
 
         <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/reportes" : "#"}
+          to={isMaster ? "/admin" : selectedEntity ? "/estados-financieros" : "#"}
           onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`

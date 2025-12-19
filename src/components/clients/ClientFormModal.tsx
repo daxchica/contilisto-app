@@ -79,6 +79,13 @@ const ClientFormModal: React.FC<Props> = ({
       form.identificacion.length !== 10
     )
       return "La cédula debe tener 10 dígitos";
+    
+    if (!form.email?.trim())
+      return "El correo electronico es obligatorio";
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.email))
+      return "El correo electronico no es valido";
 
     return null;
   };

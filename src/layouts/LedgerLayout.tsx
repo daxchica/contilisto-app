@@ -14,7 +14,7 @@ export default function LedgerLayout({ children }: Props) {
       {/* SIDEBAR ALWAYS */}
       <Sidebar />
 
-      <div className="flex flex-col flex-1">
+      <div className="flex flex-col flex-1 ml-64">
         {/* NAVBAR ONLY HERE */}
         <Navbar />
 

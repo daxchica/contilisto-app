@@ -184,7 +184,7 @@ export default function TrialBalance({ entries, startDate, endDate }: Props) {
   // ---------------------------------------------------------
   return (
     <div className="flex justify-center">
-      <div className="w-full max-w-4xl bg-white shadow rounded p-6">
+      <div className="w-full bg-white shadow rounded p-6">
         <h2 className="text-xl font-bold text-blue-800 mb-4 text-center">
           📘 Balance de Comprobación
         </h2>

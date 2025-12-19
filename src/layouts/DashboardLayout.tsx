@@ -11,7 +11,7 @@ const DashboardLayout: React.FC<Props> = ({ children }) => {
     <div className="flex min-h-screen bg-gray-100">
       <Sidebar />
 
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 overflow-x-hidden ml-64">
         <header className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-semibold text-gray-800">
             Dashboard Contilisto

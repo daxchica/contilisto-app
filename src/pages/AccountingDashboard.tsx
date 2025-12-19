@@ -198,7 +198,7 @@ export default function AccountingDashboard() {
       <NavBar />
 
       <div className="pt-20 pb-40 px-4 w-full flex justify-center md:px-12 xl:px-20">
-        <div className="w-full max-w-6x1">
+        <div className="w-full max-w-6xl">
 
         {/* BUTTON HEADER */}
         <div className="flex justify-end mb-6">
@@ -224,7 +224,7 @@ export default function AccountingDashboard() {
         </div>
 
         {/* TABLE FULL WIDTH */}
-        <div className="mt-6 mx-auto w-full max-w-6x1 rounded-xl border border-gray-200 bg-white shadow-md overflow-hidden p-4">
+        <div className="mt-6 mx-auto w-full max-w-6xl rounded-xl border border-gray-200 bg-white shadow-md overflow-hidden p-4">
           <div className="w-full">
             <JournalTable
               entries={sessionJournal}

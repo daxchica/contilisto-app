@@ -131,15 +131,15 @@ export default function FinancialStatements() {
   // ------------------------------------
   if (!entityId) {
     return (
-      <div className="pt-24 px-4 min-h-screen flex justify-center">
-        <div className="w-full max-w-5xl">
+      <div className="pt-24 px-6 min-h-screen">
+        
           <h1 className="text-2xl font-bold text-blue-700 mb-4">📊 Estados Financieros</h1>
           <p className="mb-4">
             Debes seleccionar una entidad primero en el{" "}
             <Link className="text-blue-600 underline" to="/dashboard">Tablero de Entidades</Link>.
           </p>
         </div>
-      </div>
+      
     );
   }
 
@@ -147,8 +147,8 @@ export default function FinancialStatements() {
   // RENDER
   // ------------------------------------
   return (
-      <div className="pt-24 px-4 min-h-screen flex justify-center">
-        <div className="w-full max-w-5xl">
+      <div className="pt-24 px-6 min-h-screen">
+        <div className="w-full">
 
           {/* PAGE TITLE */}
           <h1 className="text-2xl font-bold text-blue-700 mb-2 text-center">📊 Estados Financieros</h1>
