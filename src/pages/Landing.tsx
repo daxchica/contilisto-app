@@ -14,8 +14,10 @@ export default function Landing() {
       {/* ============================================================
        * NAVBAR SUPERIOR
        * ============================================================ */}
-      <header className="w-full border-b bg-white/80 backdrop-blur-lg fixed top-0 left-0 z-30">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <header className="fixed top-0 left-0 w-full z-30 bg-white/80 backdrop-blur-lg border-b">
+      <div className="max-w-7xl mx-auto px-6 sm:px-6">
+        <div className="h-16 flex items-center justify-between">
+
           {/* Logo / Marca */}
           <Link
             to="/"
@@ -24,8 +26,8 @@ export default function Landing() {
             Contilisto
           </Link>
 
-          {/* Botones */}
-          <nav className="flex items-center gap-6 text-sm font-semibold">
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold">
             <a href="#como-funciona" className="text-gray-700 hover:text-blue-700">
               Cómo funciona
             </a>
@@ -40,23 +42,51 @@ export default function Landing() {
 
             <Link
               to="/login"
-              className="text-blue-900 hover:text-blue-700 hidden sm:inline-block"
+              className="text-blue-900 hover:text-blue-700"
             >
               Iniciar sesión
             </Link>
 
             <Link
               to="/register"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               Crear cuenta
             </Link>
           </nav>
+
+          {/* Mobile Menu Button */}
+            <button
+              className="md:hidden text-2xl text-blue-900"
+              aria-label="Abrir menú"
+              onClick={() => setMobileOpen(v => !v)}
+            >
+              ☰
+            </button>
+          </div>
+
+          {/* Mobile Menu */}
+          {mobileOpen && (
+            <div className="md:hidden pb-4">
+              <div className="mt-2 rounded-xl border bg-white shadow-md p-4 flex flex-col gap-3 text-sm font-semibold">
+                <a href="#como-funciona">Cómo funciona</a>
+                <a href="#beneficios">Beneficios</a>
+                <a href="#precios">Precios</a>
+                <Link to="/login">Iniciar sesión</Link>
+                <Link
+                  to="/register"
+                  className="bg-blue-600 text-white text-center py-2 rounded-lg"
+                >
+                  Crear cuenta
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
       {/* CONTENIDO PRINCIPAL */}
-      <main className="flex-1 pt-28 md:pt-32">
+      <main className="flex-1 pt-20 md:pt-24">
         {/* ============================================================
          * HERO — estilo SaaS moderno
          * ============================================================ */}
@@ -71,7 +101,7 @@ export default function Landing() {
                 Impulsado por Inteligencia Artificial
               </span>
 
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight text-gray-900">
+              <h1 className="text-4xl md:text-6xl lg:text-6xl font-extrabold leading-tight text-gray-900 text-balance">
                 Contabilidad más rápida. Más precisa.
                 <span className="block text-blue-700">
                   Totalmente automatizada con IA.

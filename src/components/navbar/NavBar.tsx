@@ -52,44 +52,6 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
           </button>
         )}
 
-        {/* Desktop navigation (Accounting only) */}
-        {isLoggedIn && !isHome && (
-          <div className="hidden md:flex gap-6 text-sm font-semibold mx-auto">
-            <NavLink to="/contabilidad">
-              {({ isActive }) => (
-                <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
-                  Tablero
-                </span>
-              )}
-            </NavLink>
-
-            <NavLink to="/libro-mayor">
-              {({ isActive }) => (
-                <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
-                  Libro Mayor
-                </span>
-              )}
-            </NavLink>
-
-            <NavLink to="/libro-bancos">
-              {({ isActive }) => (
-                <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
-                  Libro Bancos
-                </span>
-              )}
-            </NavLink>
-
-            <NavLink to="/estados-financieros">
-              {({ isActive }) => (
-                <span className={isActive ? "text-yellow-300" : "hover:text-yellow-200"}>
-                  Estados Financieros
-                </span>
-              )}
-            </NavLink>
-          </div>
-        )}
-
-        {/* Right section */}
         
        {/* {!checkingAuth && (
           <div className="flex items-center gap-4 text-sm">

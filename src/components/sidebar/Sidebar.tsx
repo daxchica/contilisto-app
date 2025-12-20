@@ -1,4 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback
+} from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase-config";
@@ -11,7 +16,7 @@ import type { Entity } from "@/types/Entity";
    Props
 ================================ */
 interface SidebarProps {
-  onClose?: () => void; // usado solo en mobile (drawer)
+  onClose?: () => void; // solo para mobile drawer
 }
 
 /* ================================
@@ -40,13 +45,22 @@ export default function Sidebar({ onClose }: SidebarProps) {
      Close dropdown on outside click
   ================================ */
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    function handlePointer(e: Event) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("touchstart", handlePointer);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("touchstart", handlePointer);
+    };
   }, []);
 
   /* ================================
@@ -57,7 +71,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   }, [location.pathname]);
 
   /* ================================
-     ESC closes drawer (mobile only)
+     ESC closes drawer (mobile)
   ================================ */
   useEffect(() => {
     if (!onClose) return;
@@ -70,19 +84,24 @@ export default function Sidebar({ onClose }: SidebarProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose, closeDrawer]);
 
-  const handleSelectEntity = (ent: Entity) => {
-    setEntity({
-      id: ent.id,
-      ruc: ent.ruc,
-      name: ent.name,
-      type: ent.type,
-      uid: ent.uid ?? "",
-      createdAt: ent.createdAt ?? Date.now(),
-    });
+  /* ================================
+     Navigation guards
+  ================================ */
+  const guardLink = (e: React.MouseEvent) => {
+    if (isMaster) {
+      e.preventDefault();
+      closeDrawer();
+      navigate("/admin");
+      return;
+    }
 
-    setOpen(false);
+    if (!selectedEntity) {
+      e.preventDefault();
+      alert("Selecciona una empresa primero");
+      return;
+    }
+
     closeDrawer();
-    navigate("/dashboard");
   };
 
   const handleSecureNavigation = (path: string) => {
@@ -102,36 +121,42 @@ export default function Sidebar({ onClose }: SidebarProps) {
     navigate(path);
   };
 
+  /* ================================
+     Entity selector
+  ================================ */
+  const handleSelectEntity = (ent: Entity) => {
+    setEntity({
+      id: ent.id,
+      ruc: ent.ruc,
+      name: ent.name,
+      type: ent.type,
+      uid: ent.uid ?? "",
+      createdAt: ent.createdAt ?? Date.now(),
+    });
+
+    setOpen(false);
+    closeDrawer();
+    navigate("/dashboard");
+  };
+
+  /* ================================
+     Logout
+  ================================ */
   const logout = async () => {
     try {
       await signOut(auth);
     } finally {
       setEntity(null);
       closeDrawer();
-      window.location.assign("/");
+      navigate("/", { replace: true });
     }
   };
 
-  const guardLink = (e: React.MouseEvent) => {
-    if (isMaster) {
-      e.preventDefault();
-      closeDrawer();
-      navigate("/admin");
-      return;
-    }
-
-    if (!selectedEntity) {
-      e.preventDefault();
-      alert("Selecciona una empresa primero");
-      return;
-    }
-
-    // Si pasa guard, cerramos drawer
-    closeDrawer();
-  };
-
+  /* ================================
+     Render
+  ================================ */
   return (
-    <div className="w-64 h-full bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto">
+    <aside className="w-64 h-full bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto">
       {/* Mobile close button */}
       {onClose && (
         <div className="md:hidden flex justify-end mb-2">
@@ -147,13 +172,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
       )}
 
       {/* LOGO */}
-      <div className="text-2xl font-bold mb-6 tracking-wide">CONTILISTO</div>
+      <div className="text-2xl font-bold mb-6 tracking-wide">
+        CONTILISTO
+      </div>
 
       {/* SELECTOR DE EMPRESA */}
       {!isMaster && (
         <div ref={dropdownRef} className="relative mb-8">
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => setOpen(v => !v)}
+            aria-expanded={open}
+            aria-controls="entity-dropdown"
             className="w-full flex flex-col text-left bg-white/10 px-3 py-2 rounded-lg hover:bg-white/20 transition"
             type="button"
           >
@@ -167,12 +196,16 @@ export default function Sidebar({ onClose }: SidebarProps) {
               </span>
             )}
 
-            <span className="self-end text-xs mt-1">{open ? "▲" : "▼"}</span>
+            <span className="self-end text-xs mt-1">
+              {open ? "▲" : "▼"}
+            </span>
           </button>
 
-          {/* Dropdown */}
           {open && (
-            <div className="absolute left-0 right-0 mt-2 bg-white text-gray-800 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto">
+            <div
+              id="entity-dropdown"
+              className="absolute left-0 right-0 mt-2 bg-white text-gray-800 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto"
+            >
               {!entities?.length && (
                 <div className="px-4 py-3 text-gray-500 text-sm">
                   No hay empresas
@@ -184,7 +217,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                   key={e.id}
                   onClick={() => handleSelectEntity(e)}
                   className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                    selectedEntity?.id === e.id ? "bg-gray-200 font-semibold" : ""
+                    selectedEntity?.id === e.id
+                      ? "bg-gray-200 font-semibold"
+                      : ""
                   }`}
                   type="button"
                 >
@@ -208,43 +243,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
         </button>
 
         <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/libro-bancos" : "#"}
+          to={isMaster ? "/admin" : selectedEntity ? "/clientes" : "#"}
           onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
         >
-          🏦 Cuentas Bancarias
-        </NavLink>
-
-        <NavLink
-          to={isMaster ? "/accountspayable" : selectedEntity ? "/accountspayable" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          💼 Documentos x Pagar
-        </NavLink>
-
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/cartera" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          💼 Documentos x Cobrar
-        </NavLink>
-
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/facturacion" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          🧾 Facturación Electrónica (SRI)
+          👥 Clientes
         </NavLink>
 
         <NavLink
@@ -258,41 +263,38 @@ export default function Sidebar({ onClose }: SidebarProps) {
         </NavLink>
 
         <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/clientes" : "#"}
+          to={isMaster ? "/admin" : selectedEntity ? "/facturacion" : "#"}
           onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
         >
-          👥 Clientes
-        </NavLink>
-
-        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Finanzas
-        </div>
-
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/flujo-caja" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          💰 Flujo de Caja
+          🧾 Facturación Electrónica (SRI)
         </NavLink>
 
         <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/estados-financieros" : "#"}
+          to={isMaster ? "/admin" : selectedEntity ? "/cartera" : "#"}
           onClick={guardLink}
           className={({ isActive }) =>
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
         >
-          📈 Reportes Financieros
+          💼 Documentos x Cobrar
         </NavLink>
 
+        <NavLink
+          to={isMaster ? "/admin" : selectedEntity ? "/accountspayable" : "#"}
+          onClick={guardLink}
+          className={({ isActive }) =>
+            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
+          }
+        >
+          💼 Documentos x Pagar
+        </NavLink>
+
+        {/* CONTABILIDAD */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Contables
+          Contabilidad
         </div>
 
         <NavLink
@@ -302,9 +304,40 @@ export default function Sidebar({ onClose }: SidebarProps) {
             `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
           }
         >
-          📘 Contabilidad
+          📊 Tablero
         </NavLink>
 
+        <NavLink
+          to={isMaster ? "/admin" : selectedEntity ? "/libro-mayor" : "#"}
+          onClick={guardLink}
+          className={({ isActive }) =>
+            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
+          }
+        >
+          📘 Libro Mayor
+        </NavLink>
+
+        <NavLink
+          to={isMaster ? "/admin" : selectedEntity ? "/libro-bancos" : "#"}
+          onClick={guardLink}
+          className={({ isActive }) =>
+            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
+          }
+        >
+          🏦 Libro Bancos
+        </NavLink>
+
+        <NavLink
+          to={isMaster ? "/admin" : selectedEntity ? "/estados-financieros" : "#"}
+          onClick={guardLink}
+          className={({ isActive }) =>
+            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
+          }
+        >
+          📈 Estados Financieros
+        </NavLink>
+
+        {/* IMPUESTOS */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Impuestos
         </div>
@@ -319,6 +352,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           📝 Declaraciones SRI
         </NavLink>
 
+        {/* CONFIG */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Configuración
         </div>
@@ -326,7 +360,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         {isMaster ? (
           <NavLink
             to="/admin"
-            onClick={() => closeDrawer()}
+            onClick={closeDrawer}
             className={({ isActive }) =>
               `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
             }
@@ -346,7 +380,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         )}
       </nav>
 
-      {/* LOGOUT AT BOTTOM */}
+      {/* LOGOUT */}
       <div className="mt-auto border-t border-white/20 pt-4">
         <button
           onClick={logout}
@@ -356,6 +390,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
           🚪 Salir
         </button>
       </div>
-    </div>
+    </aside>
   );
 }
