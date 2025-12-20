@@ -14,9 +14,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 
-import NavBar from "@/components/navbar/NavBar";
-import Footer from "@/components/footer/Footer";
-
 import JournalTable from "../components/JournalTable";
 import ManualEntryModal from "../components/modals/ManualEntryModal";
 import ChartOfAccountsModal from "../components/modals/ChartOfAccountsModal";
@@ -25,7 +22,7 @@ import PDFDropzone from "../components/PDFDropzone";
 
 import type { Account } from "../types/AccountTypes";
 import type { JournalEntry } from "../types/JournalEntry";
-import { upsertPayable } from "@/services/payablesService";
+
 
 import {
   fetchJournalEntries,
@@ -79,7 +76,7 @@ export default function AccountingDashboard() {
   const [previewMetadata, setPreviewMetadata] = useState<any>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showManualModal, setShowManualModal] = useState(false);
+  
   const [showAccountsModal, setShowAccountsModal] = useState(false);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
@@ -87,18 +84,9 @@ export default function AccountingDashboard() {
   // ============================================================================
   // 🔒 GUARD: empresa requerida
   // ============================================================================
-  useEffect(() => {
-    if (loading) return;
+  
 
-    if (user && !entityId) {
-      navigate("/empresas", { replace: true });
-    }
-  }, [user, loading, entityId, navigate]);
-
-  // Evita render mientras redirige
-  if (loading) return null;
-  if (user && !entityId) return null;
-
+  
   // LOAD ACCOUNTS
   const loadAccounts = useCallback(async () => {
     if (!entityId) { 
@@ -195,9 +183,8 @@ export default function AccountingDashboard() {
 
   return (
     <>
-      <NavBar />
-
-      <div className="pt-20 pb-40 px-4 w-full flex justify-center md:px-12 xl:px-20">
+  
+      <div className="pb-40 px-4 w-full flex justify-center md:px-12 xl:px-20">
         <div className="w-full max-w-6xl">
 
         {/* BUTTON HEADER */}
@@ -225,7 +212,7 @@ export default function AccountingDashboard() {
 
         {/* TABLE FULL WIDTH */}
         <div className="mt-6 mx-auto w-full max-w-6xl rounded-xl border border-gray-200 bg-white shadow-md overflow-hidden p-4">
-          <div className="w-full">
+          
             <JournalTable
               entries={sessionJournal}
               entityName={globalEntity?.name ?? ""}
@@ -234,9 +221,9 @@ export default function AccountingDashboard() {
               onSave={() => {}}
             />
             </div>
-          </div>
         </div>
       </div>
+      
 
       {/* MODALS */}
       {showAccountsModal && (
