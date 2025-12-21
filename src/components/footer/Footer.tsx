@@ -70,7 +70,7 @@ export default function Footer() {
             <h3 className="text-sm font-semibold text-gray-900">Producto</h3>
             <ul className="mt-3 space-y-2 text-sm text-gray-600">
               <li><Link to="/dashboard" className="hover:text-blue-700">Tablero</Link></li>
-              <li><Link to="/libro-mayor" className="hover:text-blue-700">Libro Mayor</Link></li>
+              <li><Link to="/libros-auxiliares" className="hover:text-blue-700">Libro Mayor</Link></li>
               <li><Link to="/libroBancos" className="hover:text-blue-700">Libro Bancos</Link></li>
               <li><Link to="/estados-financieros" className="hover:text-blue-700">Estados Financieros</Link></li>
             </ul>

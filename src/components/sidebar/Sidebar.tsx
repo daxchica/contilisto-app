@@ -152,6 +152,31 @@ export default function Sidebar({ onClose }: SidebarProps) {
     }
   };
 
+  const LinkRow = ({
+  to,
+  label,
+  icon,
+}: {
+  to: string;
+  label: string;
+  icon: string;
+}) => (
+  <NavLink
+    to={to}
+    onClick={guardLink}
+    className={({ isActive }) =>
+      `sidebar-link flex items-center gap-3 ${
+        isActive ? "bg-white/20 font-semibold" : ""
+      }`
+    }
+  >
+    <span className="w-6 flex justify-center items-center text-lg leading-none">
+      {icon}
+    </span>
+    <span className="leading-tight">{label}</span>
+  </NavLink>
+);
+
   /* ================================
      Render
   ================================ */
@@ -297,45 +322,29 @@ export default function Sidebar({ onClose }: SidebarProps) {
           Contabilidad
         </div>
 
-        <NavLink
+        <LinkRow
           to={isMaster ? "/admin" : selectedEntity ? "/contabilidad" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          📊 Tablero
-        </NavLink>
+          icon="📊"
+          label="Libro de Diario"
+        />
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/libro-mayor" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          📘 Libro Mayor
-        </NavLink>
+        <LinkRow
+          to={isMaster ? "/admin" : selectedEntity ? "/libros-auxiliares" : "#"}
+          icon="📘"
+          label="Libros Auxiliares"
+        />
 
-        <NavLink
+        <LinkRow
           to={isMaster ? "/admin" : selectedEntity ? "/libro-bancos" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          🏦 Libro Bancos
-        </NavLink>
+          icon="🏦"
+          label="Libro Bancos"
+        />
 
-        <NavLink
+        <LinkRow
           to={isMaster ? "/admin" : selectedEntity ? "/estados-financieros" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link flex items-center gap-3 ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          📈 Estados Financieros
-        </NavLink>
+          icon="📈"  
+          label="Estados Financieros"
+        />
 
         {/* IMPUESTOS */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">

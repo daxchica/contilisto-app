@@ -4,11 +4,14 @@
 // Inspirado en QuickBooks / Xero / Pilot (IA contable).
 // ============================================================================
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import PricingPlans from "../components/PricingPlans";
 import Footer from "../components/footer/Footer";
 import FeatureCards from "../components/FeatureCards";
 
 export default function Landing() {
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false);
+  
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       {/* ============================================================

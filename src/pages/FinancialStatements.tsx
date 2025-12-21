@@ -147,17 +147,19 @@ export default function FinancialStatements() {
   // RENDER
   // ------------------------------------
   return (
-      <div className="pt-24 px-6 min-h-screen">
-        <div className="w-full">
+      <div className="pt-16 px-4 lg:px-6 min-h-screen bg-gray-50">
+        <div className="mx-auto w-full max-w-7xl">
 
           {/* PAGE TITLE */}
-          <h1 className="text-2xl font-bold text-blue-700 mb-2 text-center">📊 Estados Financieros</h1>
-          <p className="text-base text-gray-600 mb-8 text-center">
-            Empresa: <strong>{entityRuc}</strong> — {entityName}
-          </p>
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-bold text-blue-700">📊 Estados Financieros</h1>
+            <p className="text-sm text-gray-600">
+              Empresa: <strong>{entityRuc}</strong> — {entityName}
+            </p>
+          </div>
 
           {/* INITIAL BALANCE PANEL */}
-          <div className="mb-8">
+          <div className="mb-6">
             <InitialBalancePanel 
               entityId={entityId} 
               userId={"initial-balance"}
@@ -166,7 +168,7 @@ export default function FinancialStatements() {
           </div>
 
           {/* BROWSER STYLE TABS */}
-          <div className="flex justify-center gap-8 border-b pb-2">
+          <div className="flex justify-center gap-2 border-b mb-4">
             {[
               { id: "comprobacion", label: "Balance de Comprobación" },
               { id: "estado", label: "Estado de Resultados" },
@@ -188,7 +190,7 @@ export default function FinancialStatements() {
           </div>
 
            {/* DATE FILTER FOR ACTIVE TAB */}
-        <div className="bg-white border rounded-lg shadow p-4 mb-4">
+        <div className="bg-white border rounded-lg shadow-sm p-4 mb-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
 
             {/* From Date */}
@@ -196,7 +198,7 @@ export default function FinancialStatements() {
               <label className="text-sm text-gray-700">Desde</label>
               <input
                 type="date"
-                className="border rounded px-2 py-1"
+                className="border rounded px-2 py-1 text-sm"
                 value={startDate}
                 onChange={(e) =>
                   setStartDate(e.target.value)}
@@ -208,7 +210,7 @@ export default function FinancialStatements() {
               <label className="text-sm text-gray-700">Hasta</label>
               <input
                 type="date"
-                className="border rounded px-2 py-1"
+                className="border rounded px-2 py-1 text-sm"
                 value={endDate}
                 onChange={(e) =>
                   setEndDate(e.target.value)}
@@ -231,7 +233,7 @@ export default function FinancialStatements() {
         </div>
 
         {/* Report Content */}
-        <div className="bg-white shadow rounded p-6 mb-16">
+        <div className="bg-white shadow rounded-lg p-4 lg:p-6 mb-12">
           {renderReport()}
         </div>
       </div>

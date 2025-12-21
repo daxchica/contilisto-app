@@ -69,7 +69,7 @@ export default function AppRoutes() {
         }
       >
         <Route path="/contabilidad" element={<AccountingDashboard />} />
-        <Route path="/libro-mayor" element={ <LedgerPage /> }/>
+        <Route path="/libros-auxiliares" element={ <LedgerPage /> }/>
         <Route path="/estados-financieros" element={<FinancialStatements />}/>
         <Route path="/libro-bancos" element={ <BankBookPage /> }/>
       </Route>

@@ -184,15 +184,24 @@ export default function AccountingDashboard() {
   return (
     <>
   
-      <div className="pb-40 px-4 w-full flex justify-center md:px-12 xl:px-20">
-        <div className="w-full max-w-6xl">
+      <div className="
+        pt-20 pb-32 
+        px-3 sm:px-4 md:px-8 xl:px-16 
+        w-full">
+        <div className="w-full max-w-6xl mx-auto">
 
         {/* BUTTON HEADER */}
-        <div className="flex justify-end mb-6">
+        <div className="flex justify-end mb-4">
           {entityId && (
             <button
               onClick={() => setShowAccountsModal(true)}
-              className="px-5 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 shadow-sm"
+              className="
+                px-4 py-2 
+                text-sm sm:text-base
+                bg-emerald-600 text-white 
+                rounded-lg 
+                hover:bg-emerald-700 
+                shadow-sm"
             >
               📚 Ver Plan de Cuentas
             </button>
@@ -200,7 +209,7 @@ export default function AccountingDashboard() {
         </div>
 
         {/* DROPZONE CENTER */}
-        <div className="max-w-4xl mx-auto mb-10">
+        <div className="mb-8">
           {entityId ? (
             <PDFDropzone onFilesSelected={handlePdfFilesSelected} />
           ) : (
@@ -211,8 +220,7 @@ export default function AccountingDashboard() {
         </div>
 
         {/* TABLE FULL WIDTH */}
-        <div className="mt-6 mx-auto w-full max-w-6xl rounded-xl border border-gray-200 bg-white shadow-md overflow-hidden p-4">
-          
+        <div className="mt-6 rounded-xl border bg-white shadow-md">         
             <JournalTable
               entries={sessionJournal}
               entityName={globalEntity?.name ?? ""}
@@ -220,10 +228,9 @@ export default function AccountingDashboard() {
               onDeleteSelected={handleDeleteSelected}
               onSave={() => {}}
             />
-            </div>
+          </div>
         </div>
       </div>
-      
 
       {/* MODALS */}
       {showAccountsModal && (
