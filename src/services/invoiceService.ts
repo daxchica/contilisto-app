@@ -6,9 +6,11 @@
 
 import { db } from "@/firebase-config";
 import {
-  collection,
   addDoc,
+  collection,
+  doc,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import type { Invoice } from "@/types/Invoice";
 
@@ -49,4 +51,30 @@ export async function createInvoice(
     createdBy: "system",
     ...data,
   } as Invoice;
+}
+
+export async function issueInvoice(
+  entityId: string,
+  invoiceId: string
+): Promise<void> {
+  const ref = doc(db, "entities", entityId, "invoices", invoiceId);
+
+  await updateDoc(ref, {
+    status: "issued",
+    issuedAt: Date.now(), // opcional pero recomendado
+  });
+}
+
+export async function cancelInvoice(
+  entityId: string,
+  invoiceId: string,
+  reason?: string
+): Promise<void> {
+  const ref = doc(db, "entities", entityId, "invoices", invoiceId);
+
+  await updateDoc(ref, {
+    status: "cancelled",
+    cancelledAt: Date.now(),
+    cancelReason: reason ?? null,
+  });
 }

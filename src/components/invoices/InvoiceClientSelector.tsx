@@ -1,33 +1,40 @@
 // src/components/invoice/InvoiceClientSelector.tsx
 import React, { useState, useMemo } from "react";
-import { Client } from "@/services/clientService";
+import { Contact } from "@/types/Contact";
 
 export interface InvoiceClientSelectorProps {
-  clients: Client[];
+  clients: Contact[];
   loading: boolean;
-  value: Client | null;
-  onChange: (client: Client | null) => void;
+  value: Contact | null;
+  onChange: (client: Contact | null) => void;
 }
 
-const InvoiceClientSelector: React.FC<InvoiceClientSelectorProps> = ({
+export default function InvoiceClientSelector({
   clients,
   loading,
   value,
   onChange,
-}) => {
+}: InvoiceClientSelectorProps) {
   const [query, setQuery] = useState("");
 
   // Filter clients on search-as-you-type
   const filtered = useMemo(() => {
-    if (!query.trim()) return clients;
+    const q = (query ?? "").trim().toLowerCase();
+    if (!q) return clients.slice(0, 50);
 
-    const q = query.toLowerCase();
-    return clients.filter(
-      (c) =>
-        c.razon_social.toLowerCase().includes(q) ||
-        c.identificacion.toLowerCase().includes(q) ||
-        (c.email ?? "").toLowerCase().includes(q)
-    );
+    return clients
+      .filter((c) => {
+        const name = (c?.name ?? "").toLowerCase();
+        const id = (c?.identification ?? "").toLowerCase();
+        const email = (c?.email ?? "").toLowerCase();
+        
+
+        return (
+          name.includes(q) ||
+          id.includes(q) ||
+          email.includes(q)
+        );
+    }).slice(0, 50);
   }, [query, clients]);
 
   return (
@@ -64,11 +71,9 @@ const InvoiceClientSelector: React.FC<InvoiceClientSelectorProps> = ({
                 value?.id === c.id ? "bg-blue-50" : ""
               }`}
             >
-              <div className="font-semibold">{c.razon_social}</div>
-              <div className="text-sm text-gray-600">{c.identificacion}</div>
-              {c.email && (
-                <div className="text-xs text-gray-500">{c.email}</div>
-              )}
+              <div className="font-semibold">{c.name}</div>
+              <div className="text-sm text-gray-600">{c.identification}</div>
+              {c.email && <div className="text-xs text-gray-500">{c.email}</div>}
             </button>
           ))}
         </div>
@@ -86,5 +91,3 @@ const InvoiceClientSelector: React.FC<InvoiceClientSelectorProps> = ({
     </div>
   );
 };
-
-export default InvoiceClientSelector;

@@ -13,14 +13,14 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 
 import DashboardHome from "@/pages/DashboardHome";
-import ClientsPage from "@/pages/ClientsPage";
+
 import InvoicePage from "@/pages/InvoicePage";
 import AccountingDashboard from "@/pages/AccountingDashboard";
 import FinancialStatements from "@/pages/FinancialStatements";
 import LedgerPage from "@/pages/LedgerPage";
 import BankBookPage from "@/pages/BankBookPage";
 import CarteraCobro from "@/pages/CarteraCobro";
-import Proveedores from "@/pages/Proveedores";
+
 import Declaraciones from "@/pages/Declaraciones";
 import FlujoCaja from "@/pages/CashFlowPage";
 import NotFound from "@/pages/NotFound";
@@ -33,6 +33,7 @@ import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
 import AccountsPayablePage from "@/pages/payables/AccountsPayable";
+import ContactsPage from "@/pages/ContactsPage";
 
 export default function AppRoutes() {
   return (
@@ -48,11 +49,10 @@ export default function AppRoutes() {
        * APP (GENERAL PAGES)
        * ============================================================ */}
       <Route path="/dashboard" element={<AppLayout><DashboardHome/></AppLayout>}/>
-      <Route path="/clientes" element={<AppLayout><ClientsPage/></AppLayout>}/>
+      <Route path="/contactos" element={<AppLayout><ContactsPage/></AppLayout>}/>
       <Route path="/facturacion" element={<AppLayout><InvoicePage/></AppLayout>}/>
       <Route path="/cartera" element={<AppLayout><CarteraCobro/></AppLayout>}/>
       <Route path="/accountspayable" element={<AppLayout><AccountsPayablePage/></AppLayout>}/>
-      <Route path="/proveedores"  element={ <AppLayout> <Proveedores/></AppLayout>}/>
       <Route path="/impuestos" element={<AppLayout><Declaraciones /></AppLayout>}/>
       <Route path="/flujo-caja" element={<AppLayout><FlujoCaja/></AppLayout>}/>
       <Route path="/empresas" element={ <AppLayout><CompaniesPage/></AppLayout>}/>

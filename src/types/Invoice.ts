@@ -1,42 +1,70 @@
 // src/types/Invoice.ts
+
 import type { InvoiceItem } from "./InvoiceItem";
 
-export type InvoiceType = "invoice" | "credit-note" | "retention";
+export type IdentificationType =
+  | "ruc"
+  | "cedula"
+  | "pasaporte"
+  | "consumidor_final";
 
-export type InvoiceStatus = 
-  | "draft"
-  | "pending-sri" 
-  | "authorized" 
-  | "rejected";
+/* ===============================
+   SNAPSHOT DEL CONTACTO
+   (inmutable, para SRI y auditoría)
+================================ */
+export interface InvoiceContactSnapshot {
+  name: string;
+  identification: string;
+  identificationType: IdentificationType;
+  email: string;
+  address: string;
+  phone?: string;
+}
 
+/* ===============================
+   TOTALES DE FACTURA
+================================ */
+export interface InvoiceTotals {
+  subtotal0: number;
+  subtotal12: number;
+  descuento: number;
+  iva: number;
+  total: number;
+
+  taxes?: {
+    code: "iva";
+    rate: 12;
+    base: number;
+    amount: number;
+  }[];
+}
+
+/* ===============================
+   FACTURA
+================================ */
 export interface Invoice {
   id: string;
   entityId: string;
 
-  clientId: string;
-  clientName: string;
-
+  /* ===== Identificación ===== */
+  invoiceType: "invoice" | "credit-note" | "retention";
+  sequential?: string; // puede estar vacío en borrador
   issueDate: string;
   dueDate?: string;
 
-  invoiceType: InvoiceType;
+  /* ===== Comprador ===== */
+  contactId: string;
+  contactSnapshot: InvoiceContactSnapshot;
 
+  /* ===== Detalle ===== */
+  currency: "USD";
   items: InvoiceItem[];
+  totals: InvoiceTotals;
 
-  subtotal: number;
-  iva: number;
-  total: number;
+  /* ===== Estado ===== */
+  status: "draft" | "issued" | "cancelled";
 
-  status: InvoiceStatus;
-
-  sriXml?: string;   
-  sriAccessKey?: string;
-  xmlSigned?: string;
-
-  authorizationDate?: string;
-
-  sriAuthNumber?: string;
-
+  /* ===== Auditoría ===== */
   createdAt: number;
   createdBy: string;
 }

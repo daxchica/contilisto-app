@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import DashboardLayout from "@/layouts/DashboardLayout";
-import ClientSelect from "@/components/clients/ClientSelect";
-import { Client } from "@/services/clientService";
+import InvoiceClientSelector from "@/components/invoices/InvoiceClientSelector";
+import { Contact } from "@/types/Contact";
 
 export default function Facturacion() {
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Contact | null>(null);
 
   return (
     <DashboardLayout>
@@ -15,7 +15,12 @@ export default function Facturacion() {
 
         {/* === SELECTOR DE CLIENTE === */}
         <div className="mb-8">
-          <ClientSelect value={selectedClient} onChange={setSelectedClient} />
+          <InvoiceClientSelector 
+            clients={[]}
+            loading={false}
+            value={selectedClient} 
+            onChange={setSelectedClient} 
+          />
         </div>
 
         {/* === INFO DEL CLIENTE SELECCIONADO === */}
@@ -25,10 +30,10 @@ export default function Facturacion() {
               Datos del Cliente
             </h3>
             <p className="text-sm text-blue-800">
-              <strong>Nombre:</strong> {selectedClient.razon_social}
+              <strong>Nombre:</strong> {selectedClient.name}
             </p>
             <p className="text-sm text-blue-800">
-              <strong>ID:</strong> {selectedClient.identificacion} ({selectedClient.tipo_identificacion})
+              <strong>ID:</strong> {selectedClient.identification} ({selectedClient.identificationType})
             </p>
             {selectedClient.email && (
               <p className="text-sm text-blue-800">

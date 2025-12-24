@@ -1,9 +1,4 @@
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useCallback
-} from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase-config";
@@ -12,44 +7,33 @@ import { useEntities } from "@/hooks/useEntities";
 import { useAuth } from "@/context/AuthContext";
 import type { Entity } from "@/types/Entity";
 
-/* ================================
-   Props
-================================ */
 interface SidebarProps {
   onClose?: () => void; // solo para mobile drawer
 }
 
-/* ================================
-   Component
-================================ */
 export default function Sidebar({ onClose }: SidebarProps) {
   const { user } = useAuth();
   const isMaster = user?.role === "master";
 
   const { selectedEntity, setEntity } = useSelectedEntity();
   const { entities } = useEntities();
+
   const navigate = useNavigate();
   const location = useLocation();
 
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  /* ================================
-     Helpers
-  ================================ */
   const closeDrawer = useCallback(() => {
     onClose?.();
   }, [onClose]);
 
-  /* ================================
-     Close dropdown on outside click
-  ================================ */
+  // Cierra dropdown al hacer click fuera
   useEffect(() => {
-    function handlePointer(e: Event) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+    function handlePointer(e: MouseEvent | TouchEvent) {
+      if (!dropdownRef.current) return;
+      if (!dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     }
@@ -63,16 +47,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
   }, []);
 
-  /* ================================
-     Close dropdown on route change
-  ================================ */
+  // Cierra dropdown al cambiar de ruta
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
 
-  /* ================================
-     ESC closes drawer (mobile)
-  ================================ */
+  // ESC cierra drawer (mobile)
   useEffect(() => {
     if (!onClose) return;
 
@@ -84,46 +64,33 @@ export default function Sidebar({ onClose }: SidebarProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose, closeDrawer]);
 
-  /* ================================
-     Navigation guards
-  ================================ */
-  const guardLink = (e: React.MouseEvent) => {
-    if (isMaster) {
-      e.preventDefault();
-      closeDrawer();
-      navigate("/admin");
-      return;
-    }
-
-    if (!selectedEntity) {
-      e.preventDefault();
-      alert("Selecciona una empresa primero");
-      return;
-    }
-
-    closeDrawer();
-  };
-
-  const handleSecureNavigation = (path: string) => {
+  // Guard central (para todo lo que requiere empresa seleccionada)
+  const requireEntityOrRedirect = useCallback((): boolean => {
     if (isMaster) {
       alert("La cuenta master está destinada al panel de administración.");
       closeDrawer();
-      navigate("/admin");
-      return;
+      navigate("/admin", { replace: true });
+      return false;
     }
 
     if (!selectedEntity) {
-      alert("Debes seleccionar una empresa primero.");
-      return;
+      closeDrawer();
+      navigate("/empresas", { replace: true });
+      return false;
     }
 
-    closeDrawer();
-    navigate(path);
-  };
+    return true;
+  }, [isMaster, selectedEntity, closeDrawer, navigate]);
 
-  /* ================================
-     Entity selector
-  ================================ */
+  const handleSecureNavigation = useCallback(
+    (path: string) => {
+      if (!requireEntityOrRedirect()) return;
+      closeDrawer();
+      navigate(path);
+    },
+    [requireEntityOrRedirect, closeDrawer, navigate]
+  );
+
   const handleSelectEntity = (ent: Entity) => {
     setEntity({
       id: ent.id,
@@ -136,50 +103,73 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     setOpen(false);
     closeDrawer();
-    navigate("/dashboard");
+    navigate("/dashboard", { replace: true });
   };
 
-  /* ================================
-     Logout
-  ================================ */
   const logout = async () => {
+    if (loggingOut) return;
+
+    setLoggingOut(true);
+
     try {
       await signOut(auth);
+    } catch (err) {
+      console.error("Error al cerrar sesion", err);
     } finally {
       setEntity(null);
+      localStorage.clear();
+      sessionStorage.clear();
+      
       closeDrawer();
-      navigate("/", { replace: true });
+      navigate("/login", { replace: true });
+      setLoggingOut(false);
     }
   };
 
   const LinkRow = ({
-  to,
-  label,
-  icon,
-}: {
-  to: string;
-  label: string;
-  icon: string;
-}) => (
-  <NavLink
-    to={to}
-    onClick={guardLink}
-    className={({ isActive }) =>
-      `sidebar-link flex items-center gap-3 ${
-        isActive ? "bg-white/20 font-semibold" : ""
-      }`
+    to,
+    label,
+    icon,
+    requiresEntity = false,
+  }: {
+    to: string;
+    label: string;
+    icon: string;
+    requiresEntity?: boolean;
+  }) => {
+    // Si requiere empresa, no usamos href "#": usamos navegación controlada
+    if (requiresEntity) {
+      const isActive = location.pathname.startsWith(to);
+      return (
+        <button
+          type="button"
+          onClick={() => handleSecureNavigation(to)}
+          className={`sidebar-link flex items-center gap-3 text-left w-full ${
+            isActive ? "bg-white/20 font-semibold" : ""
+          }`}
+        >
+          <span className="w-6 text-lg leading-none">{icon}</span>
+          <span>{label}</span>
+        </button>
+      );
     }
-  >
-    <span className="w-6 flex justify-center items-center text-lg leading-none">
-      {icon}
-    </span>
-    <span className="leading-tight">{label}</span>
-  </NavLink>
-);
 
-  /* ================================
-     Render
-  ================================ */
+    return (
+      <NavLink
+        to={to}
+        onClick={() => closeDrawer()}
+        className={({ isActive }) =>
+          `sidebar-link flex items-center gap-3 ${
+            isActive ? "bg-white/20 font-semibold" : ""
+          }`
+        }
+      >
+        <span className="w-6 text-lg">{icon}</span>
+        <span>{label}</span>
+      </NavLink>
+    );
+  };
+
   return (
     <aside className="w-64 h-full bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto">
       {/* Mobile close button */}
@@ -197,15 +187,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
       )}
 
       {/* LOGO */}
-      <div className="text-2xl font-bold mb-6 tracking-wide">
-        CONTILISTO
-      </div>
+      <div className="text-2xl font-bold mb-6 tracking-wide">CONTILISTO</div>
 
       {/* SELECTOR DE EMPRESA */}
       {!isMaster && (
         <div ref={dropdownRef} className="relative mb-8">
           <button
-            onClick={() => setOpen(v => !v)}
+            onClick={() => setOpen((v) => !v)}
+            aria-haspopup="listbox"
             aria-expanded={open}
             aria-controls="entity-dropdown"
             className="w-full flex flex-col text-left bg-white/10 px-3 py-2 rounded-lg hover:bg-white/20 transition"
@@ -221,14 +210,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
               </span>
             )}
 
-            <span className="self-end text-xs mt-1">
-              {open ? "▲" : "▼"}
-            </span>
+            <span className="self-end text-xs mt-1">{open ? "▲" : "▼"}</span>
           </button>
 
           {open && (
             <div
               id="entity-dropdown"
+              role="listbox"
+              aria-label="Seleccionar empresa"
               className="absolute left-0 right-0 mt-2 bg-white text-gray-800 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto"
             >
               {!entities?.length && (
@@ -238,154 +227,66 @@ export default function Sidebar({ onClose }: SidebarProps) {
               )}
 
               {(entities ?? []).map((e: Entity) => (
-                <button
-                  key={e.id}
-                  onClick={() => handleSelectEntity(e)}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                    selectedEntity?.id === e.id
-                      ? "bg-gray-200 font-semibold"
-                      : ""
-                  }`}
-                  type="button"
-                >
-                  {e.name}
-                  <div className="text-xs text-gray-600">{e.ruc}</div>
-                </button>
+                  <button
+                    key={e.id}
+                    role="option"
+                    aria-selected={selectedEntity?.id === e.id}
+                    onClick={() => handleSelectEntity(e)}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                      selectedEntity?.id === e.id ? "bg-gray-200 font-semibold" : ""
+                    }`}
+                    type="button"
+                  >
+                    {e.name}
+                    <div className="text-xs text-gray-600">{e.ruc}</div>
+                  </button>
+                
               ))}
-            </div>
+          </div>
           )}
         </div>
       )}
 
       {/* MENU */}
       <nav className="flex flex-col space-y-4">
-        <button
-          onClick={() => handleSecureNavigation("/dashboard")}
-          className="text-left sidebar-link"
-          type="button"
-        >
-          📊 Dashboard
-        </button>
+        <LinkRow to="/dashboard" icon="📊" label="Dashboard" requiresEntity />
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/clientes" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          👥 Clientes
-        </NavLink>
+        {/* ✅ Unificado */}
+        <LinkRow to="/contactos" icon="👥" label="Contactos" requiresEntity />
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/proveedores" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          🧑‍🔧 Proveedores
-        </NavLink>
+        <LinkRow
+          to="/facturacion"
+          icon="🧾"
+          label="Facturación Electrónica (SRI)"
+          requiresEntity
+        />
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/facturacion" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          🧾 Facturación Electrónica (SRI)
-        </NavLink>
+        <LinkRow to="/cartera" icon="💼" label="Documentos x Cobrar" requiresEntity />
+        <LinkRow to="/accountspayable" icon="💼" label="Documentos x Pagar" requiresEntity />
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/cartera" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          💼 Documentos x Cobrar
-        </NavLink>
-
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/accountspayable" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          💼 Documentos x Pagar
-        </NavLink>
-
-        {/* CONTABILIDAD */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Contabilidad
         </div>
 
-        <LinkRow
-          to={isMaster ? "/admin" : selectedEntity ? "/contabilidad" : "#"}
-          icon="📊"
-          label="Libro de Diario"
-        />
+        <LinkRow to="/contabilidad" icon="📊" label="Libro de Diario" requiresEntity />
+        <LinkRow to="/libros-auxiliares" icon="📘" label="Libros Auxiliares" requiresEntity />
+        <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
+        <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
 
-        <LinkRow
-          to={isMaster ? "/admin" : selectedEntity ? "/libros-auxiliares" : "#"}
-          icon="📘"
-          label="Libros Auxiliares"
-        />
-
-        <LinkRow
-          to={isMaster ? "/admin" : selectedEntity ? "/libro-bancos" : "#"}
-          icon="🏦"
-          label="Libro Bancos"
-        />
-
-        <LinkRow
-          to={isMaster ? "/admin" : selectedEntity ? "/estados-financieros" : "#"}
-          icon="📈"  
-          label="Estados Financieros"
-        />
-
-        {/* IMPUESTOS */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Impuestos
         </div>
 
-        <NavLink
-          to={isMaster ? "/admin" : selectedEntity ? "/impuestos" : "#"}
-          onClick={guardLink}
-          className={({ isActive }) =>
-            `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-          }
-        >
-          📝 Declaraciones SRI
-        </NavLink>
+        <LinkRow to="/impuestos" icon="📝" label="Declaraciones SRI" requiresEntity />
 
-        {/* CONFIG */}
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Configuración
         </div>
 
         {isMaster ? (
-          <NavLink
-            to="/admin"
-            onClick={closeDrawer}
-            className={({ isActive }) =>
-              `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-            }
-          >
-            Admin Panel
-          </NavLink>
+          <LinkRow to="/admin" icon="🛠️" label="Admin Panel" />
         ) : (
-          <NavLink
-            to="/empresas"
-            onClick={guardLink}
-            className={({ isActive }) =>
-              `sidebar-link ${isActive ? "bg-white/20 font-semibold" : ""}`
-            }
-          >
-            🏢 Empresas
-          </NavLink>
+          <LinkRow to="/empresas" icon="🏢" label="Empresas" />
         )}
       </nav>
 

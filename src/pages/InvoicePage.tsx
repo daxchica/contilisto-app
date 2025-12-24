@@ -1,24 +1,30 @@
 // src/pages/InvoicePage.tsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 
-import InvoiceClientSelector from "@/components/invoice/InvoiceClientSelector";
-import InvoiceItemsTable from "@/components/invoice/InvoiceItemsTable";
+import InvoiceClientSelector from "@/components/invoices/InvoiceClientSelector";
+import InvoiceItemsTable from "@/components/invoices/InvoiceItemsTable";
 
-import { Client, fetchClients } from "@/services/clientService";
-import { createInvoice } from "@/services/invoiceService";
-
-import type { InvoiceItem } from "@/types/InvoiceItem";
+import type { Contact } from "@/types/Contact";
 import type { Invoice } from "@/types/Invoice";
+import type { InvoiceItem } from "@/types/InvoiceItem";
+import type { InvoiceContactSnapshot } from "@/types/Invoice";
+
+import { fetchClientContacts } from "@/services/contactService";
+import {
+  createInvoice,
+  issueInvoice,
+  cancelInvoice,
+} from "@/services/invoiceService";
 
 export default function InvoicePage() {
   const { selectedEntity } = useSelectedEntity();
   const entityId = selectedEntity?.id ?? "";
 
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<Contact[]>([]);
   const [loadingClients, setLoadingClients] = useState(true);
 
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Contact | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
 
   const [issueDate, setIssueDate] = useState("");
@@ -27,167 +33,224 @@ export default function InvoicePage() {
     useState<Invoice["invoiceType"]>("invoice");
 
   const [saving, setSaving] = useState(false);
+  const [processing, setProcessing] = useState(false);
+
+  // Para poder EMITIR / ANULAR inmediatamente el borrador guardado
+  const [currentInvoice, setCurrentInvoice] = useState<Invoice | null>(null);
 
   /* ==============================
       LOAD CLIENT LIST
   ============================== */
-  const loadClients = async () => {
-    if (!entityId) return;
-    setLoadingClients(true);
-    const clientList = await fetchClients(entityId);
-    setClients(clientList);
-    setLoadingClients(false);
-  };
-
   useEffect(() => {
-    loadClients();
+    if (!entityId) return;
+
+    const load = async () => {
+      setLoadingClients(true);
+      try {
+        const list = await fetchClientContacts(entityId);
+        setClients(list);
+      } finally {
+        setLoadingClients(false);
+      }
+    };
+
+    load();
   }, [entityId]);
 
   /* ==============================
-      SAVE INVOICE (Grabar Factura)
+      Totales en pantalla (memo)
+  ============================== */
+  const totalsPreview = useMemo(() => {
+    const validItems = items.filter((i) => i.description?.trim().length > 0);
+
+    const subtotal0 = validItems
+      .filter((i) => (i.ivaRate ?? 0) === 0)
+      .reduce((sum, i) => sum + (i.subtotal ?? 0), 0);
+
+    const subtotal12 = validItems
+      .filter((i) => (i.ivaRate ?? 0) > 0)
+      .reduce((sum, i) => sum + (i.subtotal ?? 0), 0);
+
+    const iva = validItems.reduce((sum, i) => sum + (i.ivaValue ?? 0), 0);
+    const total = subtotal0 + subtotal12 + iva;
+
+    return { subtotal0, subtotal12, iva, total, validItems };
+  }, [items]);
+
+  /* ==============================
+      SAVE INVOICE (DRAFT)
   ============================== */
   const handleSaveInvoice = async () => {
-    if (!entityId) {
-      alert("Selecciona una empresa.");
-      return;
-    }
+    if (!entityId) return alert("Selecciona una empresa.");
+    if (!selectedClient) return alert("Selecciona un cliente.");
+    if (!issueDate) return alert("Selecciona la fecha de la factura.");
 
-    if (!selectedClient) {
-      alert("Selecciona un cliente.");
-      return;
-    }
+    const validItems = totalsPreview.validItems;
+    if (validItems.length === 0) return alert("Agrega al menos un ítem válido.");
 
-    if (!issueDate) {
-      alert("Selecciona la fecha de la factura.");
-      return;
-    }
+    // ✅ Snapshot del contacto (sin undefined para Firestore)
+    const snapshot: InvoiceContactSnapshot = {
+      name: selectedClient.name ?? "",
+      identification: selectedClient.identification ?? "",
+      identificationType: selectedClient.identificationType ?? "ruc",
+      email: selectedClient.email ?? "",
+      address: selectedClient.address ?? "",
+      phone: selectedClient.phone || undefined, // si viene vacío, mejor undefined
+    };
 
-    if (items.length === 0) {
-      alert("Agrega al menos un ítem facturado.");
-      return;
-    }
-
-    // Totales desde los items
-    const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
-    const iva = items.reduce((sum, i) => sum + i.ivaValue, 0);
-    const total = items.reduce((sum, i) => sum + i.total, 0);
-
-    const sriXml = "";
+    // ✅ Totales correctos
+    const { subtotal0, subtotal12, iva, total } = totalsPreview;
 
     try {
       setSaving(true);
 
       const created = await createInvoice(entityId, {
-        clientId: selectedClient.id,
-        clientName: selectedClient.razon_social,
+        invoiceType,
         issueDate,
         dueDate: dueDate || undefined,
-        invoiceType,
-        items,
-        subtotal,
-        iva,
-        total,
-        sriXml,
+
+        contactId: selectedClient.id,
+        contactSnapshot: snapshot,
+
+        currency: "USD",
+        items: validItems,
+
+        totals: {
+          subtotal0,
+          subtotal12,
+          descuento: 0,
+          iva,
+          total,
+        },
       });
 
-      console.log("✅ Invoice created:", created);
-      alert(`Factura grabada correctamente. ID: ${created.id}`);
+      setCurrentInvoice(created);
 
-      // Reset form
-      setItems([]);
-      setSelectedClient(null);
-      setIssueDate("");
-      setDueDate("");
-      setInvoiceType("invoice");
-
+      alert(`✅ Factura guardada (BORRADOR)\nID: ${created.id}`);
     } catch (err) {
-      console.error("❌ Error creating invoice:", err);
-      alert("No se pudo grabar la factura. Revisa la consola.");
+      console.error(err);
+      alert("❌ No se pudo grabar la factura.");
     } finally {
       setSaving(false);
     }
   };
 
   /* ==============================
+      ISSUE / CANCEL (sobre currentInvoice)
+  ============================== */
+  async function handleIssue() {
+    if (!currentInvoice) return;
+    if (processing || currentInvoice.status !== "draft") return;
+
+    const ok = confirm("¿Deseas EMITIR esta factura?\nEsta acción no se puede deshacer.");
+    if (!ok) return;
+
+    try {
+      setProcessing(true);
+      await issueInvoice(currentInvoice.entityId, currentInvoice.id);
+      setCurrentInvoice({ ...currentInvoice, status: "issued" });
+      alert("✅ Factura emitida correctamente.");
+    } catch (e) {
+      console.error(e);
+      alert("❌ No se pudo emitir la factura.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!currentInvoice) return;
+    if (processing || currentInvoice.status !== "draft") return;
+
+    const reason = prompt("Motivo de anulación:");
+    if (!reason) return;
+
+    try {
+      setProcessing(true);
+      await cancelInvoice(currentInvoice.entityId, currentInvoice.id, reason);
+      setCurrentInvoice({ ...currentInvoice, status: "cancelled" });
+      alert("⚠️ Factura anulada.");
+    } catch (e) {
+      console.error(e);
+      alert("❌ No se pudo anular la factura.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  const resetForm = () => {
+    setItems([]);
+    setSelectedClient(null);
+    setIssueDate("");
+    setDueDate("");
+    setInvoiceType("invoice");
+    setCurrentInvoice(null);
+  };
+
+  /* ==============================
       RENDER
   ============================== */
   return (
-    <div className="w-full px-8 py-6">
+    <div className="w-full px-4 py-4 pb-24 md:pb-6 md:px-6 md:py-6 max-w-6xl mx-auto">
       {/* HEADER */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#0A3558]">
-          Facturación Electrónica
-        </h1>
-        <p className="text-gray-600">
-          Emisión de Facturas Electrónicas en cumplimiento con la normativa del
-          SRI.
-        </p>
+        <h1 className="text-2xl font-bold text-[#0A3558]">Facturación Electrónica</h1>
+        <p className="text-gray-600">Emisión de facturas conforme normativa SRI.</p>
       </div>
 
-      {/* CLIENT SELECTOR SECTION */}
-      <div className="bg-white rounded-xl shadow p-6 mb-6">
+      {/* CLIENT */}
+      <div className="bg-white rounded-xl shadow p-4 md:p-6 mb-4 md:mb-6">
         <h2 className="text-lg font-semibold mb-4">Información del Cliente</h2>
 
         <InvoiceClientSelector
           clients={clients}
           loading={loadingClients}
           value={selectedClient}
-          onChange={(client) => setSelectedClient(client)}
+          onChange={setSelectedClient}
         />
 
         {selectedClient && (
-          <div className="mt-4 p-4 bg-gray-50 border rounded-lg text-sm text-gray-700">
-            <p>
-              <strong>Nombre:</strong> {selectedClient.razon_social}
-            </p>
-            <p>
-              <strong>ID:</strong> {selectedClient.identificacion}
-            </p>
-            <p>
-              <strong>Email:</strong> {selectedClient.email || "N/A"}
-            </p>
-            <p>
-              <strong>Teléfono:</strong> {selectedClient.telefono || "N/A"}
-            </p>
+          <div className="mt-4 p-4 bg-gray-50 border rounded text-sm">
+            <p><strong>Nombre:</strong> {selectedClient.name}</p>
+            <p><strong>ID:</strong> {selectedClient.identification}</p>
+            <p><strong>Email:</strong> {selectedClient.email || "—"}</p>
+            <p><strong>Dirección:</strong> {selectedClient.address || "—"}</p>
+            <p><strong>Teléfono:</strong> {selectedClient.phone || "—"}</p>
           </div>
         )}
       </div>
 
-      {/* INVOICE DETAILS */}
+      {/* DETAILS */}
       <div className="bg-white rounded-xl shadow p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">Detalles de la Factura</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
           <div>
-            <label className="text-sm text-gray-600">Fecha de la Factura</label>
+            <label className="text-sm text-gray-600">Fecha de Factura</label>
             <input
               type="date"
-              className="w-full border rounded-lg px-3 py-2 mt-1"
+              className="w-full border rounded px-3 py-2 mt-1"
               value={issueDate}
               onChange={(e) => setIssueDate(e.target.value)}
             />
           </div>
 
           <div>
-            <label className="text-sm text-gray-600">
-              Fecha de Vencimiento
-            </label>
+            <label className="text-sm text-gray-600">Fecha de Vencimiento</label>
             <input
               type="date"
-              className="w-full border rounded-lg px-3 py-2 mt-1"
+              className="w-full border rounded px-3 py-2 mt-1"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
             />
           </div>
 
           <div>
-            <label className="text-sm text-gray-600">Tipo de Factura</label>
+            <label className="text-sm text-gray-600">Tipo</label>
             <select
-              className="w-full border rounded-lg px-3 py-2 mt-1"
+              className="w-full border rounded px-3 py-2 mt-1"
               value={invoiceType}
-              onChange={(e) =>
-                setInvoiceType(e.target.value as Invoice["invoiceType"])
-              }
+              onChange={(e) => setInvoiceType(e.target.value as Invoice["invoiceType"])}
             >
               <option value="invoice">Factura</option>
               <option value="credit-note">Nota de Crédito</option>
@@ -197,34 +260,85 @@ export default function InvoicePage() {
         </div>
       </div>
 
-      {/* ITEMS TABLE */}
+      {/* ITEMS */}
       <div className="bg-white rounded-xl shadow p-6 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Items Facturados</h2>
+        <h2 className="text-lg font-semibold mb-4">Ítems</h2>
         <InvoiceItemsTable items={items} onChange={setItems} />
+
+        {/* Totales visibles (si tu tabla no los muestra, aquí quedan siempre correctos) */}
+        <div className="mt-3 border rounded-lg p-3 md:p-4 bg-gray-50 text-sm">
+          <div className="flex justify-between py-1">
+            <span>Subtotal 0%:</span>
+            <span>${totalsPreview.subtotal0.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span>Subtotal 12%:</span>
+            <span>${totalsPreview.subtotal12.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span>IVA:</span>
+            <span>${totalsPreview.iva.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between py-1 font-semibold text-lg md:text-base text-[#0A3558]">
+            <span>Total:</span>
+            <span>${totalsPreview.total.toFixed(2)}</span>
+          </div>
+        </div>
       </div>
 
+      {/* CURRENT INVOICE STATUS + ACTIONS */}
+      {currentInvoice && (
+        <div className="bg-white rounded-xl shadow p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <p className="font-semibold">Borrador actual:</p>
+              <p className="text-sm text-gray-600">
+                ID: <span className="font-mono">{currentInvoice.id}</span> — Estado:{" "}
+                <span className="font-semibold">{currentInvoice.status}</span>
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+                disabled={processing || currentInvoice.status !== "draft"}
+                onClick={handleIssue}
+                type="button"
+              >
+                {processing ? "Procesando..." : "Emitir"}
+              </button>
+
+              <button
+                className="px-4 py-2 rounded bg-red-600 text-white disabled:opacity-50"
+                disabled={processing || currentInvoice.status !== "draft"}
+                onClick={handleCancel}
+                type="button"
+              >
+                {processing ? "Procesando..." : "Anular"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FOOTER ACTIONS */}
-      <div className="flex justify-end gap-3">
+      {/* FOOTER ACTIONS */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-3 md:static md:border-0 md:p-0 md:justify-end">
         <button
-          className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
+          className="flex-1 md:flex-none px-4 py-3 md:py-2 bg-gray-200 rounded"
+          onClick={resetForm}
           type="button"
-          onClick={() => {
-            setItems([]);
-            setSelectedClient(null);
-            setIssueDate("");
-            setDueDate("");
-            setInvoiceType("invoice");
-          }}
         >
           Cancelar
         </button>
+
         <button
-          className="px-4 py-2 bg-[#0A3558] text-white rounded-lg hover:bg-[#0c426f]"
-          type="button"
+          className="flex-1 md:flex-none px-4 py-3 md:py-2 bg-[#0A3558] text-white rounded disabled:opacity-50"
           disabled={saving}
           onClick={handleSaveInvoice}
+          type="button"
         >
-          {saving ? "Grabando..." : "Grabar Factura"}
+          {saving ? "Grabando..." : "Guardar Borrador"}
         </button>
       </div>
     </div>

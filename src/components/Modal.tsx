@@ -47,7 +47,12 @@ export default function Modal({
       aria-modal="true"
     >
       <div
-        className={`relative w-full ${maxWidthClass} max-h-[85vh] overflow-auto bg-white rounded-2xl shadow-xl`}
+        className={[
+          "relative w-full", 
+          maxWidthClass,
+          "bg-white rounded-2xl shadow-xl",
+          "max-h-[85vh] overflow-auto",
+        ].join(" ")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {showCloseButton && onClose && (
@@ -61,7 +66,8 @@ export default function Modal({
           </button>
         )}
 
-        <div className="p-4 sm:p-6">{children}</div>
+        {/* consistent padding mobile/desktop */}
+        <div className="p-5 sm:p-6">{children}</div>
       </div>
     </div>
   );

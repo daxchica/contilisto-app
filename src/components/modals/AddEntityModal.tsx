@@ -1,210 +1,330 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { EntityType } from "src/types/Entity.ts";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { EntityType } from "@/types/Entity";
+
+/* ======================================================
+   Types
+====================================================== */
+
+export type CreateEntityPayload = {
+  ruc: string;
+  name: string;
+  entityType: EntityType;
+  email: string;
+  address: string;
+  phone?: string;
+};
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (data: { ruc: string; name: string; entityType: EntityType }) => Promise<void> | void;
+  onCreate: (data: CreateEntityPayload) => Promise<void>;
 };
 
+/* ======================================================
+   Layout constants
+====================================================== */
+
+const MIN_MARGIN = 12;
+const DESKTOP_W = 540;
+const DESKTOP_H = 420;
+
+/* ======================================================
+   Component
+====================================================== */
+
 export default function AddEntityModal({ isOpen, onClose, onCreate }: Props) {
+  /* -------------------------------
+     Form state
+  -------------------------------- */
   const [ruc, setRuc] = useState("");
   const [name, setName] = useState("");
   const [entityType, setEntityType] = useState<EntityType>("comercial");
-  const [saving, setSaving] = useState(false);
 
-  // ---- Drag state ----
-  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /* -------------------------------
+     Responsive
+  -------------------------------- */
+  const [isMobile, setIsMobile] = useState(false);
+
+  /* -------------------------------
+     Drag state (desktop only)
+  -------------------------------- */
+  const [pos, setPos] = useState({ x: 0, y: 0 });
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
 
-  // Centrar al abrir y limpiar campos
+  /* ======================================================
+     Effects
+  ====================================================== */
+
+  // Detect mobile
   useEffect(() => {
     if (!isOpen) return;
+
+    const update = () => setIsMobile(window.innerWidth < 640);
+    update();
+
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [isOpen]);
+
+  // Reset + center on open
+  useEffect(() => {
+    if (!isOpen) return;
+
     setRuc("");
     setName("");
     setEntityType("comercial");
-    // centra modal (usando viewport actual)
+    setEmail("");
+    setAddress("");
+    setPhone("");
+    setError(null);
+    setSaving(false);
+
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    // tamaño aproximado del modal (puedes medirlo si prefieres)
-    const approxW = 540;
-    const approxH = 320;
-    setPos({ x: Math.max((vw - approxW) / 2, 12), y: Math.max((vh - approxH) / 2, 12) });
+
+    if (vw < 640) {
+      setPos({ x: MIN_MARGIN, y: MIN_MARGIN });
+      return;
+    }
+
+    setPos({
+      x: Math.max((vw - DESKTOP_W) / 2, MIN_MARGIN),
+      y: Math.max((vh - DESKTOP_H) / 2, MIN_MARGIN),
+    });
   }, [isOpen]);
 
-  // Clamp a la ventana al redimensionar
+  // Clamp on resize (desktop)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isMobile) return;
+
     const clamp = () => {
       const rect = modalRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const maxX = window.innerWidth - rect.width - 12;
-      const maxY = window.innerHeight - rect.height - 12;
+
+      const maxX = window.innerWidth - rect.width - MIN_MARGIN;
+      const maxY = window.innerHeight - rect.height - MIN_MARGIN;
+
       setPos((p) => ({
-        x: Math.min(Math.max(p.x, 12), Math.max(maxX, 12)),
-        y: Math.min(Math.max(p.y, 12), Math.max(maxY, 12)),
+        x: Math.min(Math.max(p.x, MIN_MARGIN), Math.max(maxX, MIN_MARGIN)),
+        y: Math.min(Math.max(p.y, MIN_MARGIN), Math.max(maxY, MIN_MARGIN)),
       }));
     };
+
     clamp();
     window.addEventListener("resize", clamp);
     return () => window.removeEventListener("resize", clamp);
-  }, [isOpen]);
+  }, [isOpen, isMobile]);
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!isOpen) return;
-    draggingRef.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    startRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
-    document.body.style.userSelect = "none";
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!draggingRef.current || !startRef.current) return;
-    const nx = e.clientX - startRef.current.x;
-    const ny = e.clientY - startRef.current.y;
-
-    // clamp con el tamaño actual del modal
-    const rect = modalRef.current?.getBoundingClientRect();
-    const w = rect?.width ?? 480;
-    const h = rect?.height ?? 280;
-    const min = 12;
-    const maxX = window.innerWidth - w - min;
-    const maxY = window.innerHeight - h - min;
-    setPos({
-      x: Math.min(Math.max(nx, min), Math.max(maxX, min)),
-      y: Math.min(Math.max(ny, min), Math.max(maxY, min)),
-    });
-  };
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    draggingRef.current = false;
-    startRef.current = null;
-    document.body.style.userSelect = "";
-    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-  };
-
-  const canCreate = useMemo(() => ruc.trim().length > 0 && name.trim().length > 0, [ruc, name]);
-
-  const submit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!canCreate || saving) return;
-    try {
-      setSaving(true);
-      await onCreate({ ruc: ruc.trim(), name: name.trim(), entityType });
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  // ESC closes modal
   useEffect(() => {
-    const onEsc = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" && isOpen) onClose();
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) onClose();
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [isOpen, onClose]);
 
+  // Cleanup drag state
+  useEffect(() => {
+    if (isOpen) return;
+    draggingRef.current = false;
+    startRef.current = null;
+    document.body.style.userSelect = "";
+  }, [isOpen]);
+
+  /* ======================================================
+     Drag handlers
+  ====================================================== */
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (isMobile) return;
+
+    draggingRef.current = true;
+    startRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.userSelect = "none";
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!draggingRef.current || !startRef.current) return;
+
+    const nx = e.clientX - startRef.current.x;
+    const ny = e.clientY - startRef.current.y;
+
+    const rect = modalRef.current?.getBoundingClientRect();
+    const w = rect?.width ?? DESKTOP_W;
+    const h = rect?.height ?? DESKTOP_H;
+
+    setPos({
+      x: Math.min(Math.max(nx, MIN_MARGIN), window.innerWidth - w - MIN_MARGIN),
+      y: Math.min(Math.max(ny, MIN_MARGIN), window.innerHeight - h - MIN_MARGIN),
+    });
+  };
+
+  const stopDragging = () => {
+    draggingRef.current = false;
+    startRef.current = null;
+    document.body.style.userSelect = "";
+  };
+
+  /* ======================================================
+     Validation
+  ====================================================== */
+
+  const canCreate = useMemo(
+    () =>
+      ruc.trim() &&
+      name.trim() &&
+      email.trim() &&
+      address.trim(),
+    [ruc, name, email, address]
+  );
+
+  /* ======================================================
+     Submit
+  ====================================================== */
+
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!canCreate || saving) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      await onCreate({
+        ruc: ruc.trim(),
+        name: name.trim(),
+        entityType,
+        email: email.trim(),
+        address: address.trim(),
+        phone: phone.trim() || undefined,
+      });
+
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo crear la empresa. Intenta nuevamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!isOpen) return null;
 
+  /* ======================================================
+     Render
+  ====================================================== */
+
   return (
-    <div
-      className="fixed inset-0 z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="add-entity-title"
-    >
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
       {/* Window */}
       <div
-        className={`fixed z-50 bg-white p-6 shadow-lg rounded-md w-[540px]`}
-        style={{ left: `${pos.x}px`, top: `${pos.y}px`}}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
         ref={modalRef}
+        className="fixed z-50 bg-white rounded-xl shadow-lg overflow-hidden"
+        style={{
+          width: isMobile ? "92vw" : DESKTOP_W,
+          left: isMobile ? MIN_MARGIN : pos.x,
+          right: isMobile ? MIN_MARGIN : undefined,
+          top: isMobile ? MIN_MARGIN : pos.y,
+        }}
+        onPointerMove={onPointerMove}
+        onPointerUp={stopDragging}
       >
-        {/* Drag handle (header) */}
+        {/* Header */}
         <div
-          className={`cursor-move select-none rounded-t-xl px-4 py-3 bg-blue-600 text-white flex items-center justify-between`}
+          className={`px-4 py-3 bg-blue-600 text-white flex justify-between ${
+            isMobile ? "" : "cursor-move"
+          }`}
           onPointerDown={onPointerDown}
-          onPointerUp={onPointerUp}
+          onPointerUp={stopDragging}
         >
-          <h2 id="add-entity-title" className="font-semibold">
-            ➕ Agregar Entidad
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded px-2 py-1 text-white/90 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
-            aria-label="Cerrar"
-          >
+          <h2 className="font-semibold">➕ Agregar Empresa</h2>
+          <button onClick={onClose} className="text-white/90 hover:text-white">
             ✕
           </button>
         </div>
 
         {/* Content */}
         <form onSubmit={submit} className="p-4 space-y-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">RUC</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              placeholder="Ingresa el RUC"
-              value={ruc}
-              onChange={(e) => setRuc(e.target.value)}
-              autoFocus
-              inputMode="numeric"
-              required
-            />
-          </div>
+          {error && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              {error}
+            </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Nombre de Empresa</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              placeholder="Ingresa Nombre de Empresa"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
+          <input
+            className="w-full border rounded px-3 py-2"
+            placeholder="RUC"
+            value={ruc}
+            onChange={(e) => setRuc(e.target.value)}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Tipo de Empresa</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={entityType}
-              onChange={(e) => setEntityType(e.target.value as EntityType)}
-              required
-            >
-              <option value="comercial">Comercial</option>
-              <option value="primario">Primario (Agrícola / Pesca / Minas)</option>
-              <option value="industrial">Industrial</option>
-              <option value="servicios profesionales">Servicios Profesionales</option>
-              <option value="servicios generales">Servicios Generales</option>
-              <option value="construccion">Construcción</option>
-              <option value="educacion">Educación</option>
-              <option value="farmacia">Farmacia</option>
-            </select>
-          </div>
+          <input
+            className="w-full border rounded px-3 py-2"
+            placeholder="Nombre de la empresa"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
 
-          <div className="pt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded border bg-white hover:bg-gray-50"
-            >
+          <select
+            className="w-full border rounded px-3 py-2"
+            value={entityType}
+            onChange={(e) => setEntityType(e.target.value as EntityType)}
+          >
+            <option value="comercial">Comercial</option>
+            <option value="industrial">Industrial</option>
+            <option value="servicios">Servicios</option>
+            <option value="construccion">Construcción</option>
+            <option value="educacion">Educación</option>
+          </select>
+
+          <input
+            type="email"
+            className="w-full border rounded px-3 py-2"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+
+          <input
+            className="w-full border rounded px-3 py-2"
+            placeholder="Dirección"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            required
+          />
+
+          <input
+            className="w-full border rounded px-3 py-2"
+            placeholder="Teléfono (opcional)"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 border rounded">
               Cancelar
             </button>
             <button
               type="submit"
               disabled={!canCreate || saving}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
             >
               {saving ? "Guardando…" : "Crear"}
             </button>
