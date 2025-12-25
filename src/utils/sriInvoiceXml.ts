@@ -38,7 +38,7 @@ function ivaRateToCodigoPorcentaje(rate: number): string {
   return "2";
 }
 
-function buildTipoIdentificacionComprador(client: Contact): "04" | "05" | "06" {
+function buildBuyerIdentificationType(client: Contact): "04" | "05" | "06" {
   // 04 RUC, 05 Cédula, 06 Pasaporte
   const t = (client.identificationType ?? "").toLowerCase();
   if (t === "cedula" || t === "cédula") return "05";
@@ -61,12 +61,13 @@ export function buildSriInvoiceXml(params: {
 }): string {
   const { 
     invoice, 
-    issuer, 
+    issuer,
+    issuerAddress,
     client, 
     ambiente, 
     estab, 
     ptoEmi, 
-    secuencial 
+    secuencial,
   } = params;
   
   const items = invoice.items as InvoiceItem[];
@@ -81,49 +82,79 @@ export function buildSriInvoiceXml(params: {
     secuencial,
   });
 
-  let subtotal0 = 0;
-  let subtotalIva = 0;
+  // ✅ Recalcular totales “desde cero” para consistencia
+  const taxBuckets = new Map<number, { base: number; iva: number }>();
+  let totalSinImpuestos = 0;
   let ivaTotal = 0;
-  let total = 0;
+  let importeTotal = 0;
 
-  for (const i of items) {
-    if (i.ivaRate === 0) subtotal0 += i.subtotal;
-    else subtotalIva += i.subtotal;
-    ivaTotal += i.ivaValue;
-    total += i.total;
+  for (const it of items) {
+    const qty = toNumber(it.quantity);
+    const unit = toNumber(it.unitPrice);
+    const rate = toNumber(it.ivaRate);
+    const discount = toNumber(it.discount);
+
+    const base = Math.max(qty * unit - discount, 0);
+    const iva = base * (rate / 100);
+    const lineTotal = base + iva;
+
+    totalSinImpuestos += base;
+    ivaTotal += iva;
+    importeTotal += lineTotal;
+
+    const bucket = taxBuckets.get(rate) ?? { base: 0, iva: 0 };
+    bucket.base += base;
+    bucket.iva += iva;
+    taxBuckets.set(rate, bucket);
   }
 
   const detallesXml = items
     .map((item, idx) => {
-      const base = item.subtotal;
+      const qty = toNumber(item.quantity);
+      const unit = toNumber(item.unitPrice);
+      const rate = toNumber(item.ivaRate);
+      const discount = toNumber(item.discount);
+
+      const base = Math.max(qty * unit - discount, 0);
+      const ivaValue = base * (rate / 100);
+
       return `
       <detalle>
         <codigoPrincipal>${escapeXml(item.productCode ?? `ITEM-${idx + 1}`)}</codigoPrincipal>
         <descripcion>${escapeXml(item.description)}</descripcion>
-        <cantidad>${item.quantity}</cantidad>
-        <precioUnitario>${formatMoney(item.unitPrice)}</precioUnitario>
-        <descuento>${formatMoney(item.discount ?? 0)}</descuento>
+        <cantidad>${qty}</cantidad>
+        <precioUnitario>${formatMoney(unit)}</precioUnitario>
+        <descuento>${formatMoney(discount)}</descuento>
         <precioTotalSinImpuesto>${formatMoney(base)}</precioTotalSinImpuesto>
         <impuestos>
           <impuesto>
             <codigo>2</codigo>
-            <codigoPorcentaje>${ivaRateToCodigoPorcentaje(item.ivaRate)}</codigoPorcentaje>
-            <tarifa>${item.ivaRate}</tarifa>
+            <codigoPorcentaje>${ivaRateToCodigoPorcentaje(rate)}</codigoPorcentaje>
+            <tarifa>${rate}</tarifa>
             <baseImponible>${formatMoney(base)}</baseImponible>
-            <valor>${formatMoney(item.ivaValue)}</valor>
+            <valor>${formatMoney(ivaValue)}</valor>
           </impuesto>
         </impuestos>
       </detalle>`;
     })
     .join("");
 
-  // ✅ FIX 2: tipo identificación correcto
-  const tipoIdentificacionComprador =
-    client.identificationType === "cedula"
-      ? "05"
-      : client.identificationType === "pasaporte"
-      ? "06"
-      : "04"; // RUC
+    // ✅ totalConImpuestos: un <totalImpuesto> por tarifa (0,12,15…)
+  const totalConImpuestosXml = Array.from(taxBuckets.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, v]) => {
+      const codigoPorcentaje = ivaRateToCodigoPorcentaje(rate);
+      return `
+      <totalImpuesto>
+        <codigo>2</codigo>
+        <codigoPorcentaje>${codigoPorcentaje}</codigoPorcentaje>
+        <baseImponible>${formatMoney(v.base)}</baseImponible>
+        <valor>${formatMoney(v.iva)}</valor>
+      </totalImpuesto>`;
+    })
+    .join("");
+
+  const tipoIdentificacionComprador = buildBuyerIdentificationType(client);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <factura id="comprobante" version="1.1.0">
@@ -133,52 +164,32 @@ export function buildSriInvoiceXml(params: {
     <razonSocial>${escapeXml(issuer.name)}</razonSocial>
     <nombreComercial>${escapeXml(issuer.name)}</nombreComercial>
     <ruc>${escapeXml(issuer.ruc)}</ruc>
-    <claveAcceso>${accessKey}</claveAcceso>
+    <claveAcceso>${escapeXml(accessKey)}</claveAcceso>
     <codDoc>01</codDoc>
-    <estab>${estab}</estab>
-    <ptoEmi>${ptoEmi}</ptoEmi>
-    <secuencial>${secuencial}</secuencial>
+    <estab>${escapeXml(estab)}</estab>
+    <ptoEmi>${escapeXml(ptoEmi)}</ptoEmi>
+    <secuencial>${escapeXml(secuencial)}</secuencial>
     <dirMatriz>${escapeXml(issuerAddress)}</dirMatriz>
   </infoTributaria>
 
   <infoFactura>
     <fechaEmision>${formatDateDDMMYYYY(invoice.issueDate)}</fechaEmision>
     <dirEstablecimiento>${escapeXml(issuerAddress)}</dirEstablecimiento>
-
     <obligadoContabilidad>SI</obligadoContabilidad>
-    
+
     <tipoIdentificacionComprador>${tipoIdentificacionComprador}</tipoIdentificacionComprador>
     <razonSocialComprador>${escapeXml(client.name)}</razonSocialComprador>
     <identificacionComprador>${escapeXml(client.identification)}</identificacionComprador>
 
-    <totalSinImpuestos>${formatMoney(subtotal0 + subtotalIva)}</totalSinImpuestos>
+    <totalSinImpuestos>${formatMoney(totalSinImpuestos)}</totalSinImpuestos>
     <totalDescuento>0.00</totalDescuento>
 
     <totalConImpuestos>
-      ${
-        subtotal0 > 0
-          ? `<totalImpuesto>
-              <codigo>2</codigo>
-              <codigoPorcentaje>0</codigoPorcentaje>
-              <baseImponible>${formatMoney(subtotal0)}</baseImponible>
-              <valor>0.00</valor>
-            </totalImpuesto>`
-          : ""
-      }
-      ${
-        subtotalIva > 0
-          ? `<totalImpuesto>
-              <codigo>2</codigo>
-              <codigoPorcentaje>2</codigoPorcentaje>
-              <baseImponible>${formatMoney(subtotalIva)}</baseImponible>
-              <valor>${formatMoney(ivaTotal)}</valor>
-            </totalImpuesto>`
-          : ""
-      }
+      ${totalConImpuestosXml}
     </totalConImpuestos>
 
     <propina>0.00</propina>
-    <importeTotal>${formatMoney(total)}</importeTotal>
+    <importeTotal>${formatMoney(importeTotal)}</importeTotal>
     <moneda>USD</moneda>
   </infoFactura>
 

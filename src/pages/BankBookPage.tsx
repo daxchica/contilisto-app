@@ -19,7 +19,7 @@ import {
 } from "../services/bankBookService";
 
 import { fetchBankMovements } from "../services/bankMovementService";
-import { fetchJournalEntries } from "../services/entityService";
+import { fetchJournalEntries } from "../services/journalService";
 
 import BankReconciliationTab from "../components/BankReconciliationTab";
 
