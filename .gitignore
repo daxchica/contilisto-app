@@ -35,3 +35,7 @@ goggle_cloud_code.rtf
 *.sw?
 # Local Netlify folder
 .netlify
+# Firebase / Google secrets
+Firebase-admin.json
+*.service-account.json
+
