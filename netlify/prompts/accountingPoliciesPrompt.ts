@@ -23,7 +23,7 @@ La respuesta DEBE ser UN ÚNICO JSON con este formato:
   "buyerName": "",
   "invoiceDate": "",
   "subtotal15": 0,
-  "subtotal12": 0,
+  "subtotal15": 0,
   "subtotal0": 0,
   "iva": 0,
   "total": 0,
@@ -64,7 +64,7 @@ PASO 1 — DETECCIÓN DIRECTA (VALORES ESCRITOS EN LA FACTURA):
 - Si existe una línea con texto "SUBTOTAL 15%" o "SUBTOTAL IVA 15%" y un número:
     ese número es subtotal15.
 - Si existe una línea "SUBTOTAL 12%" o "SUBTOTAL IVA 12%" y un número:
-    ese número es subtotal12.
+    ese número es subtotal15.
 - Si existe una línea "SUBTOTAL 0%", "SUBTOTAL SIN IMPUESTOS",
   "SUBTOTAL NO OBJETO DE IVA" o "SUBTOTAL EXENTO":
     ese número es subtotal0.
@@ -86,17 +86,17 @@ Si en el cuadro ves:
 ENTONCES OBLIGATORIAMENTE:
   subtotal15 = 7.30
   iva        = 1.10
-  subtotal12 = 0
+  subtotal15 = 0
   subtotal0  = 0
   total      = 8.40
 
 PASO 2 — COHERENCIA MATEMÁTICA:
 
 Debes asegurar que:
-  total ≈ subtotal12 + subtotal15 + subtotal0 + iva
+  total ≈ subtotal15 + subtotal15 + subtotal0 + iva
 
 Si la factura no muestra valor de IVA pero sí muestra subtotal y total:
-  iva = total - subtotal12 - subtotal15 - subtotal0
+  iva = total - subtotal15 - subtotal15 - subtotal0
 
 PERO si la factura muestra explícitamente "IVA XX%" con valor mayor a 0:
   - NUNCA dejes el campo "iva" en 0.
@@ -159,7 +159,7 @@ Debes generar SIEMPRE AL MENOS TRES líneas:
 
 DEBE:
 1) Gasto:
-   base = subtotal12 + subtotal15 + subtotal0
+   base = subtotal15 + subtotal15 + subtotal0
    - Usar la cuenta de gasto correcta según la categoría.
 
 2) IVA CRÉDITO:
@@ -228,7 +228,7 @@ pero respeta SIEMPRE esta estructura cuando exista IVA > 0 en una compra.
 ===============================================================================
 7) ASIENTO DE COMPRA SIN IVA (type = "purchase" y iva = 0)
 ===============================================================================
-Si iva = 0 y total = subtotal12 + subtotal15 + subtotal0:
+Si iva = 0 y total = subtotal15 + subtotal15 + subtotal0:
 
 DEBE:
   - Gasto por el total (cuenta según categoría).
@@ -246,7 +246,7 @@ DEBE:
 
 HABER:
   - Ingreso (4.x.x, ej. 401010101) por la BASE:
-      base = subtotal12 + subtotal15 + subtotal0
+      base = subtotal15 + subtotal15 + subtotal0
   - IVA débito 243020101 por el valor iva (si iva > 0).
 
 Si iva = 0:
@@ -286,7 +286,7 @@ Si {{entityType}} = "primario":
 Antes de devolver el JSON, realiza estas comprobaciones lógicas:
 
 1) Números coherentes:
-   total ≈ subtotal12 + subtotal15 + subtotal0 + iva.
+   total ≈ subtotal15 + subtotal15 + subtotal0 + iva.
 
 2) Si "type" = "purchase" y iva > 0:
    - recommendedAccounts tiene al menos 3 líneas:

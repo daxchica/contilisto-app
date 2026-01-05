@@ -288,6 +288,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
         ) : (
           <LinkRow to="/empresas" icon="🏢" label="Empresas" />
         )}
+
+         <LinkRow to="/configuracionSri" icon="📝" label="Configuracion SRI" requiresEntity />
       </nav>
 
       {/* LOGOUT */}

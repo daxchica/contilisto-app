@@ -8,7 +8,7 @@ import axios from "axios";
 
 export interface SendToSriParams {
   signedXml: string;      // XML firmado (cadena)
-  accessKey: string;      // Clave de acceso de la factura
+  claveAcceso: string;      // Clave de acceso de la factura
   environment: "1" | "2"; // 1 = pruebas, 2 = producción
 }
 
@@ -52,14 +52,14 @@ function buildRecepcionSOAP(xmlBase64: string): string {
   `;
 }
 
-function buildAutorizacionSOAP(accessKey: string): string {
+function buildAutorizacionSOAP(claveAcceso: string): string {
   return `
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                       xmlns:ec="http://ec.gob.sri.ws.autorizacion">
       <soapenv:Header/>
       <soapenv:Body>
         <ec:autorizacionComprobante>
-          <claveAccesoComprobante>${accessKey}</claveAccesoComprobante>
+          <claveAccesoComprobante>${claveAcceso}</claveAccesoComprobante>
         </ec:autorizacionComprobante>
       </soapenv:Body>
     </soapenv:Envelope>
@@ -70,7 +70,7 @@ function buildAutorizacionSOAP(accessKey: string): string {
 // FUNCIÓN PRINCIPAL
 // ============================================================================
 export async function sendToSRI(params: SendToSriParams): Promise<SriSendResult> {
-  const { signedXml, accessKey, environment } = params;
+  const { signedXml, claveAcceso, environment } = params;
 
   const xmlBase64 = Buffer.from(signedXml, "utf8").toString("base64");
 
@@ -114,7 +114,7 @@ export async function sendToSRI(params: SendToSriParams): Promise<SriSendResult>
 
   await wait(2000);
 
-  const autorizacionSoap = buildAutorizacionSOAP(accessKey);
+  const autorizacionSoap = buildAutorizacionSOAP(claveAcceso);
   let autorizacionResponse: string;
 
   try {

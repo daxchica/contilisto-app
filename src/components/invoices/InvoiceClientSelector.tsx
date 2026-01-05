@@ -4,9 +4,10 @@ import { Contact } from "@/types/Contact";
 
 export interface InvoiceClientSelectorProps {
   clients: Contact[];
-  loading: boolean;
+  loading?: boolean;
   value: Contact | null;
   onChange: (client: Contact | null) => void;
+  disabled?: boolean;
 }
 
 export default function InvoiceClientSelector({

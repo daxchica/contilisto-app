@@ -1,0 +1,165 @@
+import type { Handler } from "@netlify/functions";
+import { Crypto } from "@peculiar/webcrypto";
+{/* import * as xades from "xadesjs"; */}
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+
+/**
+ * ENV (Netlify):
+ *  - CERT_P12_BASE64: base64 del archivo .p12 / .pfx (SIN "-----BEGIN")
+ *  - CERT_P12_PASSWORD: password del .p12
+ *
+ * Request body JSON:
+ *  {
+ *    "xml": "<factura ...>...</factura>",
+ *    "referenceId": "comprobante" // opcional, default "comprobante"
+ *  }
+ *
+ * Response JSON:
+ *  {
+ *    "signedXml": "<factura ...>...<ds:Signature>...</ds:Signature>...</factura>"
+ *  }
+ */
+
+type Body = {
+  xml?: string;
+  referenceId?: string;
+};
+
+function json(statusCode: number, data: any) {
+  return {
+    statusCode,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "content-type",
+      "access-control-allow-methods": "POST,OPTIONS",
+    },
+    body: JSON.stringify(data),
+  };
+}
+
+function b64ToBuf(b64: string): ArrayBuffer {
+  const bin = Buffer.from(b64, "base64");
+  return bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
+}
+
+function ensureEnv(name: string): string {
+  const v = process.env[name];
+  if (!v || !v.trim()) throw new Error(`Missing env var: ${name}`);
+  return v.trim();
+}
+
+export const handler: Handler = async (event) => {
+  try {
+    if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
+    if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+
+    const body = (event.body ? JSON.parse(event.body) : {}) as Body;
+    const xml = body.xml?.trim();
+    const referenceId = (body.referenceId || "comprobante").trim();
+
+    if (!xml) return json(400, { error: "Missing 'xml' in body" });
+
+    // 1) WebCrypto para Node (necesario para xadesjs)
+    const crypto = new Crypto();
+    xades.Application.setEngine("NodeJS", crypto);
+
+    // 2) Cargar P12/PFX (base64) y extraer key + cert
+    const p12B64 = ensureEnv("CERT_P12_BASE64");
+    const p12Password = ensureEnv("CERT_P12_PASSWORD");
+
+    const p12Buffer = b64ToBuf(p12B64);
+
+    // PKCS#12 import (xadesjs trae helpers vía PKIjs)
+    const p12 = new xades.Pkcs12Crypto(p12Buffer, p12Password);
+
+    // Selecciona el primer par (key + cert). Si tu P12 tiene varios, puedes escoger por subject.
+    const key = await p12.getPrivateKey();
+    const cert = await p12.getCertificate();
+
+    if (!key) throw new Error("Could not read private key from P12");
+    if (!cert) throw new Error("Could not read certificate from P12");
+
+    // 3) Parsear XML
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+
+    // 4) Firmar XAdES-BES
+    const signedXml = new xades.SignedXml();
+
+    // Referencia al nodo raíz (ej: <factura id="comprobante" ...>)
+    // SRI normalmente usa id="comprobante"
+    // Creamos referencia por ID: #comprobante
+    signedXml.Signature.Id = `SIG-${Date.now()}`;
+
+    // Agregar referencia al documento
+    const reference = new xades.Reference();
+    reference.Uri = `#${referenceId}`;
+    reference.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256";
+
+    // Transform: Enveloped (firma dentro del XML)
+    reference.AddTransform(new xades.XmlDsigEnvelopedSignatureTransform());
+    // Canonicalización
+    reference.AddTransform(new xades.XmlDsigC14NTransform());
+
+    signedXml.AddReference(reference);
+
+    // Algoritmos RSA + SHA256
+    signedXml.Signature.SignedInfo.SignatureMethod =
+      "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+    signedXml.Signature.SignedInfo.CanonicalizationMethod =
+      "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
+
+    // KeyInfo con certificado
+    const keyInfo = new xades.KeyInfoX509Data();
+    keyInfo.AddCertificate(cert);
+    signedXml.KeyInfo.Add(keyInfo);
+
+    // XAdES-BES Qualifying Properties
+    // (xadesjs lo genera con SignedProperties / SignedSignatureProperties)
+    const xadesObject = new xades.QualifyingProperties();
+    xadesObject.Target = `#${signedXml.Signature.Id}`;
+
+    const signedProps = new xades.SignedProperties();
+    signedProps.Id = `SignedProperties-${Date.now()}`;
+
+    // SigningTime
+    signedProps.SignedSignatureProperties.SigningTime = new Date();
+
+    // Certificate info (SigningCertificateV2 para SHA-256)
+    const signingCert = new xades.Cert();
+    signingCert.IssuerSerial.IssuerName = cert.issuerName;
+    signingCert.IssuerSerial.SerialNumber = cert.serialNumber;
+
+    // Digest del certificado
+    const certRaw = cert.rawData; // ArrayBuffer
+    const certDigest = await crypto.subtle.digest("SHA-256", certRaw);
+    signingCert.CertDigest.DigestMethod.Algorithm = "http://www.w3.org/2001/04/xmlenc#sha256";
+    signingCert.CertDigest.DigestValue = new Uint8Array(certDigest);
+
+    signedProps.SignedSignatureProperties.SigningCertificateV2.Certs.push(signingCert);
+
+    xadesObject.SignedProperties = signedProps;
+
+    signedXml.AddObject(xadesObject);
+
+    // 5) Ejecutar firma: inserta <ds:Signature> en el documento
+    await signedXml.Sign(
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as any,
+      key,
+      doc,
+      // Insertar al final del root (SRI acepta)
+      doc.documentElement
+    );
+
+    // 6) Serializar XML firmado
+    const out = new XMLSerializer().serializeToString(doc);
+
+    return json(200, { signedXml: out });
+  } catch (err: any) {
+    console.error("sign-xml-xades error:", err);
+    return json(500, {
+      error: "Failed to sign XML",
+      details: String(err?.message || err),
+    });
+  }
+};

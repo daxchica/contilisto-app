@@ -42,6 +42,9 @@ export async function createEntity(params: {
     address: params.address?.trim() ?? "",
     phone: params.phone?.trim() ?? "",
     email: params.email?.trim() ?? "",
+
+    obligadoContabilidad: true,
+    
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

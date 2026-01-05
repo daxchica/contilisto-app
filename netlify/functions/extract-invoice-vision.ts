@@ -22,7 +22,7 @@ interface ParsedInternal {
   invoiceDate: string;
   invoice_number: string;
   concepto: string;
-  subtotal12: number;
+  subtotal15: number;
   subtotal0: number;
   iva: number;
   total: number;
@@ -83,7 +83,7 @@ function amountFromPatterns(normalized: string, patterns: string[]): number {
 function detectTotals(text: string) {
   const normalized = text.replace(/\s+/g, " ").toUpperCase();
 
-  const subtotal12 = amountFromPatterns(normalized, [
+  const subtotal15 = amountFromPatterns(normalized, [
     "SUBTOTAL\\s+IVA\\s*1[25]%",
     "SUBTOTAL\\s+1[25]%",
   ]);
@@ -100,15 +100,15 @@ function detectTotals(text: string) {
   if (m) total = parseFloat(m[1].replace(",", "."));
 
   if (iva === 0 && total > 0) {
-    const calc = total - subtotal12 - subtotal0;
+    const calc = total - subtotal15 - subtotal0;
     if (calc > 0) iva = parseFloat(calc.toFixed(2));
   }
 
-  if (total === 0 && (subtotal12 || subtotal0 || iva)) {
-    total = parseFloat((subtotal12 + subtotal0 + iva).toFixed(2));
+  if (total === 0 && (subtotal15 || subtotal0 || iva)) {
+    total = parseFloat((subtotal15 + subtotal0 + iva).toFixed(2));
   }
 
-  return { subtotal12, subtotal0, iva, total };
+  return { subtotal15, subtotal0, iva, total };
 }
 
 // ---------------------------------------------------------------------------
@@ -156,15 +156,15 @@ function buildAccounting(entry: ParsedInternal) {
     lines.push({ accountCode: expenseCode, accountName: expenseName, debit: entry.subtotal0, credit: 0 });
   }
 
-  if (entry.subtotal12 > 0) {
-    lines.push({ accountCode: expenseCode, accountName: expenseName, debit: entry.subtotal12, credit: 0 });
+  if (entry.subtotal15 > 0) {
+    lines.push({ accountCode: expenseCode, accountName: expenseName, debit: entry.subtotal15, credit: 0 });
   }
 
-  if (entry.subtotal12 > 0 && entry.iva > 0) {
+  if (entry.subtotal15 > 0 && entry.iva > 0) {
     lines.push({ accountCode: "133010102", accountName: "IVA crédito en compras", debit: entry.iva, credit: 0 });
   }
 
-  const total = parseFloat((entry.subtotal12 + entry.subtotal0 + entry.iva).toFixed(2));
+  const total = parseFloat((entry.subtotal15 + entry.subtotal0 + entry.iva).toFixed(2));
   if (total > 0) {
     lines.push({ accountCode: "201030102", accountName: "Proveedores locales", debit: 0, credit: total });
   }
@@ -188,7 +188,7 @@ export const handler: Handler = async (event) => {
     const uint = new Uint8Array(Buffer.from(base64, "base64"));
     const ocrText = await extractText(uint);
 
-    const { subtotal12, subtotal0, iva, total } = detectTotals(ocrText);
+    const { subtotal15, subtotal0, iva, total } = detectTotals(ocrText);
 
     // 🔒 LIMITAR TEXTO PARA GPT
     const aiText = ocrText.slice(0, 6000);
@@ -225,7 +225,7 @@ ${aiText}
       invoiceDate: s(p.invoiceDate),
       invoice_number: s(p.invoice_number),
       concepto: s(p.concepto),
-      subtotal12,
+      subtotal15,
       subtotal0,
       iva,
       total,

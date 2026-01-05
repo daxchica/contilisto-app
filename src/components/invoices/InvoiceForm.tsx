@@ -1,428 +1,324 @@
 // src/components/invoices/InvoiceForm.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { createInvoice } from "@/services/invoiceService";
+import React, { useMemo, useState } from "react";
+import { getAuth } from "firebase/auth";
+
+import InvoiceItemsTable from "@/components/invoices/InvoiceItemsTable";
+
+import type { InvoiceItem, InvoiceTotals, TaxRate } from "@/types/Invoice";
 import type { Contact } from "@/types/Contact";
-import type { Invoice, IdentificationType } from "@/types/Invoice";
-import type { InvoiceItem } from "@/types/InvoiceItem";
+import type { CreateInvoiceInput } from "@/services/invoiceService";
+import { createInvoice } from "@/services/invoiceService";
 
-type Props = {
-  entityId: string;
-  contacts: Contact[]; // contactos con rol cliente o ambos
-  onSaved?: (invoice: Invoice) => void;
-};
+/* ---------------------------------------------------
+ Helpers
+--------------------------------------------------- */
+const round2 = (v: number) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+const asNum = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const money = (v: number) => round2(v).toFixed(2);
 
-const IVA_RATE = 0.12;
+// Always return a number (never undefined) -> avoids TS + Firestore issues
+const nz = (v?: number) => round2(v ?? 0);
 
-function round2(n: number) {
-  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
-}
-function money(n: number) {
-  return round2(n).toFixed(2);
-}
-
-function safeIdType(v: unknown): IdentificationType {
-  if (v === "cedula" || v === "ruc" || v === "pasaporte" || v === "consumidor_final") return v;
-  return "cedula";
+function normalizeIdType(t?: Contact["identificationType"]): "ruc" | "cedula" | "pasaporte" {
+  if (t === "pasaporte") return "pasaporte";
+  if (t === "cedula" || t === "consumidor_final") return "cedula";
+  return "ruc";
 }
 
-function computeLine(quantity: number, unitPrice: number, ivaRate: number) {
-  const q = Number.isFinite(quantity) ? quantity : 0;
-  const p = Number.isFinite(unitPrice) ? unitPrice : 0;
-  const rate = Number.isFinite(ivaRate) ? ivaRate : 0;
-
-  const subtotal = round2(q * p);
-  const ivaValue = round2(subtotal * rate);
-  const total = round2(subtotal + ivaValue);
-
-  return { subtotal, ivaValue, total };
-}
-
-function makeId() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c: any = globalThis.crypto;
-    if (c?.randomUUID) return c.randomUUID();
-  } catch {}
-  return `it_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
-function emptyItem(): InvoiceItem {
-  const base = computeLine(1, 0, IVA_RATE);
+function normalizeCustomerDisplay(customer: Contact) {
+  const isCF = customer.identificationType === "consumidor_final";
   return {
-    id: makeId(),
-    description: "",
-    quantity: 1,
-    unitPrice: 0,
-    ivaRate: IVA_RATE,
-    subtotal: base.subtotal,
-    ivaValue: base.ivaValue,
-    total: base.total,
+    contactId: customer.id,
+    identificationType: normalizeIdType(customer.identificationType),
+    identification: isCF ? "9999999999999" : (customer.identification ?? ""),
+    name: isCF ? "CONSUMIDOR FINAL" : (customer.name ?? ""),
+    // IMPORTANT: avoid undefined in Firestore payload
+    email: customer.email ?? "",
+    address: customer.address ?? "",
+    phone: customer.phone ?? "",
   };
 }
 
+/* ---------------------------------------------------
+ SRI-like rows (table look)
+--------------------------------------------------- */
+function SriRow({
+  label,
+  value,
+  bold = false,
+}: {
+  label: string;
+  value: number;
+  bold?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_140px] border-b border-black">
+      <div className={`px-2 py-2 ${bold ? "font-bold" : ""}`}>{label}</div>
+      <div className={`px-2 py-2 text-right border-l border-black ${bold ? "font-bold" : ""}`}>
+        {money(value)}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------
+ Component
+--------------------------------------------------- */
+type Props = {
+  entityId: string;
+  contacts: Contact[];
+  onSaved?: (saved: any) => void;
+};
+
 export default function InvoiceForm({ entityId, contacts, onSaved }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
+  const user = getAuth().currentUser;
 
-  // Header
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [contactId, setContactId] = useState("");
+  const [items, setItems] = useState<InvoiceItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // ✅ Se mantiene para UI, pero NO se envía en el payload (tu Invoice no lo tiene)
-  const [sequential, setSequential] = useState("");
-
-  const [contactId, setContactId] = useState<string>("");
-
-  // Items
-  const [items, setItems] = useState<InvoiceItem[]>([emptyItem()]);
-
-  useEffect(() => {
-    if (!contactId && contacts.length === 1) setContactId(contacts[0].id);
-  }, [contacts, contactId]);
-
-  const selectedContact = useMemo(
+  const customer = useMemo(
     () => contacts.find((c) => c.id === contactId) ?? null,
     [contacts, contactId]
   );
 
-  function normalizeItem(it: InvoiceItem): InvoiceItem {
-    const line = computeLine(
-      Number(it.quantity) || 0,
-      Number(it.unitPrice) || 0,
-      Number(it.ivaRate) || 0
-    );
-    return { ...it, ...line };
-  }
+  /* ---------------------------------------------------
+   Totals — EXACT SRI STRUCTURE
+   (Never undefined; ready for Firestore)
+  --------------------------------------------------- */
+  const totals: InvoiceTotals = useMemo(() => {
+    const subtotalsByRate: Record<TaxRate, number> = { 0: 0, 12: 0, 15: 0 };
+    const ivaByRate: Record<12 | 15, number> = { 12: 0, 15: 0 };
 
-  function updateItem(id: string, patch: Partial<InvoiceItem>) {
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? normalizeItem({ ...it, ...patch }) : it))
-    );
-  }
+    let subtotalSinImpuestos = 0;
+    let discountTotal = 0;
 
-  function addItem() {
-    setItems((prev) => [...prev, emptyItem()]);
-  }
+    for (const it of items) {
+      if (!it.description?.trim()) continue;
 
-  function removeItem(id: string) {
-    setItems((prev) => {
-      const next = prev.filter((it) => it.id !== id);
-      return next.length ? next : [emptyItem()];
-    });
-  }
+      const rate = (asNum(it.ivaRate) as TaxRate) ?? 0;
+      const base = round2(asNum(it.subtotal));
+      const iva = round2(asNum(it.ivaValue));
+      const disc = round2(asNum(it.discount));
 
-  const totals = useMemo(() => {
-    const nonEmpty = items.filter((it) => (it.description ?? "").trim().length > 0);
+      subtotalsByRate[rate] = round2(subtotalsByRate[rate] + base);
+      subtotalSinImpuestos = round2(subtotalSinImpuestos + base);
 
-    let subtotal0 = 0;
-    let subtotal12 = 0;
-    let iva = 0;
+      if (rate === 12 || rate === 15) {
+        ivaByRate[rate] = round2(ivaByRate[rate] + iva);
+      }
 
-    for (const it of nonEmpty) {
-      const rate = Number(it.ivaRate ?? 0) || 0;
-      const lineSubtotal = Number(it.subtotal ?? 0) || 0;
-      const lineIva = Number(it.ivaValue ?? 0) || 0;
-
-      if (rate > 0) subtotal12 += lineSubtotal;
-      else subtotal0 += lineSubtotal;
-
-      iva += lineIva;
+      discountTotal = round2(discountTotal + disc);
     }
 
-    subtotal0 = round2(subtotal0);
-    subtotal12 = round2(subtotal12);
-    iva = round2(iva);
-
-    const descuento = 0;
-    const total = round2(subtotal0 + subtotal12 - descuento + iva);
+    const total = round2(subtotalSinImpuestos + ivaByRate[12] + ivaByRate[15]);
 
     return {
-      subtotal0,
-      subtotal12,
-      descuento,
-      iva,
+      subtotalsByRate,
+
+      subtotalNoObjetoIVA: 0,
+      subtotalExentoIVA: 0,
+      subtotalSinImpuestos,
+
+      discountTotal,
+      ice: 0,
+      ivaByRate,
+      irbpnr: 0,
+      propina: 0,
+
       total,
-      taxes: [
-        ...(subtotal12 > 0
-          ? [
-              {
-                code: "iva" as const,
-                rate: 12 as const,
-                base: subtotal12,
-                amount: iva,
-              },
-            ]
-          : []),
-      ],
     };
   }, [items]);
 
-  function validate(): string | null {
-    if (!entityId) return "Empresa no válida. Selecciona una empresa.";
-    if (!issueDate) return "Selecciona la fecha de emisión.";
-    if (!selectedContact) return "Selecciona un cliente.";
+  const validItems = useMemo(
+    () => (items ?? []).filter((i) => i.description?.trim().length > 0),
+    [items]
+  );
 
-    // En tu Contact.ts email y address son obligatorios (SRI)
-    if (!selectedContact.email?.trim()) 
-        return "El contacto no tiene email. (Obligatorio SRI)";
-
-    if (!selectedContact.address?.trim()) 
-        return "El contacto no tiene dirección. (Obligatorio SRI)";
-
-    const nonEmptyItems = items.filter(
-        (it) => it.description.trim().length > 0
-    );
-    
-    if (nonEmptyItems.length === 0)
-        return "Agrega al menos un item";
-    return "Agrega al menos un ítem con descripción.";
-
-  return null;
-}
-
+  /* ---------------------------------------------------
+   Save draft (avoid undefined fields)
+  --------------------------------------------------- */
   async function handleSaveDraft() {
-    if (loading) return;
+    if (!entityId) return alert("Selecciona una empresa.");
+    if (!user?.uid) return alert("Usuario no autenticado.");
+    if (!customer) return alert("Selecciona un cliente.");
+    if (!issueDate) return alert("Selecciona la fecha de emisión.");
+    if (validItems.length === 0) return alert("Agrega al menos un ítem con descripción.");
 
-    const msg = validate();
-    if (msg) {
-      setError(msg);
-      return;
-    }
+    const payload: CreateInvoiceInput = {
+      type: "FACTURA",
+      issueDate,
+      currency: "USD",
 
+      customer: normalizeCustomerDisplay(customer),
+
+      items: validItems,
+      totals,
+
+      note: "",
+    };
+
+    setLoading(true);
     try {
-      setLoading(true);
-      setError("");
-
-      const normalizedItems = items
-        .filter((it) => (it.description ?? "").trim().length > 0)
-        .map((it) =>
-          normalizeItem({
-            ...it,
-            quantity: Number(it.quantity) || 0,
-            unitPrice: Number(it.unitPrice) || 0,
-            ivaRate: Number(it.ivaRate ?? 0) || 0,
-          })
-        );
-
-      const c = selectedContact!;
-
-      const snapshot = {
-        name: c.name,
-        identification: c.identification,
-        identificationType: safeIdType(c.identificationType),
-        email: c.email,
-        phone: c.phone ?? "",
-        address: c.address,
-      };
-
-      // ✅ IMPORTANTE:
-      // No enviamos "sequential" porque tu tipo Invoice NO lo incluye.
-      // Si quieres guardarlo, debes agregarlo al type Invoice y al servicio.
-      const payload: Omit<
-        Invoice, 
-        "id" | "entityId" | "createdAt" | "createdBy" | "status"
-      > = {
-        invoiceType: "invoice",
-        issueDate,
-        sequential: sequential.trim() || undefined,
-        contactId: c.id,
-        contactSnapshot: snapshot,
-        currency: "USD",
-        items: normalizedItems,
-        totals,
-      };
-
-      const created = await createInvoice(entityId, payload);
-      onSaved?.(created);
-    } catch (e: any) {
+      const saved = await createInvoice(entityId, user.uid, payload);
+      onSaved?.(saved);
+      alert(`✅ Factura guardada (BORRADOR)\nID: ${saved.id}`);
+    } catch (e) {
       console.error(e);
-      setError(e?.message ?? "No se pudo guardar la factura.");
+      alert("❌ No se pudo grabar la factura.");
     } finally {
       setLoading(false);
     }
   }
 
+  /* ---------------------------------------------------
+   Render (LOCKED SRI PRINT LOOK on desktop)
+   IMPORTANT: Totals box is BETWEEN Items table and Actions.
+  --------------------------------------------------- */
   return (
-    <div className="bg-white rounded-2xl border shadow-sm p-4 sm:p-6 space-y-5">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+      <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Nueva Factura</h2>
-          <p className="text-sm text-gray-500">La factura se guardará como borrador.</p>
+          <h2 className="text-2xl font-bold">Nueva Factura</h2>
+          <p className="text-sm text-gray-500">Se guardará como borrador.</p>
         </div>
-
-        <button
-          type="button"
-          onClick={handleSaveDraft}
-          disabled={loading}
-          className="px-6 py-3 rounded-xl bg-blue-700 text-white font-semibold hover:bg-blue-800 disabled:opacity-50"
-        >
-          {loading ? "Guardando..." : "Guardar borrador"}
-        </button>
       </div>
 
-      {error && (
-        <div className="rounded-xl bg-red-50 text-red-700 p-3 text-sm border">
-          {error}
-        </div>
-      )}
-
-      {/* Top fields */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Date + Client */}
+      <div className="grid md:grid-cols-2 gap-4">
         <label className="text-sm">
           <span className="block text-gray-600 font-medium mb-1">Fecha de emisión</span>
           <input
             type="date"
             value={issueDate}
             onChange={(e) => setIssueDate(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border rounded px-4 py-2 w-full"
           />
         </label>
 
-        <label className="text-sm sm:col-span-2">
-          <span className="block text-gray-600 font-medium mb-1">Secuencial (opcional)</span>
-          <input
-            type="text"
-            value={sequential}
-            onChange={(e) => setSequential(e.target.value)}
-            placeholder="001-001-000000123"
-            className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <span className="block mt-1 text-xs text-gray-500">
-            Puedes dejarlo vacío mientras sea borrador (se asignará en fase SRI).
-          </span>
-        </label>
-      </div>
-
-      {/* Contact */}
-      <div className="grid sm:grid-cols-2 gap-4">
         <label className="text-sm">
-          <span className="font-medium text-gray-600">Cliente</span>
+          <span className="block text-gray-600 font-medium mb-1">Cliente</span>
           <select
             value={contactId}
             onChange={(e) => setContactId(e.target.value)}
-            className="mt-1 w-full px-4 py-3 rounded-xl border bg-white"
+            className="border rounded px-4 py-2 w-full"
           >
-            <option value="">Selecciona un cliente…</option>
+            <option value="">Selecciona cliente</option>
             {contacts.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name || "Sin nombre"} — {c.identification || "Sin ID"}
+                {c.name ?? "Sin nombre"} — {c.identification ?? "Sin ID"}
               </option>
             ))}
           </select>
         </label>
-
-        <div className="rounded-xl bg-gray-50 border p-4 text-sm">
-          <p className="font-semibold text-gray-800">Datos del contacto</p>
-          <p>Email: {selectedContact?.email ?? "—"}</p>
-          <p>Teléfono: {selectedContact?.phone ?? "—"}</p>
-          <p>Dirección: {selectedContact?.address ?? "—"}</p>
-        </div>
       </div>
 
       {/* Items */}
-      <div className="rounded-2xl border overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-          <p className="font-semibold text-gray-800">Ítems</p>
-          <button
-            type="button"
-            onClick={addItem}
-            className="px-3 py-2 rounded-lg bg-white border text-sm font-semibold hover:bg-gray-50"
-          >
-            + Agregar ítem
-          </button>
-        </div>
+      <InvoiceItemsTable items={items} onChange={setItems} />
 
-        <div className="divide-y">
-          {items.map((it) => (
-            <div key={it.id} className="p-4 grid grid-cols-1 sm:grid-cols-12 gap-3">
-              <div className="sm:col-span-5">
-                <label className="text-xs text-gray-500 font-medium">Descripción</label>
-                <input
-                  value={it.description}
-                  onChange={(e) => updateItem(it.id, { description: e.target.value })}
-                  placeholder="Producto/Servicio"
-                  className="mt-1 w-full px-3 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+      {/* =================================================
+         SRI PRINT-STYLE BLOCK (LEFT info + payment | RIGHT totals)
+         MUST be visible between items table and buttons.
+      ================================================= */}
+      <div className="grid lg:grid-cols-[1fr_460px] gap-4 items-start">
+        {/* LEFT SIDE (Información Adicional + Forma de pago) */}
+        <div className="space-y-3">
+          {/* Información Adicional */}
+          <div className="bg-white border border-black rounded-none">
+            <div className="border-b border-black text-center font-medium py-2">
+              Información Adicional
+            </div>
+            <div className="p-3 text-sm space-y-2">
+              <div className="grid grid-cols-[110px_1fr] gap-2">
+                <div className="font-medium">Teléfono:</div>
+                <div>{customer?.phone?.trim() ? customer.phone : "-"}</div>
               </div>
-
-              <div className="sm:col-span-2">
-                <label className="text-xs text-gray-500 font-medium">Cantidad</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={it.quantity}
-                  onChange={(e) => updateItem(it.id, { quantity: Number(e.target.value) })}
-                  className="mt-1 w-full px-3 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="grid grid-cols-[110px_1fr] gap-2">
+                <div className="font-medium">Email:</div>
+                <div>{customer?.email?.trim() ? customer.email : "-"}</div>
               </div>
-
-              <div className="sm:col-span-2">
-                <label className="text-xs text-gray-500 font-medium">Precio</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={it.unitPrice}
-                  onChange={(e) => updateItem(it.id, { unitPrice: Number(e.target.value) })}
-                  className="mt-1 w-full px-3 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="text-xs text-gray-500 font-medium">IVA</label>
-                <select
-                  value={String(it.ivaRate ?? 0)}
-                  onChange={(e) => updateItem(it.id, { ivaRate: Number(e.target.value) })}
-                  className="mt-1 w-full px-3 py-3 rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="0">0%</option>
-                  <option value={String(IVA_RATE)}>12%</option>
-                </select>
-              </div>
-
-              <div className="sm:col-span-1 flex sm:items-end">
-                <button
-                  type="button"
-                  onClick={() => removeItem(it.id)}
-                  className="w-full sm:w-auto mt-5 sm:mt-0 px-3 py-3 rounded-xl border text-red-600 font-semibold hover:bg-red-50"
-                  aria-label="Eliminar ítem"
-                >
-                  🗑️
-                </button>
-              </div>
-
-              <div className="sm:col-span-12 text-xs text-gray-500">
-                Subtotal: ${money(it.subtotal)} · IVA: ${money(it.ivaValue)} · Total: ${money(it.total)}
+              <div className="grid grid-cols-[110px_1fr] gap-2">
+                <div className="font-medium">Dirección:</div>
+                <div>{customer?.address?.trim() ? customer.address : "-"}</div>
               </div>
             </div>
-          ))}
+          </div>
+
+          {/* Forma de pago */}
+          <div className="bg-white border border-black rounded-none">
+            <div className="grid grid-cols-[1fr_180px]">
+              <div className="border-b border-black text-center font-medium py-2">
+                Forma de pago
+              </div>
+              <div className="border-b border-l border-black text-center font-medium py-2">
+                Valor
+              </div>
+            </div>
+            <div className="grid grid-cols-[1fr_180px]">
+              <div className="p-3 text-sm border-b border-black">
+                20 - OTROS CON UTILIZACION DEL SISTEMA FINANCIERO
+              </div>
+              <div className="p-3 text-sm text-right border-l border-b border-black">
+                {money(totals.total)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT SIDE (Totals Box EXACT SRI ORDER) */}
+        <div className="bg-white border border-black rounded-none">
+          <SriRow label="SUBTOTAL 15%" value={nz(totals.subtotalsByRate[15])} />
+          <SriRow label="SUBTOTAL 12%" value={nz(totals.subtotalsByRate[12])} />
+          <SriRow label="SUBTOTAL 0%" value={nz(totals.subtotalsByRate[0])} />
+
+          <SriRow label="SUBTOTAL NO OBJETO DE IVA" value={nz(totals.subtotalNoObjetoIVA)} />
+          <SriRow label="SUBTOTAL EXENTO DE IVA" value={nz(totals.subtotalExentoIVA)} />
+          <SriRow label="SUBTOTAL SIN IMPUESTOS" value={nz(totals.subtotalSinImpuestos)} />
+
+          <SriRow label="TOTAL DESCUENTO" value={nz(totals.discountTotal)} />
+          <SriRow label="ICE" value={nz(totals.ice)} />
+
+          <SriRow label="IVA 15%" value={nz(totals.ivaByRate[15])} />
+          <SriRow label="IVA 12%" value={nz(totals.ivaByRate[12])} />
+
+          <SriRow label="IRBPNR" value={nz(totals.irbpnr)} />
+          <SriRow label="PROPINA" value={nz(totals.propina)} />
+
+          <SriRow label="VALOR TOTAL" value={nz(totals.total)} bold />
+
+          {/* Optional print-style footer box (like the sample) */}
+          <div className="border-t border-black">
+            <div className="grid grid-cols-[1fr_140px]">
+              <div className="px-2 py-2">VALOR TOTAL SIN SUBSIDIO</div>
+              <div className="px-2 py-2 text-right border-l border-black">{money(0)}</div>
+            </div>
+            <div className="grid grid-cols-[1fr_140px]">
+              <div className="px-2 py-2">
+                AHORRO POR SUBSIDIO:
+                <div className="text-xs">(Incluye IVA cuando corresponda)</div>
+              </div>
+              <div className="px-2 py-2 text-right border-l border-black">{money(0)}</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Totals */}
-      <div className="rounded-2xl border bg-white p-4 sm:p-5">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Subtotal 0%</span>
-          <span className="font-semibold text-gray-900">${money(totals.subtotal0)}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm mt-2">
-          <span className="text-gray-600">Subtotal 12%</span>
-          <span className="font-semibold text-gray-900">${money(totals.subtotal12)}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm mt-2">
-          <span className="text-gray-600">Descuento</span>
-          <span className="font-semibold text-gray-900">${money(totals.descuento)}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm mt-2">
-          <span className="text-gray-600">IVA</span>
-          <span className="font-semibold text-gray-900">${money(totals.iva)}</span>
-        </div>
-        <div className="h-px bg-gray-200 my-3" />
-        <div className="flex items-center justify-between">
-          <span className="text-gray-900 font-semibold">Total</span>
-          <span className="text-xl font-extrabold text-gray-900">${money(totals.total)}</span>
-        </div>
+      {/* Actions (must stay BELOW totals box) */}
+      <div className="flex justify-end gap-3">
+        <button type="button" className="px-4 py-2 border rounded">
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          disabled={loading || validItems.length === 0}
+          onClick={handleSaveDraft}
+          className="px-6 py-2 bg-blue-700 text-white rounded disabled:opacity-50"
+        >
+          {loading ? "Guardando..." : "Guardar Borrador"}
+        </button>
       </div>
     </div>
   );

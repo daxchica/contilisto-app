@@ -22,6 +22,13 @@ export default function Landing() {
     setLoginOpen(false);
   }, []);
 
+  const scrollToPricing = useCallback(() => {
+  setMobileOpen(false);
+  document
+    .getElementById("precios")
+    ?.scrollIntoView({ behavior: "smooth" });
+}, []);
+
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       {/* ============================================================
@@ -59,12 +66,12 @@ export default function Landing() {
                 Iniciar sesión
               </button>
 
-              <Link
-                to="/register"
+              <button
+                onClick={scrollToPricing}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                Crear cuenta
-              </Link>
+                Crear Cuenta
+              </button>
             </nav>
 
             {/* Mobile button */}
@@ -95,13 +102,13 @@ export default function Landing() {
                     Iniciar sesión
                   </button>
 
-                  <Link
+                  <button
                     to="/register"
-                    onClick={() => setMobileOpen(false)}
+                    onClick={scrollToPricing}
                     className="text-center text-sm text-blue-700 font-medium"
                   >
                     Crear cuenta
-                  </Link>
+                  </button>
                 </div>
               </div>
             </div>
@@ -144,12 +151,12 @@ export default function Landing() {
                  * CTA DESKTOP
                  * ==================================================== */}
                 <div className="hidden md:flex mt-8 gap-4">
-                  <Link
-                    to="/register"
+                  <button
+                    onClick={scrollToPricing}
                     className="px-8 py-3 bg-blue-600 text-white rounded-xl text-lg font-semibold hover:bg-blue-700"
                   >
                     Crear Cuenta Gratis
-                  </Link>
+                  </button>
 
                   <button
                     onClick={openLogin}
@@ -170,12 +177,12 @@ export default function Landing() {
                     Iniciar sesión
                   </button>
 
-                  <Link
-                    to="/register"
+                  <button
+                    onClick={scrollToPricing}
                     className="block w-full py-4 text-center border rounded-xl text-lg font-semibold"
                   >
                     Crear Cuenta Gratis
-                  </Link>
+                  </button>
 
                   <p className="text-sm text-gray-500 text-center">
                     Sin tarjeta de crédito. Prueba gratuita del Plan Estudiante.

@@ -2,7 +2,6 @@
 
 {
   "compilerOptions": {
-    "forceConsistentCasingInFileNames": true,
     "target": "ESNext",
     "lib": ["DOM", "ESNext"],
     "module": "ESNext",
@@ -14,16 +13,18 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["@netlify/functions"],
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "baseUrl": ".",
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
     "paths": {
       "@/*": ["src/*"]
     }
   },
   "include": [
-    "src",
-    "netlify/functions"
-, "netlify/functions_disabled/createCheckoutSession.ts", "netlify/functions_disabled/stripeWebhook.ts"  ],
+    "src/**/*",
+    "netlify/functions/**/*.ts",
+    "netlify/functions_disabled/**/*.ts" ],
   "exclude": [
     "node_modules",
     "dist"

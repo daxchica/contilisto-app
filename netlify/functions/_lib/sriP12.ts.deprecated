@@ -1,0 +1,35 @@
+import forge from "node-forge";
+
+export async function extractP12ToPem(params: {
+  p12Base64: string;
+  password: string;
+}): Promise<{ certPem: string; keyPkcs8Pem: string }> {
+  const { p12Base64, password } = params;
+
+  const der = forge.util.decode64(p12Base64);
+  const asn1 = forge.asn1.fromDer(der);
+  const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, false, password);
+
+  // cert
+  const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
+  if (!certBags?.length) throw new Error("No cert found in P12");
+  const certPem = forge.pki.certificateToPem(certBags[0].cert);
+
+  // key
+  const keyBags =
+    p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] ||
+    p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag];
+
+  if (!keyBags?.length) throw new Error("No private key found in P12");
+
+  const privateKey = keyBags[0].key;
+  const keyPkcs8Asn1 = forge.pki.wrapRsaPrivateKey(forge.pki.privateKeyToAsn1(privateKey));
+  const keyPkcs8Der = forge.asn1.toDer(keyPkcs8Asn1).getBytes();
+  const keyPkcs8B64 = forge.util.encode64(keyPkcs8Der);
+  const keyPkcs8Pem =
+    `-----BEGIN PRIVATE KEY-----\n` +
+    keyPkcs8B64.match(/.{1,64}/g)!.join("\n") +
+    `\n-----END PRIVATE KEY-----\n`;
+
+  return { certPem, keyPkcs8Pem };
+}

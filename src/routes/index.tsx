@@ -34,6 +34,7 @@ import AuditLogs from "@/pages/admin/AuditLogs";
 
 import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 import ContactsPage from "@/pages/ContactsPage";
+import SriSettingsPage from "@/pages/SriSettingsPage";
 
 export default function AppRoutes() {
   return (
@@ -56,6 +57,7 @@ export default function AppRoutes() {
       <Route path="/impuestos" element={<AppLayout><Declaraciones /></AppLayout>}/>
       <Route path="/flujo-caja" element={<AppLayout><FlujoCaja/></AppLayout>}/>
       <Route path="/empresas" element={ <AppLayout><CompaniesPage/></AppLayout>}/>
+      <Route path="/configuracionSri" element={ <AppLayout><SriSettingsPage/></AppLayout>}/>
       <Route path="/app" element={<AppLayout><CompaniesPage/></AppLayout>}/>
       {/* =========================
          ACCOUNTING (NAVBAR ONLY HERE) - AccountingLayout

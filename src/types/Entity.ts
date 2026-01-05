@@ -18,9 +18,14 @@ export interface Entity {
   name: string;           // Nombre de la empresa
   type: EntityType;       // ✅ Debe estar presente
   
+  email?: string;
   address?: string;
   phone?: string;
-  email?: string;
+  
+  obligadoContabilidad?: boolean;
+  estab?: string;
+  ptoEmi?: string;
+  ambienteSri?: 1 | 2;
 
   createdAt: number;      // timestamp en milisegundos
   updatedAt?: number;

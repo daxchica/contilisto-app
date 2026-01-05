@@ -1,5 +1,3 @@
-# netlify.toml
-
 [build]
   command = "pip install -r requirements.txt && npm run build"
   publish = "dist"                         # Carpeta de salida del build (vite build)
@@ -19,7 +17,15 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["openai", "pdfjs-dist"]
+  external_node_modules = [
+    "openai", 
+    "pdfjs-dist",
+    "pdfjs-extract",
+    "node-forge",
+    "xml-crypto",
+    "@xmldom/xmldom"
+    
+  ]
   included_files = [
     "node_modules/pdfjs-dist/legacy/build/pdf.worker.js",
     "node_modules/pdfjs-dist/legacy/build/pdf.js"
@@ -27,5 +33,7 @@
 
 [build.environment]
   PYTHON_VERSION = "3.10"
+  NODE_VERSION = "20"
   PIP_NO_CACHE_DIR = "off"
   PIP_DISABLE_PIP_VERSION_CHECK = "1"
+

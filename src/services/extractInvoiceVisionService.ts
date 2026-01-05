@@ -11,7 +11,7 @@ export interface ExtractedInvoiceResponse {
   buyerName?: string;
   invoiceDate: string;
   invoice_number: string;
-  subtotal12: number;
+  subtotal15: number;
   subtotal0: number;
   iva: number;
   total: number;

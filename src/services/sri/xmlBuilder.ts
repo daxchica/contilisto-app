@@ -59,11 +59,8 @@ export interface InvoiceForSri {
   currency?: string;
   items: InvoiceItem[];
 
-  subtotal0?: number;
-  subtotal12?: number;
-  subtotal15?: number;
-  iva12?: number;
-  iva15?: number;
+  subtotalsByRate?: Partial<Record<0 | 12 | 15, number>>;
+  ivaByRate?: Partial<Record<12 | 15 , number>>;
   total?: number;
 
   sequential: string;
@@ -85,7 +82,7 @@ export interface SriInvoiceXmlParams {
 
 export interface SriInvoiceXmlResult {
   xml: string;
-  accessKey: string;
+  claveAcceso: string;
 }
 
 // ============================================================================
@@ -108,15 +105,14 @@ export function generateSriInvoiceXmlV2(
   // 1) Totales
   const totals = calculateTotals(invoice.items);
 
-  const subtotal0 = invoice.subtotal0 ?? totals.subtotal0;
-  const subtotal12 = invoice.subtotal12 ?? totals.subtotal12;
-  const subtotal15 = invoice.subtotal15 ?? totals.subtotal15;
-  const iva12 = invoice.iva12 ?? totals.iva12;
-  const iva15 = invoice.iva15 ?? totals.iva15;
+  const subtotalsByRate =
+    invoice.subtotalsByRate ?? totals.subtotalsByRate;
+
+  const ivaByRate =
+    invoice.ivaByRate ?? totals.ivaByRate;
 
   const total =
-    invoice.total ??
-    subtotal0 + subtotal12 + subtotal15 + iva12 + iva15;
+    invoice.total ?? totals.total;
 
   // 2) Formato de fechas
   const dateForKey = formatDate(invoice.issueDate, "DDMMAAAA");
@@ -141,11 +137,11 @@ export function generateSriInvoiceXmlV2(
     emissionType;
 
   const checkDigit = calculateModulo11Digit(baseKey);
-  const accessKey = baseKey + checkDigit;
+  const claveAcceso = baseKey + checkDigit;
 
   // 5) Construir XML
   const xml = buildFacturaXml({
-    accessKey,
+    claveAcceso,
     documentType,
     environment,
     emissionType,
@@ -153,15 +149,12 @@ export function generateSriInvoiceXmlV2(
     client,
     invoice,
     dateForXml,
-    subtotal0,
-    subtotal12,
-    subtotal15,
-    iva12,
-    iva15,
+    subtotalsByRate,
+    ivaByRate,
     total,
   });
 
-  return { xml, accessKey };
+  return { xml, claveAcceso };
 }
 
 // ============================================================================
@@ -169,26 +162,29 @@ export function generateSriInvoiceXmlV2(
 // ============================================================================
 
 function calculateTotals(items: InvoiceItem[]) {
-  let subtotal0 = 0;
-  let subtotal12 = 0;
-  let subtotal15 = 0;
+  const subtotalsByRate: Partial<Record<0 | 12 | 15, number>> = {};
+  const ivaByRate: Partial<Record<12 | 15, number>> = {};
+
+  let total = 0;
 
   for (const item of items) {
-    const base = item.quantity * item.unitPrice - (item.discount ?? 0);
+    const base = round2(item.quantity * item.unitPrice - (item.discount ?? 0));
+    const rate = item.ivaRate;
 
-    if (item.ivaRate === 12) subtotal12 += base;
-    else if (item.ivaRate === 15) subtotal15 += base;
-    else subtotal0 += base;
+    subtotalsByRate[rate] = round2((subtotalsByRate[rate] ?? 0) + base);
+
+    if (rate !== 0) {
+      ivaByRate[rate] = round2((ivaByRate[rate] ?? 0) + base * (rate / 100));
+    }
+
+    total += base + (rate === 0 ? 0 : base * (rate / 100));
   }
 
-  subtotal0 = round2(subtotal0);
-  subtotal12 = round2(subtotal12);
-  subtotal15 = round2(subtotal15);
-
-  const iva12 = round2(subtotal12 * 0.12);
-  const iva15 = round2(subtotal15 * 0.15);
-
-  return { subtotal0, subtotal12, subtotal15, iva12, iva15 };
+  return {
+    subtotalsByRate,
+    ivaByRate,
+    total: round2(total),
+  };
 }
 
 function formatDate(date: Date, format: "DDMMAAAA" | "DD/MM/AAAA") {
@@ -248,7 +244,7 @@ function xmlEscape(v: string | undefined | null) {
 // ============================================================================
 
 interface BuildXmlParams {
-  accessKey: string;
+  claveAcceso: string;
   documentType: string;
   environment: SriEnvironment;
   emissionType: SriEmissionType;
@@ -256,17 +252,14 @@ interface BuildXmlParams {
   client: SriClientInfo;
   invoice: InvoiceForSri;
   dateForXml: string;
-  subtotal0: number;
-  subtotal12: number;
-  subtotal15: number;
-  iva12: number;
-  iva15: number;
+  subtotalsByRate: Partial<Record<0 | 12 | 15, number>>;
+  ivaByRate: Partial<Record<12 | 15, number>>;
   total: number;
 }
 
 function buildFacturaXml(p: BuildXmlParams): string {
   const {
-    accessKey,
+    claveAcceso,
     documentType,
     environment,
     emissionType,
@@ -274,49 +267,41 @@ function buildFacturaXml(p: BuildXmlParams): string {
     client,
     invoice,
     dateForXml,
-    subtotal0,
-    subtotal12,
-    subtotal15,
-    iva12,
-    iva15,
+    subtotalsByRate,
+    ivaByRate,
     total,
   } = p;
 
   const totalSinImpuestos =
-    round2(subtotal0 + subtotal12 + subtotal15);
+    round2(Object.values(subtotalsByRate).reduce((sum, v) => sum + v, 0));
 
   // --------- TOTALCONIMPUESTOS ----------
   const totalImpuestos: string[] = [];
-
-  if (subtotal12 > 0)
+  for (const [rateStr, base] of Object.entries(subtotalsByRate)) {
+    const rate = Number(rateStr) as 0 | 12 | 15;
+  
+  if (rate === 0) {
     totalImpuestos.push(`
       <totalImpuesto>
         <codigo>2</codigo>
         <codigoPorcentaje>2</codigoPorcentaje>
-        <baseImponible>${formatAmount(subtotal12)}</baseImponible>
-        <valor>${formatAmount(iva12)}</valor>
-        <tarifa>12.00</tarifa>
-      </totalImpuesto>`);
-
-  if (subtotal15 > 0)
-    totalImpuestos.push(`
-      <totalImpuesto>
-        <codigo>2</codigo>
-        <codigoPorcentaje>3</codigoPorcentaje>
-        <baseImponible>${formatAmount(subtotal15)}</baseImponible>
-        <valor>${formatAmount(iva15)}</valor>
-        <tarifa>15.00</tarifa>
-      </totalImpuesto>`);
-
-  if (subtotal0 > 0)
-    totalImpuestos.push(`
-      <totalImpuesto>
-        <codigo>2</codigo>
-        <codigoPorcentaje>0</codigoPorcentaje>
-        <baseImponible>${formatAmount(subtotal0)}</baseImponible>
+        <baseImponible>${formatAmount(base)}</baseImponible>
         <valor>0.00</valor>
         <tarifa>0.00</tarifa>
-      </totalImpuesto>`);
+      </totalImpuesto>
+    `);
+} else {
+  totalImpuestos.push(`
+      <totalImpuesto>
+        <codigo>2</codigo>
+        <codigoPorcentaje>${rate === 12 ? "2" : "3"}</codigoPorcentaje>
+        <baseImponible>${formatAmount(base)}</baseImponible>
+        <valor>${formatAmount(ivaByRate[rate] ?? 0)}</valor>
+        <tarifa>${formatAmount(rate)}</tarifa>
+      </totalImpuesto>
+      `);
+    }
+  }
 
   // --------- DETALLES ----------
   const detallesXml = invoice.items
@@ -324,7 +309,7 @@ function buildFacturaXml(p: BuildXmlParams): string {
       const discount = item.discount ?? 0;
       const base = round2(item.quantity * item.unitPrice - discount);
       const ivaRate = item.ivaRate;
-      const ivaValue = round2(base * (ivaRate / 100));
+      const ivaValue = ivaRate === 0 ? 0 : round2(base * (ivaRate / 100));
 
       const codigoPrincipal =
         item.code ?? item.productCode ?? item.sriCode ?? "001";
@@ -387,7 +372,7 @@ function buildFacturaXml(p: BuildXmlParams): string {
     <razonSocial>${xmlEscape(emitter.businessName)}</razonSocial>
     ${emitter.tradeName ? `<nombreComercial>${xmlEscape(emitter.tradeName)}</nombreComercial>` : ""}
     <ruc>${emitter.ruc}</ruc>
-    <claveAcceso>${accessKey}</claveAcceso>
+    <claveAcceso>${claveAcceso}</claveAcceso>
     <codDoc>${documentType}</codDoc>
     <estab>${emitter.estabCode}</estab>
     <ptoEmi>${emitter.emissionPointCode}</ptoEmi>

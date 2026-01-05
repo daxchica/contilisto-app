@@ -1,70 +1,144 @@
 // src/types/Invoice.ts
 
-import type { InvoiceItem } from "./InvoiceItem";
+import type { InvoiceStatus } from "./InvoiceStatus";
 
-export type IdentificationType =
-  | "ruc"
-  | "cedula"
-  | "pasaporte"
-  | "consumidor_final";
+/* ==============================
+   ENUMS / UNIONS
+============================== */
 
-/* ===============================
-   SNAPSHOT DEL CONTACTO
-   (inmutable, para SRI y auditoría)
-================================ */
-export interface InvoiceContactSnapshot {
-  name: string;
+export type InvoiceType = "FACTURA";
+export type TaxRate = 0 | 12 | 15;
+
+export type identificationType = 
+   | "ruc"
+   | "cedula"
+   | "pasaporte"
+   | "consumidor_final";
+
+/* ==============================
+   CUSTOMER
+============================== */
+
+export interface InvoiceCustomer {
+  contactId?: string;
+
+  identificationType: "ruc" | "cedula" | "pasaporte";
   identification: string;
-  identificationType: IdentificationType;
-  email: string;
-  address: string;
+  name: string;
+
+  email?: string;
+  address?: string;
   phone?: string;
 }
 
-/* ===============================
-   TOTALES DE FACTURA
-================================ */
-export interface InvoiceTotals {
-  subtotal0: number;
-  subtotal12: number;
-  descuento: number;
-  iva: number;
+/* ==============================
+   ITEMS
+============================== */
+
+export interface InvoiceItem {
+  id: string; // uuid
+
+  productCode?: string;
+
+  description: string;
+
+  quantity: number;
+  unitPrice: number;
+
+  /** descuento absoluto por línea */
+  discount?: number;
+
+  /** base imponible */
+  subtotal: number;
+
+  ivaRate: TaxRate;
+  ivaValue: number;
+
+  /** subtotal + iva */
   total: number;
 
-  taxes?: {
-    code: "iva";
-    rate: 12;
-    base: number;
-    amount: number;
-  }[];
+  /** contabilidad automática */
+  accountCode?: string;
 }
 
-/* ===============================
-   FACTURA
-================================ */
-export interface Invoice {
-  id: string;
-  entityId: string;
+/* ==============================
+   TOTALS
+============================== */
 
-  /* ===== Identificación ===== */
-  invoiceType: "invoice" | "credit-note" | "retention";
-  sequential?: string; // puede estar vacío en borrador
+export interface InvoiceTotals {
+  subtotalsByRate: Partial<Record<TaxRate, number>>;
+
+  subtotalNoObjetoIVA: number;
+  subtotalExentoIVA: number;
+  subtotalSinImpuestos: number;
+
+  discountTotal: number;
+  ice: number;
+  ivaByRate: Partial<Record<Exclude<TaxRate, 0>, number>>;
+  irbpnr: number;
+  propina: number;
+  
+  total: number;
+}
+
+/* ==============================
+   SRI DATA
+============================== */
+
+export interface InvoiceSri {
+   ambiente: "1" | "2"; // pruebas | producción
+
+   estab: string;
+   ptoEmi: string;
+   secuencial: string;
+
+   claveAcceso?: string;
+
+   authorizationNumber?: string;
+   authorizationDate?: string;
+
+   xml?: string;
+   xmlSigned?: string;
+
+   sriResponse?: unknown;
+   errors?: string[];
+}
+
+/* ==============================
+   MAIN AGGREGATE
+============================== */
+
+export interface Invoice {
+  /** Firestore doc id */
+  id?: string;
+
+  entityId: string;
+  userId: string;
+
+  type: InvoiceType;
+  status: InvoiceStatus;
+
+  /** YYYY-MM-DD */
   issueDate: string;
   dueDate?: string;
 
-  /* ===== Comprador ===== */
-  contactId: string;
-  contactSnapshot: InvoiceContactSnapshot;
+  customer: InvoiceCustomer;
 
-  /* ===== Detalle ===== */
   currency: "USD";
+
   items: InvoiceItem[];
   totals: InvoiceTotals;
 
-  /* ===== Estado ===== */
-  status: "draft" | "issued" | "cancelled";
+  sri?: InvoiceSri;
 
-  /* ===== Auditoría ===== */
+  note?: string;
+  relatedInvoiceId?: string;
+  journalEntryId?: string;
+  
   createdAt: number;
-  createdBy: string;
+  updatedAt: number;
+
+  issuedAt?: number;
+  cancelledAt?: number;
+  cancelReason?: string;
 }

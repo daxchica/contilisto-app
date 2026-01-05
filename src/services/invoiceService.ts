@@ -1,80 +1,144 @@
-// ============================================================================
 // src/services/invoiceService.ts
-// MVP: creación y almacenamiento de facturas en Firestore (estado "draft").
-// La firma y envío al SRI se hará luego desde una Netlify Function / backend.
-// ============================================================================
-
 import { db } from "@/firebase-config";
 import {
   addDoc,
   collection,
   doc,
-  serverTimestamp,
   updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
-import type { Invoice } from "@/types/Invoice";
 
-/**
- * Crea una factura en estado "draft" para una empresa (entityId).
- * No firma ni envía al SRI: eso se hará en una fase 2 desde backend.
- */
+import type { Invoice } from "@/types/Invoice";
+import type { InvoiceStatus } from "@/types/InvoiceStatus";
+
+
+/* ============================================================
+   INPUT TYPE — what the UI is allowed to send
+============================================================ */
+export type CreateInvoiceInput = Omit<
+  Invoice,
+  | "id"
+  | "entityId"
+  | "userId"
+  | "status"
+  | "createdAt"
+  | "updatedAt"
+  | "issuedAt"
+  | "cancelledAt"
+  | "cancelReason"
+>;
+
+/* ============================================================
+   CREATE — Draft Invoice
+   Recommended signature:
+   createInvoice(entityId, userId, payload)
+============================================================ */
 export async function createInvoice(
   entityId: string,
-  data: Omit<
-    Invoice,
-    "id" | "entityId" | "createdAt" | "createdBy" | "status"
-  >
+  userId: string,
+  data: CreateInvoiceInput
 ): Promise<Invoice> {
-  if (!entityId) {
-    throw new Error("entityId es requerido para crear la factura");
-  }
-
-  const colRef = collection(db, "entities", entityId, "invoices");
+  if (!entityId) throw new Error("entityId requerido");
+  if (!userId) throw new Error("userId requerido");
 
   const now = Date.now();
 
-  const docRef = await addDoc(colRef, {
+  const invoiceToSave: Omit<Invoice, "id"> = {
     ...data,
     entityId,
-    status: "draft",        // aún no enviada al SRI
-    createdAt: serverTimestamp(), // timestamp del servidor
-    createdBy: "system",
-  });
-
-  // Devolvemos un objeto Invoice usable en el frontend.
-  // createdAt lo ponemos en "now" para no depender del serverTimestamp.
-  return {
-    id: docRef.id,
-    entityId,
+    userId,
     status: "draft",
     createdAt: now,
-    createdBy: "system",
-    ...data,
-  } as Invoice;
+    updatedAt: now,
+
+    // Defaults SRI draft (luego se asigna real al emitir)
+    sri: data.sri ?? {
+      ambiente: "1",
+      estab: "001",
+      ptoEmi: "001",
+      secuencial: "000000001",
+    },
+  };
+
+  const colRef = collection(db, "entities", entityId, "invoices");
+  const docRef = await addDoc(colRef, {
+    ...invoiceToSave,
+    // si quieres timestamp Firestore además del number:
+    createdAtTs: serverTimestamp(),
+    updatedAtTs: serverTimestamp(),
+  });
+
+  return { ...invoiceToSave, id: docRef.id };
 }
 
+/* ============================================================
+   ISSUE — Move from draft -> pending-sign
+   (La firma p12 NO debe estar en el front)
+============================================================ */
 export async function issueInvoice(
   entityId: string,
   invoiceId: string
 ): Promise<void> {
-  const ref = doc(db, "entities", entityId, "invoices", invoiceId);
+  if (!entityId || !invoiceId) throw new Error("entityId/invoiceId requeridos");
 
-  await updateDoc(ref, {
-    status: "issued",
-    issuedAt: Date.now(), // opcional pero recomendado
+  await updateDoc(doc(db, "entities", entityId, "invoices", invoiceId), {
+    status: "pending-sign" as InvoiceStatus,
+    issuedAt: Date.now(),
+    updatedAt: Date.now(),
+    updatedAtTs: serverTimestamp(),
   });
 }
 
+/* ============================================================
+   CANCEL — Cancel draft (or before SRI)
+============================================================ */
 export async function cancelInvoice(
   entityId: string,
   invoiceId: string,
-  reason?: string
+  reason: string
 ): Promise<void> {
-  const ref = doc(db, "entities", entityId, "invoices", invoiceId);
+  if (!entityId || !invoiceId) throw new Error("entityId/invoiceId requeridos");
 
-  await updateDoc(ref, {
-    status: "cancelled",
+  await updateDoc(doc(db, "entities", entityId, "invoices", invoiceId), {
+    status: "cancelled" as InvoiceStatus,
     cancelledAt: Date.now(),
-    cancelReason: reason ?? null,
+    cancelReason: reason ?? "",
+    updatedAt: Date.now(),
+    updatedAtTs: serverTimestamp(),
   });
+}
+
+
+export async function sendInvoiceToSri(
+  entityId: string,
+  invoiceId: string
+): Promise<SendToSriResponse> {
+  const res = await fetch("/.netlify/functions/send-invoice-to-sri", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entityId, invoiceId }),
+  });
+
+  const text = await res.text();
+
+  let data: SendToSriResponse;
+  
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(text);
+  }
+  
+  if (!res.ok) {
+    throw new Error((data as any)?.error || "Error enviando factura al SRI");
+  }
+
+  return data;
+}
+
+
+export interface SendToSriResponse {
+  claveAcceso: string;
+  estado: "RECIBIDA" | "DEVUELTA";
+  mensajes?: string[];
 }

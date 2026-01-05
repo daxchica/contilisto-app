@@ -1,15 +1,19 @@
-// src/components/contacts/ContactFormModal.tsx
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
 import { saveContact } from "@/services/contactService";
-import type { Contact, IdentificationType, ContactRole, EntityType } from "@/types/Contact";
+import type {
+  Contact,
+  IdentificationType,
+  ContactRole,
+  EntityType,
+} from "@/types/Contact";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
   entityId: string;
-  initialData?: Contact | null;
+  initialData?: Contact;
 }
 
 export default function ContactFormModal({
@@ -34,6 +38,9 @@ export default function ContactFormModal({
 
   const [entityType, setEntityType] = useState<EntityType>("comercial");
 
+  /* -----------------------------------------
+     Inicialización / Edición
+  ------------------------------------------*/
   useEffect(() => {
     if (!isOpen) return;
 
@@ -59,16 +66,42 @@ export default function ContactFormModal({
     setEntityType(initialData.entityType ?? "comercial");
   }, [isOpen, initialData]);
 
-  // SRI: email + address obligatorios (y name + identification)
-  const validationMessage = useMemo(() => {
-    if (!identification.trim()) return "Identificación es obligatoria.";
-    if (!name.trim()) return "Nombre / Razón Social es obligatorio.";
-    if (!email.trim()) return "Email es obligatorio (SRI).";
-    if (!address.trim()) return "Dirección es obligatoria (SRI).";
-    return null;
-  }, [identification, name, email, address]);
+  /* -----------------------------------------
+     Consumidor Final → limpiar campos SRI
+  ------------------------------------------*/
+  useEffect(() => {
+    if (identificationType === "consumidor_final") {
+      setIdentification("9999999999999");
+      setEmail("");
+      setAddress("");
+    }
+  }, [identificationType]);
 
+  /* -----------------------------------------
+     Validación SRI
+  ------------------------------------------*/
+  const validationMessage = useMemo(() => {
+    if (!identification.trim())
+      return "Identificación es obligatoria.";
+    if (!name.trim())
+      return "Nombre / Razón Social es obligatorio.";
+
+    if (identificationType !== "consumidor_final") {
+      if (!email.trim())
+        return "Email es obligatorio (SRI).";
+      if (!address.trim())
+        return "Dirección es obligatoria (SRI).";
+    }
+
+    return null;
+  }, [identification, name, email, address, identificationType]);
+
+  /* -----------------------------------------
+     Guardar
+  ------------------------------------------*/
   const handleSave = async () => {
+    if (loading) return;
+
     if (validationMessage) {
       alert(validationMessage);
       return;
@@ -80,26 +113,35 @@ export default function ContactFormModal({
       const payload: Omit<Contact, "id" | "createdAt" | "updatedAt"> = {
         entityId,
         role,
-
         identificationType,
-        identification: identification.trim(),
-
+        identification: identificationType === "consumidor_final"
+          ? "9999999999999"
+          : identification.trim(),
         name: name.trim(),
-        email: email.trim(),
-        address: address.trim(),
-        phone: phone.trim() ? phone.trim() : undefined,
-
-        entityType: role === "empresa" ? entityType : undefined,
-
         activo: true,
+        email: "",
+        address: ""
       };
+
+      if (identificationType !== "consumidor_final") {
+        payload.email = email.trim();
+        payload.address = address.trim();
+      }
+
+      if (phone.trim()) {
+        payload.phone = phone.trim();
+      }
+
+      if (role === "empresa") {
+        payload.entityType = entityType;
+      }
 
       await saveContact(entityId, payload, initialData?.id);
 
       onSave();
       onClose();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       alert("Error al guardar el contacto");
     } finally {
       setLoading(false);
@@ -108,6 +150,9 @@ export default function ContactFormModal({
 
   if (!isOpen) return null;
 
+  /* -----------------------------------------
+     Render
+  ------------------------------------------*/
   return (
     <Modal onClose={onClose} maxWidthClass="max-w-lg">
       <h2 className="text-xl font-bold mb-4">
@@ -115,6 +160,7 @@ export default function ContactFormModal({
       </h2>
 
       <div className="space-y-4">
+        {/* Rol */}
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as ContactRole)}
@@ -126,6 +172,7 @@ export default function ContactFormModal({
           <option value="empresa">Empresa (del sistema)</option>
         </select>
 
+        {/* Identificación */}
         <div className="flex gap-3">
           <select
             value={identificationType}
@@ -143,11 +190,13 @@ export default function ContactFormModal({
           <input
             placeholder="Identificación *"
             value={identification}
+            disabled={identificationType === "consumidor_final"}
             onChange={(e) => setIdentification(e.target.value)}
-            className="flex-1 border rounded-lg px-4 py-3"
+            className="flex-1 border rounded-lg px-4 py-3 disabled:bg-gray-100"
           />
         </div>
 
+        {/* Nombre */}
         <input
           placeholder="Nombre / Razón Social *"
           value={name}
@@ -155,20 +204,26 @@ export default function ContactFormModal({
           className="w-full border rounded-lg px-4 py-3"
         />
 
-        <input
-          placeholder="Email (SRI) *"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full border rounded-lg px-4 py-3"
-        />
+        {/* Campos SRI */}
+        {identificationType !== "consumidor_final" && (
+          <>
+            <input
+              placeholder="Email (SRI) *"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full border rounded-lg px-4 py-3"
+            />
 
-        <input
-          placeholder="Dirección (SRI) *"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          className="w-full border rounded-lg px-4 py-3"
-        />
+            <input
+              placeholder="Dirección (SRI) *"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full border rounded-lg px-4 py-3"
+            />
+          </>
+        )}
 
+        {/* Teléfono */}
         <input
           placeholder="Teléfono (opcional)"
           value={phone}
@@ -176,6 +231,7 @@ export default function ContactFormModal({
           className="w-full border rounded-lg px-4 py-3"
         />
 
+        {/* Tipo de empresa */}
         {role === "empresa" && (
           <select
             value={entityType}
@@ -190,12 +246,17 @@ export default function ContactFormModal({
         )}
 
         <p className="text-xs text-gray-500">
-          * Campos obligatorios según normativa SRI (para emisión de comprobantes)
+          * Campos obligatorios según normativa SRI
         </p>
       </div>
 
+      {/* Acciones */}
       <div className="flex justify-end gap-3 mt-6">
-        <button onClick={onClose} className="px-4 py-2 border rounded-lg">
+        <button
+          onClick={onClose}
+          disabled={loading}
+          className="px-4 py-2 border rounded-lg disabled:opacity-50"
+        >
           Cancelar
         </button>
 

@@ -70,7 +70,7 @@ export interface Factura {
 
 export interface GenerateXMLResult {
   xml: string;
-  accessKey: string;
+  claveAcceso: string;
 }
 
 export async function generateXML(
@@ -129,7 +129,7 @@ export async function generateXML(
   // -------------------------------------------------------------------------
   // 4) Llamar al motor xmlBuilder
   // -------------------------------------------------------------------------
-  const { xml, accessKey } = generateSriInvoiceXmlV2({
+  const { xml, claveAcceso } = generateSriInvoiceXmlV2({
     environment: empresa.ambienteSri,
     emissionType: "1",
     documentType: "01",
@@ -141,5 +141,5 @@ export async function generateXML(
   // -------------------------------------------------------------------------
   // 5) Retornar resultado
   // -------------------------------------------------------------------------
-  return { xml, accessKey };
+  return { xml, claveAcceso };
 }
