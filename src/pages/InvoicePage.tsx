@@ -308,7 +308,7 @@ export default function InvoicePage() {
     try {
       setProcessing(true);
 
-      const res = await sendInvoiceToSri(entityId, currentInvoice.id);
+      const res = await sendInvoiceToSri(entityId, currentInvoice);
 
       setCurrentInvoice((prev) => {
         if (!prev) return prev;
@@ -352,7 +352,7 @@ export default function InvoicePage() {
 
     try {
       setProcessing(true);
-      await cancelInvoice(entityId, currentInvoice.id, reason);
+      await cancelInvoice(entityId, currentInvoice, reason);
       setCurrentInvoice({ ...currentInvoice, status: "cancelled" });
       alert("⚠️ Factura anulada.");
     } catch (e) {
