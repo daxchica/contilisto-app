@@ -38,4 +38,6 @@ goggle_cloud_code.rtf
 # Firebase / Google secrets
 Firebase-admin.json
 *.service-account.json
+# Firebase Admin credentials
+firebase-admin.json
 
