@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { JournalEntry } from "../../types/JournalEntry";
-import JournalTable from "../JournalTable";
+import JournalTable from "@/components/journal/JournalTable";
 import { saveJournalEntries } from "../../services/journalService";
 
 interface Props {
@@ -60,7 +60,10 @@ export default function JournalSection({ entries, entityId, entityName, userId, 
           </button>
         </div>
       </div>
-      <JournalTable entries={entries} entityName={entityName} onSave={() => {}} />
+      <JournalTable 
+        entries={entries} 
+        entityName={entityName} 
+      />
     </div>
   );
 }

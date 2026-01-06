@@ -3,16 +3,12 @@
 // CONTILISTO ARCHITECTURE v1.0
 // ============================================================================
 
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useLayoutEffect,
-} from "react";
+import React, { useState, useEffect, useMemo, useLayoutEffect } from "react";
 import { Rnd } from "react-rnd";
 
 import type { Account } from "../../types/AccountTypes";
 import type { JournalEntry } from "../../types/JournalEntry";
+import AccountPicker from "../AccountPicker";
 import {
   fetchAccountHintsBySupplierRUC,
   saveAccountHint,
@@ -32,15 +28,7 @@ interface Props {
   onSave: (entries: JournalEntry[], note: string) => Promise<void>;
 }
 
-type LocalEntry = JournalEntry & {
-  showPicker?: boolean;
-};
-
-type Suggestion = {
-  code: string;
-  name: string;
-  isHint: boolean;
-};
+type LocalEntry = JournalEntry;
 
 // ---------------------------------------------------------------------------
 // HELPERS
@@ -54,17 +42,6 @@ function isLeafAccount(account: Account, all: Account[]): boolean {
       other.code !== account.code && other.code.startsWith(account.code)
   );
 }
-
-function normalize(text?: string | null): string {
-  return (text || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s]/g, "")
-    .trim();
-}
-
-const STOPWORDS = ["en", "de", "la", "el", "por", "los", "las", "del", "para"];
 
 // ---------------------------------------------------------------------------
 // MAIN COMPONENT
@@ -82,12 +59,10 @@ export default function JournalPreviewModal({
   const [localEntries, setLocalEntries] = useState<LocalEntry[]>([]);
   const [note, setNote] = useState("");
   const [hints, setHints] = useState<{ code: string; name: string }[]>([]);
-  const [activePickerIndex, setActivePickerIndex] = useState<number | null>(
-    null
-  );
+  const [saving, setSaving] = useState(false);
 
   // -------------------------------------------------------------------------
-  // CENTERED MODAL (IMPORTANT FIX)
+  // CENTERED MODAL
   // -------------------------------------------------------------------------
 
   const MODAL_W = 900;
@@ -118,38 +93,6 @@ export default function JournalPreviewModal({
   // ACCOUNTS
   // -------------------------------------------------------------------------
 
-  function inferAccountLevel(code: string): number {
-  const len = code.replace(/\./g, "").length;
-
-  if (len <= 1) return 1;
-  if (len <= 3) return 2;
-  if (len <= 5) return 3;
-  if (len <= 7) return 4;
-  return 5;
-}
-  const leafAccounts = useMemo(() => {
-    const baseLeaves = accounts.filter((a) => isLeafAccount(a, accounts));
-
-    const fromEntries = Array.from(
-      new Set(entries.map((e) => e.account_code).filter(Boolean))
-    ).map((code) => {
-      const acc = accounts.find((a) => a.code === code);
-      if (acc) return acc;
-
-      const ref = entries.find((e) => e.account_code === code);
-      return {
-        code: code!,
-        name: ref?.account_name || `Cuenta ${code}`,
-        level: inferAccountLevel(code!),
-        isLastLevel: true,
-      } as Account;
-    });
-
-    const map = new Map<string, Account>();
-    [...baseLeaves, ...fromEntries].forEach((a) => map.set(a.code, a));
-    return Array.from(map.values());
-  }, [accounts, entries]);
-
   const availableAccounts = useMemo(
     () => accounts.filter((a) => isLeafAccount(a, accounts)),
     [accounts]
@@ -168,7 +111,8 @@ export default function JournalPreviewModal({
     );
 
     const mainExpense = entries.find((e) => e.account_code?.startsWith("5"));
-    const invoice = metadata?.invoice_number || entries[0]?.invoice_number || "";
+    const invoice =
+      metadata?.invoice_number || entries[0]?.invoice_number || "";
     const desc = mainExpense?.account_name || "";
 
     setNote(
@@ -198,32 +142,76 @@ export default function JournalPreviewModal({
   const { totalDebit, totalCredit, isBalanced, diff } = useMemo(() => {
     const d = localEntries.reduce((s, e) => s + (Number(e.debit) || 0), 0);
     const c = localEntries.reduce((s, e) => s + (Number(e.credit) || 0), 0);
+    const delta = d - c;
+
     return {
       totalDebit: d,
       totalCredit: c,
-      diff: d - c,
-      isBalanced: Math.abs(d - c) < 0.0001,
+      diff: delta,
+      isBalanced: Math.abs(delta) < 0.0001,
     };
   }, [localEntries]);
+
+  // -------------------------------------------------------------------------
+  // AccountChange (updates LOCAL state + saves hint)
+  // -------------------------------------------------------------------------
+
+  function handleAccountChange(
+    index: number,
+    account: { code: string; name: string }
+  ) {
+    setLocalEntries((prev) => {
+      const copy = [...prev];
+      copy[index] = {
+        ...copy[index],
+        account_code: account.code,
+        account_name: account.name,
+        source: "edited",
+      };
+      return copy;
+    });
+
+    if (metadata?.issuerRUC) {
+      saveAccountHint({
+        supplierRUC: metadata.issuerRUC,
+        accountCode: account.code,
+        accountName: account.name,
+        userId,
+      }).catch(console.error);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // SAVE
   // -------------------------------------------------------------------------
 
   async function handleSave() {
-    if (!isBalanced) return alert("El asiento no está balanceado");
+    if (!isBalanced) {
+      alert("El asiento no está balanceado");
+      return;
+    }
+    if (saving) return;
 
-    const fixed = localEntries.map((e) => ({
-      ...e,
-      entityId,
-      uid: userId,
-      userId,
-      description: note,
-      createdAt: e.createdAt ?? Date.now(),
-      source: e.source ?? "edited",
-    }));
+    try {
+      setSaving(true);
 
-    await onSave(fixed, note);
+      const fixed = localEntries.map((e) => ({
+        ...e,
+        entityId,
+        uid: userId,
+        userId,
+        description: note,
+        createdAt: e.createdAt ?? Date.now(),
+        source: e.source ?? "edited",
+      }));
+
+      await onSave(fixed, note);
+    } catch (err) {
+      console.error(err);
+      alert("Error guardando el asiento. Revisa la consola.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -252,30 +240,56 @@ export default function JournalPreviewModal({
         <div className="flex-1 p-6 overflow-auto">
           {/* METADATA */}
           <div className="mb-4 grid grid-cols-2 gap-2 text-sm bg-gray-100 p-3 rounded">
-            <div><b>Proveedor:</b> {metadata?.issuerName}</div>
-            <div><b>RUC:</b> {metadata?.issuerRUC}</div>
-            <div><b>Factura:</b> {metadata?.invoice_number}</div>
-            <div><b>Fecha:</b> {metadata?.invoiceDate}</div>
+            <div>
+              <b>Proveedor:</b> {metadata?.issuerName}
+            </div>
+            <div>
+              <b>RUC:</b> {metadata?.issuerRUC}
+            </div>
+            <div>
+              <b>Factura:</b> {metadata?.invoice_number}
+            </div>
+            <div>
+              <b>Fecha:</b> {metadata?.invoiceDate}
+            </div>
           </div>
 
           {/* TABLE */}
           <table className="w-full text-sm border">
             <thead className="bg-gray-200">
               <tr>
+                <th className="border p-2">Código</th>
                 <th className="border p-2">Cuenta</th>
                 <th className="border p-2">Débito</th>
                 <th className="border p-2">Crédito</th>
               </tr>
             </thead>
+
             <tbody>
               {localEntries.map((e, i) => (
                 <tr key={e.id}>
-                  <td className="border p-2">{e.account_name}</td>
+                  <td className="border p-2 font-mono">{e.account_code}</td>
+
+                  <td className="border p-2">
+                    <AccountPicker
+                      accounts={availableAccounts}
+                      hints={hints}
+                      value={{
+                        code: e.account_code ?? "",
+                        name: e.account_name ?? "",
+                      }}
+                      onChange={(account) => handleAccountChange(i, account)}
+                    />
+                  </td>
+
                   <td className="border p-2 text-right">{e.debit}</td>
                   <td className="border p-2 text-right">{e.credit}</td>
                 </tr>
               ))}
+
+              {/* ✅ FIXED totals row to match 4 columns */}
               <tr className="font-bold bg-gray-100">
+                <td className="border p-2" />
                 <td className="border p-2 text-right">Totales</td>
                 <td className="border p-2 text-right">
                   {totalDebit.toFixed(2)}
@@ -297,27 +311,22 @@ export default function JournalPreviewModal({
             {isBalanced ? (
               <span className="text-green-600">✔ Balanceado</span>
             ) : (
-              <span className="text-red-600">
-                ⚠ Diferencia {diff.toFixed(2)}
-              </span>
+              <span className="text-red-600">⚠ Diferencia {diff.toFixed(2)}</span>
             )}
           </div>
         </div>
 
         {/* FOOTER */}
         <div className="p-4 border-t flex justify-end gap-3 bg-gray-50">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-300 rounded"
-          >
+          <button onClick={onClose} className="px-4 py-2 bg-gray-300 rounded">
             Cancelar
           </button>
           <button
             onClick={handleSave}
-            disabled={!isBalanced}
+            disabled={!isBalanced || saving}
             className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
           >
-            Confirmar Asiento
+            {saving ? "Guardando..." : "Confirmar Asiento"}
           </button>
         </div>
       </Rnd>

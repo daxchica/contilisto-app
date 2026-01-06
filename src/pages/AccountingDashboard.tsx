@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 
-import JournalTable from "../components/JournalTable";
+import JournalTable from "@/components/journal/JournalTable";
 import ManualEntryModal from "../components/modals/ManualEntryModal";
 import ChartOfAccountsModal from "../components/modals/ChartOfAccountsModal";
 import JournalPreviewModal from "../components/modals/JournalPreviewModal";
@@ -226,7 +226,6 @@ export default function AccountingDashboard() {
               entityName={globalEntity?.name ?? ""}
               onSelectEntries={setSelectedEntries}
               onDeleteSelected={handleDeleteSelected}
-              onSave={() => {}}
             />
           </div>
         </div>
