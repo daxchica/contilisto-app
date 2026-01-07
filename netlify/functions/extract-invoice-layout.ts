@@ -1,4 +1,6 @@
 // netlify/functions/extract-invoice-layout.ts
+
+import { getAccountHintBySupplierRUC } from "./_server/accountHintService";
 import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 
@@ -142,13 +144,28 @@ const handler: Handler = async (event) => {
     const filtered = filterVisualBlocks(blocks);
     const today = new Date().toISOString().slice(0, 10);
 
-    const userPrompt = `
-RUC de la empresa contable: ${userRUC}
-Fecha actual: ${today}
+    const supplierRucText =
+      blocks.find(b => /ruc/i.test(b.text || ""))?.text ?? "";
 
-Bloques visuales extraídos del PDF:
-${buildVisualPrompt(filtered)}
-`.trim();
+    const hint = await getAccountHintBySupplierRUC(supplierRucText);
+
+    const userPrompt = `
+    RUC de la empresa contable: ${userRUC}
+    Fecha actual: ${today}
+
+    ${hint ? `
+    🧠 APRENDIZAJE PREVIO (REGLA OBLIGATORIA):
+    Este proveedor SIEMPRE se contabilizado en:
+    - Código: ${hint.accountCode}
+    - Nombre: ${hint.accountName}
+
+    UTILIZA ESTA CUENTA COMO GASTO PRINCIPAL
+    salvo evidencia clara de lo contrario.
+    ` : ""}
+
+    Bloques visuales extraídos del PDF:
+    ${buildVisualPrompt(filtered)}
+    `.trim();
 
     console.log("📤 Enviando LayoutAI a OpenAI...");
     console.log("🔹 Bloques:", filtered.length);

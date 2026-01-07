@@ -253,13 +253,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
         {/* ✅ Unificado */}
         <LinkRow to="/contactos" icon="👥" label="Contactos" requiresEntity />
-
-        <LinkRow
-          to="/facturacion"
-          icon="🧾"
-          label="Facturación Electrónica (SRI)"
-          requiresEntity
-        />
+         <LinkRow to="/contabilidad" icon="📊" label="Procesamiento Contable" requiresEntity />
+        
 
         <LinkRow to="/cartera" icon="💼" label="Documentos x Cobrar" requiresEntity />
         <LinkRow to="/accountspayable" icon="💼" label="Documentos x Pagar" requiresEntity />
@@ -268,10 +263,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
           Contabilidad
         </div>
 
-        <LinkRow to="/contabilidad" icon="📊" label="Libro de Diario" requiresEntity />
-        <LinkRow to="/libros-auxiliares" icon="📘" label="Libros Auxiliares" requiresEntity />
+       
+        <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
         <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
         <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
+
+        <LinkRow
+          to="/facturacion"
+          icon="🧾"
+          label="Facturación Electrónica (SRI)"
+          requiresEntity
+        />
 
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Impuestos

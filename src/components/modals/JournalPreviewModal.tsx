@@ -1,9 +1,14 @@
 // ============================================================================
 // src/components/JournalPreviewModal.tsx
-// CONTILISTO ARCHITECTURE v1.0
+// CONTILISTO ARCHITECTURE v1.0 - FINAL STABLE
 // ============================================================================
 
-import React, { useState, useEffect, useMemo, useLayoutEffect } from "react";
+import React, { 
+  useState, 
+  useEffect, 
+  useMemo, 
+  useLayoutEffect 
+} from "react";
 import { Rnd } from "react-rnd";
 
 import type { Account } from "../../types/AccountTypes";
@@ -162,23 +167,27 @@ export default function JournalPreviewModal({
   ) {
     setLocalEntries((prev) => {
       const copy = [...prev];
+      const prevCode = copy[index].account_code;
+
       copy[index] = {
         ...copy[index],
         account_code: account.code,
         account_name: account.name,
         source: "edited",
       };
+
+      // 🧠 Learn ONLY if user really changed the account
+      if (metadata?.issuerRUC && prevCode !== account.code) {
+        saveAccountHint({
+          supplierRUC: metadata.issuerRUC,
+          accountCode: account.code,
+          accountName: account.name,
+          userId,
+        }).catch(console.error);
+      }
+
       return copy;
     });
-
-    if (metadata?.issuerRUC) {
-      saveAccountHint({
-        supplierRUC: metadata.issuerRUC,
-        accountCode: account.code,
-        accountName: account.name,
-        userId,
-      }).catch(console.error);
-    }
   }
 
   // -------------------------------------------------------------------------

@@ -1,129 +1,122 @@
-// src/services/firestoreHintsService.ts
 // =======================================================
-// Service to store and retrieve learned account hints
-// linking suppliers (by RUC or name) to preferred accounts
+// Account Hint Service (Contextual, Learning-Based)
+// Supplier + Concept → Preferred Account
 // =======================================================
 
 import { db } from "../firebase-config";
 import {
-  collection,
   doc,
   setDoc,
-  getDocs,
-  query,
-  where,
+  getDoc,
 } from "firebase/firestore";
+import { normalizeConcept } from "@/utils/normalizeConcept";
 
-const HINTS_COLLECTION = "accountHints";
-const hintsRef = collection(db, HINTS_COLLECTION);
+// -------------------------------------------
+// 📘 Types
+// -------------------------------------------
 
-// LocalStorage key
+export interface AccountHint {
+  supplierRUC: string;
+  supplierName?: string;
+  conceptKey: string;
+  rawConcept?: string;
+  accountCode: string;
+  accountName: string;
+  updatedAt: number;
+}
+
+// -------------------------------------------
+// 🔑 LocalStorage key
+// -------------------------------------------
+
 const LOCAL_KEY = "accountHintsLocal";
 
 // -------------------------------------------
-// 📘 Type definition
+// 🧠 Save CONTEXTUAL hint (Supplier + Concept)
 // -------------------------------------------
-export interface AccountHint {
-  supplier_ruc?: string;
-  supplier_name?: string;
-  account_code: string;
-  account_name: string;
-  updatedAt?: string;
+
+export async function saveContextualAccountHint(
+  supplierRUC: string,
+  supplierName: string | undefined,
+  rawConcept: string | undefined,
+  accountCode: string,
+  accountName: string
+): Promise<void> {
+  if (!supplierRUC || !rawConcept) return;
+
+  const conceptKey = normalizeConcept(rawConcept);
+  if (!conceptKey) return;
+
+  const docId = `${supplierRUC}__${conceptKey}`;
+
+  const hint: AccountHint = {
+    supplierRUC,
+    supplierName,
+    conceptKey,
+    rawConcept,
+    accountCode,
+    accountName,
+    updatedAt: Date.now(),
+  };
+
+  // 🔥 Firestore (source of truth)
+  await setDoc(doc(db, "accountHints", docId), hint, { merge: true });
+
+  // ⚡ Local cache
+  try {
+    const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+    cache[docId] = hint;
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
+  } catch {
+    localStorage.removeItem(LOCAL_KEY);
+  }
 }
 
 // -------------------------------------------
-// 🧠 Retrieve hint from Firestore or LocalStorage
+// 🔍 Get CONTEXTUAL hint (Local → Firestore)
 // -------------------------------------------
-export async function getAccountHint(
-  issuerRUC?: string,
-  supplier_name?: string
+
+export async function getContextualAccountHint(
+  supplierRUC: string,
+  rawConcept?: string
 ): Promise<AccountHint | null> {
+  if (!supplierRUC || !rawConcept) return null;
+
+  const conceptKey = normalizeConcept(rawConcept);
+  if (!conceptKey) return null;
+
+  const docId = `${supplierRUC}__${conceptKey}`;
+
+  // 1️⃣ Local cache (fast)
   try {
-    // 1️⃣ Local cache first (fast)
-    let cachedHints: Record<string, AccountHint> = {};
-    try {
-        cachedHints = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+    const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+    if (cache[docId]) return cache[docId] as AccountHint;
   } catch {
-    console.warn("Corrupted local account hint cache, resetting");
     localStorage.removeItem(LOCAL_KEY);
   }
 
-    if (issuerRUC && cachedHints[issuerRUC]) return cachedHints[issuerRUC];
-    if (supplier_name && cachedHints[supplier_name]) return cachedHints[supplier_name];
+  // 2️⃣ Firestore fallback
+  const snap = await getDoc(doc(db, "accountHints", docId));
+  if (!snap.exists()) return null;
 
-    // 2️⃣ Firestore lookup
-    const keys = [issuerRUC, supplier_name].filter(Boolean);
-    if (keys.length === 0) {
-        console.warn("getAccountHint called with no valid identifiers");
-        return null;
-    }
+  const hint = snap.data() as AccountHint;
 
-    // Query by RUC first; fallback to supplier name if no match
-    let snapshot = await getDocs(query(hintsRef, where("supplier_ruc", "in", keys)));
-    if (snapshot.empty) {
-        snapshot = await getDocs(query(hintsRef, where("supplier_name", "in", keys)));
-    }
-
-    if (snapshot.empty) {
-        console.log("No account hint found for", keys);
-        return null;
-    }
-    
-    const docData = snapshot.docs[0].data() as AccountHint;
-    
-    // Cache locally for future use
-    const cacheKey = docData.supplier_ruc || docData.supplier_name;
-    if (cacheKey) {
-        cachedHints[cacheKey] = docData;
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(cachedHints));
-    }
-
-    return docData;
-  } catch (err) {
-    console.error("⚠️ Error in getAccountHint:", err);
-    return null;
-    }
-}
-
-// -------------------------------------------
-// 🧠 Save account hint (Firestore + LocalStorage)
-// -------------------------------------------
-export async function saveAccountHint(
-  supplier_ruc: string | undefined,
-  supplier_name: string | undefined,
-  account_code: string,
-  account_name: string
-): Promise<void> {
-  if (!supplier_ruc && !supplier_name) return;
+  // Cache it
   try {
-    const key = supplier_ruc || supplier_name || "";
-    const hint: AccountHint = {
-      supplier_ruc,
-      supplier_name,
-      account_code,
-      account_name,
-      updatedAt: new Date().toISOString(),
-    };
-
-    // 🧩 Firestore
-    const docRef = doc(db, "accountHints", key);
-    await setDoc(docRef, { key, ...hint }, { merge: true });
-
-    // 💾 Local cache
-    const cachedHints = JSON.parse(localStorage.getItem("accountHintsLocal") || "{}");
-    cachedHints[key] = hint;
-    localStorage.setItem("accountHintsLocal", JSON.stringify(cachedHints));
-
-    console.log(`✅ Saved account hint for ${supplier_name || supplier_ruc}: ${account_code} – ${account_name}`);
-  } catch (err) {
-    console.error("❌ Error saving account hint:", err);
+    const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
+    cache[docId] = hint;
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
+  } catch {
+    /* noop */
   }
+
+  return hint;
 }
 
-/**
- * 🧹 Clears all locally cached account hints.
- */
-export function clearLocalHints() {
-  localStorage.removeItem("accountHintsLocal");
-  console.log("🧹 Cleared local account hint cache");
+// -------------------------------------------
+// 🧹 Clear local cache (debug / reset)
+// -------------------------------------------
+
+export function clearLocalHints(): void {
+  localStorage.removeItem(LOCAL_KEY);
 }

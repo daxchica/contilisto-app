@@ -7,6 +7,7 @@ import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 import { randomUUID } from "crypto";
 import extractJson from "extract-json-from-string";
+import { getAccountHintBySupplierRUC } from "./_server/accountHintService";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -28,6 +29,15 @@ interface ParsedInternal {
   total: number;
   ocr_text: string;
 }
+
+type AccountingLine = {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+};
+
+type Hint = { accountCode: string; accountName: string } | null;
 
 // ---------------------------------------------------------------------------
 // OCR PDF → Texto plano (Netlify SAFE)
@@ -145,28 +155,69 @@ function detectExpenseCategory(text: string) {
 // ASIENTO CONTABLE
 // ---------------------------------------------------------------------------
 
-function buildAccounting(entry: ParsedInternal) {
-  const lines: any[] = [];
+async function buildAccounting(entry: ParsedInternal): Promise<AccountingLine[]> {
+  const lines: AccountingLine[] = [];
 
+  // 🧠 1️⃣ Learned hint has TOP priority
+  let hint: Hint = null;
+  
+  if (entry.issuerRUC) {
+    try {
+      hint = await getAccountHintBySupplierRUC(entry.issuerRUC);
+    } catch (e) {
+      console.error("HINT_LOOKUP_ERROR", e);
+      hint = null;
+    }
+  }
+
+  // 2️⃣ Fallback to rule-based detection
   const detected = detectExpenseCategory(entry.ocr_text || "");
-  const expenseCode = detected?.accountCode ?? "502010101";
-  const expenseName = detected?.accountName ?? "Gastos en servicios generales";
+
+  const expenseCode = hint?.accountCode ?? detected?.accountCode ?? "502010101";
+
+  const expenseName =
+    hint?.accountName ?? detected?.accountName ?? "Gastos en servicios generales";
+
+  // --- Build entries ---
 
   if (entry.subtotal0 > 0) {
-    lines.push({ accountCode: expenseCode, accountName: expenseName, debit: entry.subtotal0, credit: 0 });
+    lines.push({
+      accountCode: expenseCode,
+      accountName: expenseName,
+      debit: entry.subtotal0,
+      credit: 0,
+    });
   }
 
   if (entry.subtotal15 > 0) {
-    lines.push({ accountCode: expenseCode, accountName: expenseName, debit: entry.subtotal15, credit: 0 });
+    lines.push({
+      accountCode: expenseCode,
+      accountName: expenseName,
+      debit: entry.subtotal15,
+      credit: 0,
+    });
   }
 
   if (entry.subtotal15 > 0 && entry.iva > 0) {
-    lines.push({ accountCode: "133010102", accountName: "IVA crédito en compras", debit: entry.iva, credit: 0 });
+    lines.push({
+      accountCode: "133010102",
+      accountName: "IVA crédito en compras",
+      debit: entry.iva,
+      credit: 0,
+    });
   }
 
-  const total = parseFloat((entry.subtotal15 + entry.subtotal0 + entry.iva).toFixed(2));
+  const total = parseFloat(
+    (entry.subtotal15 + entry.subtotal0 + entry.iva).toFixed(2)
+  );
+
   if (total > 0) {
-    lines.push({ accountCode: "201030102", accountName: "Proveedores locales", debit: 0, credit: total });
+    lines.push({
+      accountCode: "201030102",
+      accountName: "Proveedores locales",
+      debit: 0,
+      credit: total,
+    });
   }
 
   return lines;
@@ -182,7 +233,7 @@ export const handler: Handler = async (event) => {
     const safeUserRuc = typeof userRUC === "string" ? userRUC : "";
 
     if (!base64) {
-      return { statusCode: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ success: false }) };
+      return { statusCode: 400, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ success: false }), };
     }
 
     const uint = new Uint8Array(Buffer.from(base64, "base64"));
@@ -199,17 +250,17 @@ export const handler: Handler = async (event) => {
         {
           role: "user",
           content: `
-Extrae SOLO este JSON:
-{
- "issuerName":"",
- "issuerRUC":"",
- "invoiceDate":"yyyy-mm-dd",
- "invoice_number":"",
- "concepto":"max 6 palabras"
-}
-Texto:
-${aiText}
-`,
+      Extrae SOLO este JSON:
+      {
+      "issuerName":"",
+      "issuerRUC":"",
+      "invoiceDate":"yyyy-mm-dd",
+      "invoice_number":"",
+      "concepto":"max 6 palabras"
+      }
+      Texto:
+      ${aiText}
+      `,
         },
       ],
     });
@@ -233,7 +284,7 @@ ${aiText}
     };
 
     const transactionId = randomUUID();
-    const lines = buildAccounting(enriched);
+    const lines = await buildAccounting(enriched);
 
     const entries = lines.map((l) => ({
       id: randomUUID(),
@@ -265,7 +316,8 @@ ${aiText}
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ success: false, error: err?.message || "Internal error" }),
+      body: JSON.stringify({ success: false, error: err?.message || "Internal error" 
+      }),
     };
   }
 };
