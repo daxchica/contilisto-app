@@ -121,7 +121,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
       sessionStorage.clear();
       
       closeDrawer();
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
       setLoggingOut(false);
     }
   };
