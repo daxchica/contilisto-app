@@ -1,6 +1,6 @@
 // netlify/functions/sign-invoice.ts
 import type { Handler } from "@netlify/functions";
-import { admin, adminDb } from "./_lib/firebaseAdmin";
+import { admin, adminDb } from "./_server/firebaseAdmin";
 
 
 import {

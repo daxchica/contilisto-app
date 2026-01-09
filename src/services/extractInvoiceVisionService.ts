@@ -1,3 +1,5 @@
+import { getContextualAccountHint } from "./firestoreHintsService";
+
 // ============================================================================
 // extractInvoiceVisionService.ts — CONTILISTO v1.0
 // Servicio frontend que llama a la Netlify Function
@@ -25,7 +27,8 @@ export interface ExtractedInvoiceResponse {
 export async function extractInvoiceVision(
   base64: string,
   userRUC: string,
-  entityType: string
+  entityType: string,
+  uid: string
 ): Promise<ExtractedInvoiceResponse> {
   try {
     const res = await fetch("/api/extract-invoice-vision", {
@@ -36,7 +39,8 @@ export async function extractInvoiceVision(
       body: JSON.stringify({
         base64,
         userRUC,
-        entityType
+        entityType,
+        uid
       })
     });
 
@@ -51,6 +55,39 @@ export async function extractInvoiceVision(
       throw new Error(
         data.error || "Error desconocido procesando la factura."
       );
+    }
+
+    // 🧠 APPLY CONTEXTUAL LEARNING (Supplier + Concept)
+    try {
+      const hint = await getContextualAccountHint(
+        data.issuerRUC,
+        data.concepto
+      );
+
+      if (hint && Array.isArray(data.entries)) {
+        data.entries = data.entries.map((e: any) => {
+          const debit = Number(e.debit ?? 0);
+
+          // Only override EXPENSE lines (never IVA / Proveedores)
+          if (
+            debit > 0 &&
+            e.account_code &&
+            !e.account_code.startsWith("133") && // IVA
+            !e.account_code.startsWith("201")    // Proveedores
+          ) {
+            return {
+              ...e,
+              account_code: hint.accountCode,
+              account_name: hint.accountName,
+              source: "learned",
+            };
+          }
+
+          return e;
+        });
+      }
+    } catch (err) {
+      console.warn("⚠️ Contextual learning not applied:", err);
     }
 
     return data as ExtractedInvoiceResponse;

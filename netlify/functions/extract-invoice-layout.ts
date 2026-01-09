@@ -1,12 +1,17 @@
 // netlify/functions/extract-invoice-layout.ts
 
-import { getAccountHintBySupplierRUC } from "./_server/accountHintService";
+import { getContextualHint } from "./_server/contextualHintsService";
 import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+type Hint = {
+  accountCode: string;
+  accountName: string;
+} | null;
 
 /**
  * 🧠 Prompt principal
@@ -132,7 +137,8 @@ const handler: Handler = async (event) => {
   }
 
   try {
-    const { blocks, userRUC } = JSON.parse(event.body || "{}");
+    const { blocks, userRUC, uid } = JSON.parse(event.body || "{}");
+    const safeUid = typeof uid === "string" ? uid : "";
 
     if (!Array.isArray(blocks) || typeof userRUC !== "string") {
       return {
@@ -147,7 +153,26 @@ const handler: Handler = async (event) => {
     const supplierRucText =
       blocks.find(b => /ruc/i.test(b.text || ""))?.text ?? "";
 
-    const hint = await getAccountHintBySupplierRUC(supplierRucText);
+    let hint: Hint = null;
+
+    // 🔍 Extract supplier RUC from OCR blocks (best-effort)
+    const supplierRUC =
+      supplierRucText.match(/\d{13}/)?.[0] ?? "";
+
+    // 🧠 Use contextual learning ONLY if we have UID + supplier
+    if (safeUid && supplierRUC) {
+      try {
+        // We use a generic concept key for layout
+        hint = await getContextualHint(
+          safeUid,
+          supplierRUC,
+          "layout"
+        );
+      } catch (e) {
+        console.error("CONTEXTUAL_HINT_ERROR", e);
+        hint = null;
+      }
+    }
 
     const userPrompt = `
     RUC de la empresa contable: ${userRUC}

@@ -7,7 +7,7 @@ import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 import { randomUUID } from "crypto";
 import extractJson from "extract-json-from-string";
-import { getAccountHintBySupplierRUC } from "./_server/accountHintService";
+import { getContextualHint } from "./_server/contextualHintsService";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -138,7 +138,7 @@ function detectExpenseCategory(text: string) {
     { w: ["luz", "agua", "energia"], c: "504020201", n: "Servicios básicos" },
     { w: ["seguro", "poliza"], c: "503040201", n: "Seguros empresariales" },
     { w: ["publicidad", "facebook"], c: "512020101", n: "Gastos de publicidad" },
-    { w: ["gasolina", "diesel"], c: "503050301", n: "Combustible" },
+    { w: ["gasolina", "diesel", "super", "extra", "ecopais", "ecopaís", "premium", "combustible", "fuel"], c: "5020112", n: "COMBUSTIBLES" },
     { w: ["internet", "telefono"], c: "504020501", n: "Servicios de telefonía" },
   ];
 
@@ -155,17 +155,30 @@ function detectExpenseCategory(text: string) {
 // ASIENTO CONTABLE
 // ---------------------------------------------------------------------------
 
-async function buildAccounting(entry: ParsedInternal): Promise<AccountingLine[]> {
+async function buildAccounting(
+  entry: ParsedInternal,
+  uid: string
+): Promise<AccountingLine[]> {
   const lines: AccountingLine[] = [];
 
   // 🧠 1️⃣ Learned hint has TOP priority
   let hint: Hint = null;
   
-  if (entry.issuerRUC) {
+  if (uid && entry.issuerRUC && entry.concepto) {
     try {
-      hint = await getAccountHintBySupplierRUC(entry.issuerRUC);
+      console.log("🧠 LEARNING INPUT", {
+        uid,
+        issuerRUC: entry.issuerRUC,
+        concepto: entry.concepto,
+      });
+      hint = await getContextualHint(
+        uid,
+        entry.issuerRUC,
+        entry.concepto
+      );
+      console.log("LEARNING RESULT", hint);
     } catch (e) {
-      console.error("HINT_LOOKUP_ERROR", e);
+      console.error("CONTEXTUAL_HINT_ERROR", e);
       hint = null;
     }
   }
@@ -177,6 +190,12 @@ async function buildAccounting(entry: ParsedInternal): Promise<AccountingLine[]>
 
   const expenseName =
     hint?.accountName ?? detected?.accountName ?? "Gastos en servicios generales";
+
+  console.log("🧠 FINAL EXPENSE DECISION", {
+    used: hint ? "LEARNED" : "FALLBACK",
+    accountCode: expenseCode,
+    accountName: expenseName,
+  });
 
   // --- Build entries ---
 
@@ -229,7 +248,8 @@ async function buildAccounting(entry: ParsedInternal): Promise<AccountingLine[]>
 
 export const handler: Handler = async (event) => {
   try {
-    const { base64, userRUC } = JSON.parse(event.body || "{}");
+    const { base64, userRUC, uid } = JSON.parse(event.body || "{}");
+    const safeUid = typeof uid === "string" ? uid : "";
     const safeUserRuc = typeof userRUC === "string" ? userRUC : "";
 
     if (!base64) {
@@ -284,7 +304,7 @@ export const handler: Handler = async (event) => {
     };
 
     const transactionId = randomUUID();
-    const lines = await buildAccounting(enriched);
+    const lines = await buildAccounting(enriched, safeUid);
 
     const entries = lines.map((l) => ({
       id: randomUUID(),

@@ -1,5 +1,5 @@
 // netlify/functions/_lib/loadP12FromStorage.ts
-import { adminBucket } from "./firebaseAdmin";
+import { adminBucket } from "../_server/firebaseAdmin";
 
 export async function loadP12FromStorage(storagePath: string): Promise<Buffer> {
   if (!storagePath) throw new Error("storagePath requerido");

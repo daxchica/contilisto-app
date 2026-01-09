@@ -1,26 +1,11 @@
 import type { Handler } from "@netlify/functions";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 
 import type { Invoice } from "@/types/Invoice";
+import { adminDb } from "../_server/firebaseAdmin";
 import { buildSriInvoiceXml } from "./buildSriInvoiceXml";
 import { signXmlDummy } from "./signXmlBs";
-
-/* ==============================
-   FIREBASE ADMIN INIT
-============================== */
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-
-const db = getFirestore();
+import { generateAccessKey } from "../sri/generateAccessKey";
 
 /* ==============================
    HANDLER
@@ -28,58 +13,108 @@ const db = getFirestore();
 
 export const handler: Handler = async (event) => {
   try {
+    if (event.httpMethod !== "POST") {
+      return json(405, { error: "Method not allowed" });
+    }
+
     const { entityId, invoiceId } = JSON.parse(event.body || "{}");
 
     if (!entityId || !invoiceId) {
-      return {
-        statusCode: 400,
-        body: "entityId e invoiceId requeridos",
-      };
+      return json(400, {
+        error: "entityId e invoiceId son requeridos",
+      });
     }
 
-    /* 1️⃣ Cargar factura */
-    const ref = db
-      .collection("entities")
-      .doc(entityId)
-      .collection("invoices")
-      .doc(invoiceId);
+    /* ============================
+       1️⃣ Load ENTITY (issuer)
+    ============================ */
+    const entityRef = adminDb.doc(`entities/${entityId}`);
+    const entitySnap = await entityRef.get();
 
-    const snap = await ref.get();
+    if (!entitySnap.exists) {
+      return json(404, { error: "Entidad no encontrada" });
+    }
 
-    if (!snap.exists) {
-      return {
-        statusCode: 404,
-        body: "Factura no encontrada",
-      };
+    const entity = entitySnap.data()!;
+    const sriSettings = entity.sriSettings;
+
+    if (!sriSettings) {
+      return json(400, {
+        error: "La empresa no tiene configuración SRI",
+      });
+    }
+
+    function generateSecuencial(): string {
+      return Date.now().toString().slice(-9);
+    }
+
+    /* ============================
+       2️⃣ Load invoice
+    ============================ */
+    const invoiceRef = adminDb.doc(
+      `entities/${entityId}/invoices/${invoiceId}`
+    );
+    const invoiceSnap = await invoiceRef.get();
+
+    if (!invoiceSnap.exists) {
+      return json(404, { error: "Factura no encontrada" });
     }
 
     const invoice = {
-      id: snap.id,
+      id: invoiceSnap.id,
       entityId,
-      ...(snap.data() as Omit<Invoice, "id" | "entityId">),
+      ...(invoiceSnap.data() as Omit<Invoice, "id" | "entityId">),
     } as Invoice;
 
     if (invoice.status !== "draft") {
-      return {
-        statusCode: 400,
-        body: "Solo se pueden emitir facturas en borrador",
-      };
+      return json(400, {
+        error: `Estado inválido: ${invoice.status}`,
+      });
     }
 
-    /* 2️⃣ Generar XML SRI */
+    /* ============================
+       3️⃣ Build SRI XML
+    ============================ */
     const ambiente: "1" | "2" =
       process.env.SRI_AMBIENTE === "2" ? "2" : "1";
 
-    const xml = buildSriInvoiceXml(invoice, { ambiente });
+    const secuencial = generateSecuencial();
 
-    /* 3️⃣ Firmar XML (dummy por ahora) */
+    const claveAcceso = generateAccessKey({
+      date: invoice.issueDate ?? new Date().toISOString().slice(0, 10),
+      docType: "01",
+      ruc: sriSettings.ruc,
+      ambiente,
+      estab: sriSettings.estab ?? "001",
+      ptoEmi: sriSettings.ptoEmi ?? "001",
+      secuencial,
+    });
+
+    const xml = buildSriInvoiceXml(invoice, {
+      ambiente,
+      razonSocial: sriSettings.razonSocial,
+      ruc: sriSettings.ruc,
+      estab: sriSettings.estab ?? "001",
+      ptoEmi: sriSettings.ptoEmi ?? "001",
+      secuencial,
+      claveAcceso,
+      dirMatriz: sriSettings.dirMatriz,
+    });
+
+    /* ============================
+       4️⃣ Sign XML (dummy)
+    ============================ */
     const xmlSigned = await signXmlDummy(xml);
 
-    /* 4️⃣ Guardar resultado */
-    await ref.update({
+    /* ============================
+       5️⃣ Persist
+    ============================ */
+    await invoiceRef.update({
       status: "issued",
-      issuedAt: Date.now(),
-      updatedAt: Date.now(),
+      issuedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      secuencial,
+      claveAcceso,
       sri: {
         ambiente,
         xml,
@@ -87,20 +122,27 @@ export const handler: Handler = async (event) => {
       },
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        ok: true,
-        invoiceId,
-        ambiente,
-      }),
-    };
+    return json(200, {
+      ok: true,
+      invoiceId,
+      ambiente,
+    });
   } catch (err: any) {
     console.error("❌ issue-invoice error:", err);
 
-    return {
-      statusCode: 500,
-      body: err?.message || "Error emitiendo factura",
-    };
+    return json(500, {
+      error: err?.message || "Error emitiendo factura",
+    });
   }
 };
+
+/* =========================
+   Helper
+========================== */
+function json(statusCode: number, body: any) {
+  return {
+    statusCode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}

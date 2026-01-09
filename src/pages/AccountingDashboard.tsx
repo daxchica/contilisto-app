@@ -76,8 +76,8 @@ export default function AccountingDashboard() {
   const [previewMetadata, setPreviewMetadata] = useState<any>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  
   const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [showManualModal, setShowManualModal] = useState(false);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
@@ -173,7 +173,7 @@ export default function AccountingDashboard() {
     if (!files || !files.length) return;
 
     const base64 = await fileToBase64(files[0]);
-    const data = await extractInvoiceVision(base64, entityRUC, entityType);
+    const data = await extractInvoiceVision(base64, entityRUC, entityType, userIdSafe);
 
     setPreviewEntries(data.entries ?? []);
     setPreviewMetadata(data);
@@ -191,20 +191,33 @@ export default function AccountingDashboard() {
         <div className="w-full max-w-6xl mx-auto">
 
         {/* BUTTON HEADER */}
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end gap-2 mb-4">
           {entityId && (
-            <button
-              onClick={() => setShowAccountsModal(true)}
-              className="
-                px-4 py-2 
-                text-sm sm:text-base
-                bg-emerald-600 text-white 
-                rounded-lg 
-                hover:bg-emerald-700 
-                shadow-sm"
-            >
-              📚 Ver Plan de Cuentas
-            </button>
+            <>
+              <button
+                onClick={() => setShowManualModal(true)}
+                className="
+                  px-4 py-2 
+                  bg-blue-600 text-white 
+                  rounded-lg 
+                  hover:bg-blue-700
+                "
+              >
+                ✍ Ingreso manual
+              </button>
+
+              <button
+                onClick={() => setShowAccountsModal(true)}
+                className="
+                  px-4 py-2 
+                  bg-emerald-600 text-white 
+                  rounded-lg 
+                  hover:bg-emerald-700
+                "
+              >
+                📚 Ver Plan de Cuentas
+              </button>
+            </>
           )}
         </div>
 
@@ -283,7 +296,23 @@ export default function AccountingDashboard() {
             }
 
             setLogRefreshTrigger(prev => prev + 1);
-            setShowPreviewModal(false);
+            
+          }}
+        />
+      )}
+
+      {showManualModal && (
+        <ManualEntryModal
+          entityId={entityId}
+          userId={userIdSafe}
+          accounts={accounts}
+          onClose={() => setShowManualModal(false)}
+          onAddEntries={async (entries) => {
+            // 1️⃣ Add to local table immediately
+            setSessionJournal(prev => [...prev, ...entries]);
+
+            // 2️⃣ Trigger refresh (keeps everything in sync)
+            setLogRefreshTrigger(prev => prev + 1);
           }}
         />
       )}

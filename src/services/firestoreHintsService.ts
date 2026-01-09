@@ -36,40 +36,34 @@ const LOCAL_KEY = "accountHintsLocal";
 // -------------------------------------------
 
 export async function saveContextualAccountHint(
+  uid: string,
   supplierRUC: string,
   supplierName: string | undefined,
   rawConcept: string | undefined,
   accountCode: string,
   accountName: string
 ): Promise<void> {
-  if (!supplierRUC || !rawConcept) return;
+  if (!uid || !supplierRUC || !rawConcept || !accountCode) return;
 
-  const conceptKey = normalizeConcept(rawConcept);
-  if (!conceptKey) return;
+  const concept = normalizeConcept(rawConcept);
+  if (!concept) return;
 
-  const docId = `${supplierRUC}__${conceptKey}`;
+  const docId = `${uid}__${supplierRUC}__${concept}`;
 
-  const hint: AccountHint = {
-    supplierRUC,
-    supplierName,
-    conceptKey,
-    rawConcept,
-    accountCode,
-    accountName,
-    updatedAt: Date.now(),
-  };
-
-  // 🔥 Firestore (source of truth)
-  await setDoc(doc(db, "accountHints", docId), hint, { merge: true });
-
-  // ⚡ Local cache
-  try {
-    const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
-    cache[docId] = hint;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
-  } catch {
-    localStorage.removeItem(LOCAL_KEY);
-  }
+  await setDoc(
+    doc(db, "contextualAccountHints", docId),
+    {
+      uid,
+      supplierRUC,
+      supplierName,
+      concept,
+      accountCode,
+      accountName,
+      frequency: 1,
+      createdAt: Date.now(),
+    },
+    { merge: true }
+  );
 }
 
 // -------------------------------------------

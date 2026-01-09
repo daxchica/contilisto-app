@@ -197,13 +197,13 @@ export default function ManualEntryModal({
     >
       <Rnd
         default={{
-          x: Math.max(16, window.innerWidth / 2 - 600),
-          y: Math.max(16, window.innerHeight / 2 - 350),
-          width: 1200,
+          x: Math.max(20, Math.round((window.innerWidth - 900) / 2)),
+          y: Math.max(20, Math.round((window.innerHeight - 600) / 2)),
+          width: 900,
           height: "auto",
         }}
         bounds="window"
-        minWidth={1000}
+        minWidth={860}
         dragHandleClassName="drag-header"
         enableResizing={false}
         className="bg-white rounded-xl shadow-xl border border-gray-300"
@@ -213,36 +213,14 @@ export default function ManualEntryModal({
             <h2 className="text-xl font-semibold text-gray-800">
               ✍ Ingreso manual de asiento contable
             </h2>
-            <div className="flex gap-2">
-              <button
-                onClick={addRow}
-                disabled={isSaving}
-                className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                ➕ Agregar línea
-              </button>
-              <button
-                onClick={duplicateRow}
-                disabled={selectedIdx == null || isSaving}
-                className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                ⧉ Duplicar
-              </button>
-              <button
-                onClick={() => (selectedIdx == null ? null : removeRow(selectedIdx))}
-                disabled={selectedIdx == null || rows.length <= 1 || isSaving}
-                className="rounded bg-rose-600 px-3 py-1 text-white enabled:hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                ✖ Eliminar
-              </button>
-            </div>
+            
           </div>
 
           {/* Supplier */}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                👤 Proveedor
+                👤 Contacto
               </label>
               <input
                 type="text"
@@ -305,17 +283,33 @@ export default function ManualEntryModal({
               />
             </div>
           </div>
-
+          <div className="flex justify-end gap-2 mb-2">
+            <button
+              onClick={addRow}
+              disabled={isSaving}
+              className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              ➕ Agregar línea
+            </button>
+            <button
+              onClick={duplicateRow}
+              disabled={selectedIdx == null || isSaving}
+              className="rounded bg-indigo-600 px-3 py-1 text-white enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ⧉ Duplicar
+            </button>
+          </div>
+          
           {/* Table */}
           <div className="max-h-[60vh] overflow-auto rounded border">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700">
                 <tr className="border-b">
-                  <th className="border p-2 w-[160px]">Código</th>
+                  <th className="border p-2 w-[140px]">Código</th>
                   <th className="border p-2 min-w-[320px]">Cuenta</th>
                   <th className="border p-2 text-right w-[120px]">Débito</th>
                   <th className="border p-2 text-right w-[120px]">Crédito</th>
-                  <th className="border p-2 w-[80px] text-center">Eliminar</th>
+                  <th className="border p-2 w-[60px] text-center">*</th>
                   
                 </tr>
               </thead>
@@ -355,7 +349,7 @@ export default function ManualEntryModal({
                       </td>
 
                       {/* Cuenta (AccountPicker) */}
-                      <td className="border p-2">
+                      <td className="border p-2 w-[420px]">
                         <AccountPicker
                           accounts={accounts.filter((a) => a.code.length >= 7)}
                           value={codeValue ? { code: codeValue, name: r.account_name } : null}

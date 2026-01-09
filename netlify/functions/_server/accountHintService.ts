@@ -1,17 +1,10 @@
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+// netlify/functions/_server/accountHintService.ts
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID!,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n"),
-    }),
-  });
-}
+import { adminDb } from "./firebaseAdmin";
 
-const db = getFirestore();
+/* -------------------------------------------
+   Types
+-------------------------------------------- */
 
 export interface AccountHint {
   supplierRUC: string;
@@ -20,17 +13,31 @@ export interface AccountHint {
   updatedAt: number;
 }
 
+/* -------------------------------------------
+   Read account hint (SAFE)
+-------------------------------------------- */
+
 export async function getAccountHintBySupplierRUC(
-  supplierRUC: string
+  supplierRUC?: string
 ): Promise<AccountHint | null> {
-  if (!supplierRUC) return null;
+  try {
+    if (!supplierRUC || typeof supplierRUC !== "string") {
+      return null;
+    }
 
-  const snap = await db
-    .collection("accountHints")
-    .doc(supplierRUC)
-    .get();
+    const snap = await adminDb
+      .collection("accountHints")
+      .doc(supplierRUC)
+      .get();
 
-  if (!snap.exists) return null;
+    if (!snap.exists) return null;
 
-  return snap.data() as AccountHint;
+    return snap.data() as AccountHint;
+  } catch (error) {
+    console.error(
+      "❌ getAccountHintBySupplierRUC failed:",
+      error
+    );
+    return null;
+  }
 }

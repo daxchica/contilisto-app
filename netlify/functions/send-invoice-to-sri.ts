@@ -1,6 +1,6 @@
 // netlify/functions/send-invoice-to-sri.ts
 import type { Handler } from "@netlify/functions";
-import { admin, adminDb } from "./_lib/firebaseAdmin";
+import { admin, adminDb } from "./_server/firebaseAdmin";
 import { sendToSri } from "./sri/sendToSri";
 
 export const handler: Handler = async (event) => {
