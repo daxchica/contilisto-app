@@ -1,7 +1,6 @@
 // ============================================================================
 // src/components/JournalPreviewModal.tsx
-// CONTILISTO — FINAL STABLE VERSION
-// Reuses ManualEntryModal row logic
+// CONTILISTO — STABLE VERSION
 // ============================================================================
 
 import React, {
@@ -17,6 +16,7 @@ import type { JournalEntry } from "../../types/JournalEntry";
 
 import AccountPicker from "../AccountPicker";
 import { saveContextualAccountHint } from "@/services/firestoreHintsService";
+import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -24,7 +24,7 @@ import { saveContextualAccountHint } from "@/services/firestoreHintsService";
 
 interface Props {
   entries: JournalEntry[];
-  metadata: any;
+  metadata: InvoicePreviewMetadata;
   accounts: Account[];
   entityId: string;
   userId: string;
@@ -32,7 +32,9 @@ interface Props {
   onSave: (entries: JournalEntry[], note: string) => Promise<void>;
 }
 
-type Row = JournalEntry & {
+type Row = Omit<JournalEntry, "debit" | "credit"> & {
+  debit: number;
+  credit: number;
   _debitRaw?: string;
   _creditRaw?: string;
 };
@@ -51,10 +53,7 @@ function isLeafAccount(account: Account, all: Account[]) {
   );
 }
 
-function createEmptyRow(
-  entityId: string,
-  userId: string
-): Row {
+function createEmptyRow(entityId: string, userId: string): Row {
   return {
     id: crypto.randomUUID(),
     entityId,
@@ -68,6 +67,12 @@ function createEmptyRow(
     source: "edited",
     createdAt: Date.now(),
   };
+}
+
+function safeParseNumber(v: string | undefined) {
+  if (!v) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +98,6 @@ export default function JournalPreviewModal({
   // -------------------------------------------------------------------------
 
   const MODAL_WIDTH = 900;
-
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
   useLayoutEffect(() => {
@@ -119,25 +123,30 @@ export default function JournalPreviewModal({
     const prepared: Row[] = entries.map((e) => ({
       ...e,
       id: e.id ?? crypto.randomUUID(),
-      debit: e.debit ?? 0,
-      credit: e.credit ?? 0,
+      debit: Number(e.debit ?? 0),
+      credit: Number(e.credit ?? 0),
       date: e.date ?? todayISO(),
+      _debitRaw: undefined,
+      _creditRaw: undefined,
     }));
 
     setRows(prepared);
 
-    const mainExpense = prepared.find((e) =>
-      e.account_code?.startsWith("5")
-    );
+    const invoice = metadata.invoice_number ?? "";
 
-    const invoice = metadata?.invoice_number ?? "";
-    const desc = mainExpense?.account_name ?? "";
-
-    setNote(
-      invoice && desc
-        ? `Factura ${invoice} - ${desc}`
-        : invoice || desc
-    );
+    if (metadata.invoiceType === "sale") {
+      setNote(invoice ? `Factura de venta ${invoice}` : "");
+    } else {
+      const mainExpense = prepared.find((e) =>
+        e.account_code?.startsWith("5")
+      );
+      const desc = mainExpense?.account_name ?? "";
+      setNote(
+        invoice && desc
+          ? `Factura ${invoice} - ${desc}`
+          : invoice || desc
+      );
+    }
   }, [entries, metadata]);
 
   // -------------------------------------------------------------------------
@@ -145,14 +154,20 @@ export default function JournalPreviewModal({
   // -------------------------------------------------------------------------
 
   const totals = useMemo(() => {
-    const debit = rows.reduce((s, r) => s + (r.debit ?? 0), 0);
-    const credit = rows.reduce((s, r) => s + (r.credit ?? 0), 0);
-    return {
-      debit,
-      credit,
-      diff: debit - credit,
-      balanced: Math.abs(debit - credit) < 0.01,
-    };
+    const debit = rows.reduce((s, r) => s + r.debit, 0);
+    const credit = rows.reduce((s, r) => s + r.credit, 0);
+
+    const nonZeroLines = rows.filter(
+      (r) => Number(r.debit ?? 0) > 0 || Number(r.credit ?? 0) > 0
+    ).length;
+
+    const diff = debit - credit;
+    const balanced =
+      Math.abs(diff) < 0.01 &&
+      (debit > 0 || credit > 0) &&
+      nonZeroLines >= 2;
+
+    return { debit, credit, balanced };
   }, [rows]);
 
   // -------------------------------------------------------------------------
@@ -167,12 +182,8 @@ export default function JournalPreviewModal({
     });
   };
 
-  const addRow = () => {
-    setRows((prev) => [
-      ...prev,
-      createEmptyRow(entityId, userId),
-    ]);
-  };
+  const addRow = () =>
+    setRows((prev) => [...prev, createEmptyRow(entityId, userId)]);
 
   const duplicateRow = () => {
     if (selectedIdx == null) return;
@@ -204,17 +215,16 @@ export default function JournalPreviewModal({
 
     try {
       setSaving(true);
-
       await onSave(rows, note);
 
-      // 🧠 CONTEXTUAL LEARNING (post-confirmation)
-      const supplierRUC = metadata?.issuerRUC;
-      const supplierName = metadata?.issuerName;
+      if (metadata.invoiceType === "expense") {
+        const supplierRUC = metadata.issuerRUC;
+        const supplierName = metadata.issuerName;
 
-      if (supplierRUC) {
         for (const r of rows) {
           if (
-            (r.debit ?? 0) > 0 &&
+            supplierRUC &&
+            Number(r.debit ?? 0) > 0 &&
             r.account_code &&
             !r.account_code.startsWith("133") &&
             !r.account_code.startsWith("201")
@@ -238,6 +248,16 @@ export default function JournalPreviewModal({
   };
 
   // -------------------------------------------------------------------------
+  // METADATA LABELS (SRI RULE)
+  // -------------------------------------------------------------------------
+
+  const isSale = metadata.invoiceType === "sale";
+
+  const partyLabel = isSale ? "Cliente" : "Proveedor";
+  const partyName = isSale ? metadata.buyerName : metadata.issuerName || "Proveedor no detectado";
+  const partyRUC = isSale ? metadata.buyerRUC ?? "" : metadata.issuerRUC;
+
+  // -------------------------------------------------------------------------
   // RENDER
   // -------------------------------------------------------------------------
 
@@ -245,7 +265,12 @@ export default function JournalPreviewModal({
     <div className="fixed inset-0 z-50 bg-black/50">
       <Rnd
         position={position}
-        size={{ width: MODAL_WIDTH, height: "auto" }}
+        size={{ 
+          width: typeof window !== "undefined"
+            ? Math.min(MODAL_WIDTH, window.innerWidth - 24)
+            : MODAL_WIDTH,
+          height: "auto" 
+        }}
         enableResizing={false}
         dragHandleClassName="drag-header"
         bounds="window"
@@ -261,15 +286,35 @@ export default function JournalPreviewModal({
 
         {/* BODY */}
         <div className="p-5 space-y-4">
-          {/* METADATA */}
-          <div className="grid grid-cols-2 gap-2 text-sm bg-gray-100 p-3 rounded">
-            <div><b>Proveedor:</b> {metadata?.issuerName}</div>
-            <div><b>RUC:</b> {metadata?.issuerRUC}</div>
-            <div><b>Factura:</b> {metadata?.invoice_number}</div>
-            <div><b>Fecha:</b> {metadata?.invoiceDate}</div>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 text-sm bg-gray-100 p-4 rounded">
+          {/* LEFT COLUMN - CLIENT */}
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <span className="font-semibold">{partyLabel}:</span>
+              <span className="break-words">{partyName || "-"}</span>
+            </div>
 
-          {/* ACTION BUTTONS */}
+            <div className="flex gap-2">
+              <div className="font-semibold">RUC:</div>
+              <div>{partyRUC || "-"}</div>
+            </div>
+          </div>
+          
+          {/* RIGHT COLUMN - DOCUMENT */}
+          <div className="space-y-2">
+            <div className="flex-gap-2">
+              <span className="font-semibold">Factura:</span>
+              <span>{metadata.invoice_number || "-"}</span>
+            </div>
+
+            <div className="flex gap-2">
+              <span className="font-semibold">Fecha:</span>
+              <span>{metadata.invoiceDate || "-"}</span>
+            </div>
+          </div> 
+        </div> 
+
+          {/* ACTIONS */}
           <div className="flex justify-end gap-2">
             <button onClick={addRow} className="px-3 py-1 bg-emerald-600 text-white rounded">
               ➕ Agregar
@@ -290,7 +335,6 @@ export default function JournalPreviewModal({
                 <th className="border p-2 w-[60px]" />
               </tr>
             </thead>
-
             <tbody>
               {rows.map((r, idx) => (
                 <tr
@@ -299,14 +343,10 @@ export default function JournalPreviewModal({
                   className={selectedIdx === idx ? "bg-emerald-50" : ""}
                 >
                   <td className="border p-2 font-mono">{r.account_code}</td>
-
                   <td className="border p-2">
                     <AccountPicker
                       accounts={leafAccounts}
-                      value={{
-                        code: r.account_code ?? "",
-                        name: r.account_name ?? "",
-                      }}
+                      value={{ code: r.account_code ?? "", name: r.account_name ?? "" }}
                       onChange={(acc) =>
                         patchRow(idx, {
                           account_code: acc.code,
@@ -315,51 +355,35 @@ export default function JournalPreviewModal({
                       }
                     />
                   </td>
-
                   <td className="border p-2 text-right">
                     <input
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={
-                        r._debitRaw ??
-                        (r.debit !== undefined && r.debit !== 0
-                          ? r.debit.toString()
-                          : "")
-                      }
-                      onChange={(e) => {
+                      value={r.debit !== undefined && r.debit !== 0 ? r.debit.toString() : ""}
+                      onChange={(e) =>
                         patchRow(idx, {
-                          _debitRaw: e.target.value,
                           debit: parseFloat(e.target.value) || 0,
                           credit: 0,
-                        });
-                      }}
+                        })
+                      }
                     />
                   </td>
-
                   <td className="border p-2 text-right">
                     <input
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={
-                        r._creditRaw ??
-                        (r.credit !== undefined && r.credit !== 0
-                          ? r.credit.toString()
-                          : "")
-                      }
-                      onChange={(e) => {
+                      value={r.credit || ""}
+                      onChange={(e) =>
                         patchRow(idx, {
-                          _creditRaw: e.target.value,
                           credit: parseFloat(e.target.value) || 0,
                           debit: 0,
-                        });
-                      }}
+                        })
+                      }
                     />
                   </td>
-
                   <td className="border p-2 text-center">
                     <button onClick={() => removeRow(idx)}>✖</button>
                   </td>
                 </tr>
               ))}
-
               <tr className="font-bold bg-gray-100">
                 <td />
                 <td className="text-right p-2">Totales</td>

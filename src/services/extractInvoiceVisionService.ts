@@ -1,99 +1,127 @@
 import { getContextualAccountHint } from "./firestoreHintsService";
 
 // ============================================================================
-// extractInvoiceVisionService.ts — CONTILISTO v1.0
-// Servicio frontend que llama a la Netlify Function
+// extractInvoiceVisionService.ts — CONTILISTO (STABLE)
+// Frontend service calling Vision OCR Netlify Function
 // ============================================================================
 
 export interface ExtractedInvoiceResponse {
   success: boolean;
+  invoiceType: "sale" | "expense";
+
   issuerRUC: string;
   issuerName: string;
-  buyerRUC?: string;
+
   buyerName?: string;
-  invoiceDate: string;
-  invoice_number: string;
-  subtotal15: number;
-  subtotal0: number;
-  iva: number;
-  total: number;
-  concepto: string;
-  type: string;
-  ocrText: string;
-  recommendedAccounts: any[];
+  buyerRUC?: string;
+
+  invoiceDate?: string;
+  invoice_number?: string;
+
+  // Optional (Vision OCR may not return them)
+  subtotal15?: number;
+  subtotal0?: number;
+  iva?: number;
+  total?: number;
+
+  concepto?: string;
+  ocr_text?: string;
+
   entries: any[];
 }
 
 export async function extractInvoiceVision(
   base64: string,
   userRUC: string,
-  entityType: string,
   uid: string
 ): Promise<ExtractedInvoiceResponse> {
   try {
-    const res = await fetch("/api/extract-invoice-vision", {
+    const res = await fetch("/.netlify/functions/extract-invoice-vision", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         base64,
         userRUC,
-        entityType,
-        uid
-      })
+        uid,
+      }),
     });
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Error del servidor Vision OCR: ${text}`);
+      throw new Error(`Vision OCR server error: ${text}`);
     }
 
     const data = await res.json();
 
-    if (!data.success) {
+    if (!data?.success) {
       throw new Error(
-        data.error || "Error desconocido procesando la factura."
+        data?.error || "Vision OCR failed to process invoice."
       );
     }
 
-    // 🧠 APPLY CONTEXTUAL LEARNING (Supplier + Concept)
-    try {
-      const hint = await getContextualAccountHint(
-        data.issuerRUC,
-        data.concepto
-      );
+    // ------------------------------------------------------------------------
+    // 🧠 CONTEXTUAL LEARNING (EXPENSE ONLY)
+    // ------------------------------------------------------------------------
 
-      if (hint && Array.isArray(data.entries)) {
-        data.entries = data.entries.map((e: any) => {
-          const debit = Number(e.debit ?? 0);
+    if (
+      data.invoiceType === "expense" &&
+      data.issuerRUC &&
+      data.concepto &&
+      Array.isArray(data.entries)
+    ) {
+      try {
+        const hint = await getContextualAccountHint(
+          data.issuerRUC,
+          data.concepto
+        );
 
-          // Only override EXPENSE lines (never IVA / Proveedores)
-          if (
-            debit > 0 &&
-            e.account_code &&
-            !e.account_code.startsWith("133") && // IVA
-            !e.account_code.startsWith("201")    // Proveedores
-          ) {
-            return {
-              ...e,
-              account_code: hint.accountCode,
-              account_name: hint.accountName,
-              source: "learned",
-            };
-          }
+        if (hint) {
+          data.entries = data.entries.map((e: any) => {
+            const debit = Number(e.debit ?? 0);
 
-          return e;
-        });
+            // Never override IVA or Proveedores
+            if (
+              debit > 0 &&
+              e.account_code &&
+              !e.account_code.startsWith("133") && // IVA
+              !e.account_code.startsWith("201")    // Proveedores
+            ) {
+              return {
+                ...e,
+                account_code: hint.accountCode,
+                account_name: hint.accountName,
+                source: "learned",
+              };
+            }
+
+            return e;
+          });
+        }
+      } catch (err) {
+        console.warn("⚠️ Contextual learning skipped:", err);
       }
-    } catch (err) {
-      console.warn("⚠️ Contextual learning not applied:", err);
+    }
+
+    // ------------------------------------------------------------------------
+    // Normalize descriptions (non-destructive)
+    // ------------------------------------------------------------------------
+
+    if (Array.isArray(data.entries)) {
+      data.entries = data.entries.map((e: any) => ({
+        ...e,
+        description:
+          e.description ??
+          data.concepto ??
+          data.invoice_number ??
+          "",
+      }));
     }
 
     return data as ExtractedInvoiceResponse;
-
   } catch (err: any) {
     console.error("❌ extractInvoiceVisionService ERROR:", err);
-    throw new Error(err.message || "Error procesando factura.");
+    throw new Error(err.message || "Error processing invoice.");
   }
 }

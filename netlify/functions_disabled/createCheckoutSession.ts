@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import admin from "firebase-admin";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2022-11-15",
+  apiVersion: "2025-11-17.clover",
 });
 
 // Init Firebase Admin (Netlify Functions)

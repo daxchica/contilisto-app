@@ -112,16 +112,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
     setLoggingOut(true);
 
     try {
+      setEntity(null);
+      localStorage.clear();
+      sessionStorage.clear();
+
       await signOut(auth);
+
+      navigate("/", { replace: true});
     } catch (err) {
       console.error("Error al cerrar sesion", err);
     } finally {
       setEntity(null);
-      localStorage.clear();
-      sessionStorage.clear();
       
       closeDrawer();
-      navigate("/", { replace: true });
       setLoggingOut(false);
     }
   };
