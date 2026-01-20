@@ -30,43 +30,58 @@ export default function AccountsPayablePage() {
   const [expandedPayableId, setExpandedPayableId] = useState<string | null>(null);
 
   // --------------------------------------------------
-  // Reload payables
+  // Reload payables (safe against race conditions)
   // --------------------------------------------------
   const reload = useCallback(() => {
     if (!entityId) {
-    setPayables([]);
-    setLoading(false);
-    return;
-  }
+      setPayables([]);
+      setLoading(false);
+      return;
+    }
 
-  setLoading(true);
-  fetchPayables(entityId)
-    .then(setPayables)
-    .finally(() => setLoading(false));
-}, [entityId]);
+    let cancelled = false;
+    setLoading(true);
+
+    fetchPayables(entityId)
+      .then((data: Payable[]) => {
+        if (!cancelled) setPayables(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId]);
 
   useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const cleanup = reload();
+    return cleanup;
   }, [reload]);
 
   // --------------------------------------------------
   // Derived data
   // --------------------------------------------------
   const visiblePayables = useMemo(
-    () => payables.filter(p => p.status !== "paid"),
+    () => 
+      payables
+        .filter(p => p.status !== "paid")
+        .sort((a, b) =>
+          (a.dueDate ?? "").localeCompare(b.dueDate ?? "")
+      ),
     [payables]
   );
 
-  const totalPending = useMemo(
-    () => 
-      visiblePayables.reduce(
-        (sum, p) => sum + Number(p.balance || 0), 0),
-    [visiblePayables]
-  );
+  const totalPending = useMemo(() => {
+    const total = visiblePayables.reduce(
+      (sum, p) => sum + Number(p.balance || 0),
+      0
+    );
+    return total.toFixed(2);
+  }, [visiblePayables]);
 
   const pendingCount = visiblePayables.length;
-
   // --------------------------------------------------
   // Guards
   // --------------------------------------------------
@@ -103,7 +118,7 @@ export default function AccountsPayablePage() {
         <div className="bg-white p-4 rounded shadow">
           <p className="text-xs text-gray-500">Total pendiente</p>
           <p className="text-xl font-bold text-red-600">
-            ${totalPending.toFixed(2)}
+            ${totalPending}
           </p>
         </div>
 

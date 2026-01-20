@@ -5,12 +5,18 @@
 
 import { db } from "@/firebase-config";
 import {
+  collection,
+  query,
+  orderBy,
+  getDocs,
   doc,
   getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
   serverTimestamp,
+  type QueryDocumentSnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 
 import type { Payable, PayableStatus } from "@/types/Payable";
@@ -86,6 +92,27 @@ export async function fetchPayableByTransactionId(
   if (!snap.exists()) return null;
 
   return { id: snap.id, ...(snap.data() as Payable) };
+}
+
+/* ============================================================================
+ * FETCH PAYABLES
+ * ========================================================================== */
+
+export async function fetchPayables(
+  entityId: string
+): Promise<Payable[]> {
+  if (!entityId) return [];
+
+  const colRef = collection(db, "entities", entityId, "payables");
+  const qRef = query(colRef, orderBy("issueDate", "desc"));
+
+  const snap = await getDocs(qRef);
+
+  return snap.docs.map(
+    (d: QueryDocumentSnapshot<DocumentData>) => ({
+    id: d.id,
+    ...(d.data() as Payable),
+  }));
 }
 
 /* ============================================================================
