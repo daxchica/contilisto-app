@@ -96,9 +96,7 @@ export default function JournalPreviewModal({
     x: Math.max(20, window.innerWidth / 2 - 450),
     y: Math.max(20, window.innerHeight / 2 - 300),
   });
-  // ✅ ADD THIS
-  const [position, setPosition] = useState(initialPosition.current);
-
+ 
   // -------------------------------------------------------------------------
   // ACCOUNTS
   // -------------------------------------------------------------------------
@@ -115,40 +113,32 @@ export default function JournalPreviewModal({
   const hasPositioned = useRef(false);
 
   useEffect(() => {
-    if (!open) {
-      hasPositioned.current = false;
-      return;
-    }
+    if (!open) return;
+    
+    const prepared = entries.map((e) => ({
+      ...e,
+      id: e.id ?? crypto.randomUUID(),
+      debit: Number(e.debit ?? 0),
+      credit: Number(e.credit ?? 0),
+      date: e.date ?? todayISO(),
+    }));
 
-    if (!hasPositioned.current) {
-      setPosition(initialPosition.current);
-      hasPositioned.current = true;
+    setRows(prepared);
 
-      const prepared = entries.map((e) => ({
-        ...e,
-        id: e.id ?? crypto.randomUUID(),
-        debit: Number(e.debit ?? 0),
-        credit: Number(e.credit ?? 0),
-        date: e.date ?? todayISO(),
-      }));
+    const invoice = metadata.invoice_number ?? "";
 
-      setRows(prepared);
-
-      const invoice = metadata.invoice_number ?? "";
-
-      if (metadata.invoiceType === "sale") {
-        setNote(invoice ? `Factura de venta ${invoice}` : "");
-      } else {
-        const mainExpense = prepared.find((e) =>
-          e.account_code?.startsWith("5")
-        );
-        const desc = mainExpense?.account_name ?? "";
-        setNote(
-          invoice && desc
-            ? `Factura ${invoice} - ${desc}`
-            : invoice || desc
-        );
-      }
+    if (metadata.invoiceType === "sale") {
+      setNote(invoice ? `Factura de venta ${invoice}` : "");
+    } else {
+      const mainExpense = prepared.find((e) =>
+        e.account_code?.startsWith("5")
+      );
+      const desc = mainExpense?.account_name ?? "";
+      setNote(
+        invoice && desc
+          ? `Factura ${invoice} - ${desc}`
+          : invoice || desc
+      );
     }
   }, [open, entries, metadata]);
 
@@ -271,8 +261,10 @@ export default function JournalPreviewModal({
       open ? "bg-black/50 pointer-events-auto" : "pointer-events-none opacity-0"}`}>
       <Rnd
         disableDragging={saving}
-        position={position}
-        onDragStop={(_, data) => setPosition({ x: data.x, y: data.y })}
+        defaultPosition={initialPosition.current}
+        onDragStop={(_, data) => 
+          { initialPosition.current = { x: data.x, y: data.y };
+        }}
         enableResizing={false}
         updatePositionOnResize={false}
         dragHandleClassName="drag-header"
