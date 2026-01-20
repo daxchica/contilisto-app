@@ -15,14 +15,23 @@ interface ChartExpensesPieProps {
   entries: JournalEntry[];
 }
 
+/* ============================================================================
+ * SAFETY HELPER (LOGIC ONLY — NO UI IMPACT)
+ * ========================================================================== */
+function startsWithSafe(value: unknown, prefix: string): boolean {
+  return typeof value === "string" && value.startsWith(prefix);
+}
+
 export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
   // ========================
-  // 1. Filtrar solo cuentas de gastos
+  // 1. Filtrar solo cuentas de gastos (SAFE)
   // ========================
   
   const expenses = useMemo(() => { 
     return entries.filter(
-    (e) => e.account_code.startsWith("5") || e.account_code.startsWith("6")
+      (e) =>
+        startsWithSafe(e.account_code, "5") ||
+        startsWithSafe(e.account_code, "6")
     );
   }, [entries]);
 
@@ -33,7 +42,7 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
     const map: Record<string, number> = {};
 
     expenses.forEach((e) => {
-      const key = `${e.account_code} - ${e.account_name}`;
+      const key = `${e.account_code ?? "SIN-CUENTA"} - ${e.account_name ?? "Sin nombre"}`;
       const value = e.debit || 0;
       map[key] = (map[key] || 0) + value;
     });
@@ -45,7 +54,7 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
   }, [expenses]);
 
   // =========================
-  // 3. Colores corporativos
+  // 3. Colores corporativos (UNCHANGED)
   // =========================
   const COLORS = [
     "#0A3558",
@@ -56,11 +65,13 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
     "#f59e0b",
     "#14b8a6",
     "#ef4444"
-  ]
+  ];
 
   return (
     <div className="bg-white p-6 rounded-xl shadow h-[500px]">
-      <h3 className="text-gray-700 font-semibold mb-4">Distribución de gastos</h3>
+      <h3 className="text-gray-700 font-semibold mb-4">
+        Distribución de gastos
+      </h3>
 
       <ResponsiveContainer width="100%" height={300}>
         <PieChart>
@@ -105,9 +116,6 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
           />
         </PieChart>
       </ResponsiveContainer>
-      {/*  <pre className="text-sm text-gray-700">
-        {JSON.stringify(expenses.slice(0, 5), null, 2)}
-      </pre> */}
     </div>
   );
 }

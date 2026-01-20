@@ -1,37 +1,60 @@
 // ============================================================================
-// src/components/payables/RegisterPayablePaymentModal.tsx
-// ---------------------------------------------------------------------------
 // Register payable payment (Accounts Payable)
-//
-// FLOW (ACCOUNTING SAFE):
-// 1) Create Bank Movement (Libro Bancos)  ← source of truth
-// 2) Create Journal Entry derived from bank movement
-// 3) Link Bank Movement → Journal transactionId
-//
-// USER-FACING (Spanish):
-// - Registra un pago real desde el banco y genera el asiento contable.
+// ACCOUNTING SAFE FLOW:
+// 1) Bank Movement
+// 2) Journal Entry
+// 3) Link Bank → Journal
 // ============================================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Rnd } from "react-rnd";
 
 import type { Payable } from "@/types/Payable";
-import { createPayablePaymentJournalEntry } from "@/services/journalService";
+import type { BankAccount } from "@/types/bankTypes";
+
 import {
   createBankMovement,
   linkJournalTransaction,
   type BankMovement,
 } from "@/services/bankMovementService";
 
+import { createPayablePaymentJournalEntry } from "@/services/journalService";
+import { repairPayableAccountFromJournal } from "@/services/payablesService";
+
 type Props = {
   isOpen: boolean;
   entityId: string;
   userId: string;
   payable: Payable | null;
-  bankAccounts: { code: string; name: string }[]; // PUC bank accounts
+  bankAccounts: BankAccount[];
   onClose: () => void;
   onSaved?: () => void;
 };
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
+function toNumber(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function resolveBankGLCode(bank: BankAccount): string {
+  const b = bank as any;
+  return (
+    b.account_code ||
+    b.accountCode ||
+    b.glAccountCode ||
+    b.glAccount ||
+    b.code ||
+    ""
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                   */
+/* -------------------------------------------------------------------------- */
 
 export default function RegisterPayablePaymentModal({
   isOpen,
@@ -42,94 +65,179 @@ export default function RegisterPayablePaymentModal({
   onClose,
   onSaved,
 }: Props) {
+  const [localPayable, setLocalPayable] = useState<Payable | null>(null);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
-  const [bankAccount, setBankAccount] = useState("");
+  const [bankAccountId, setBankAccountId] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
+  const [error, setError] = useState("");
+  const [needsRepair, setNeedsRepair] = useState(false);
+  const [repairing, setRepairing] = useState(false);
+
+  // --------------------------------------------------
+  // Init on open
+  // --------------------------------------------------
   useEffect(() => {
     if (!isOpen || !payable) return;
 
+    setLocalPayable(payable);
     setAmount(payable.balance.toString());
     setPaymentDate(new Date().toISOString().slice(0, 10));
-    setBankAccount(bankAccounts[0]?.code ?? "");
+    setBankAccountId(bankAccounts.length === 1 ? bankAccounts[0]?.id! : "");
     setError("");
+    setNeedsRepair(false);
   }, [isOpen, payable, bankAccounts]);
 
-  if (!isOpen || !payable) return null;
+  // --------------------------------------------------
+  // Selected bank
+  // --------------------------------------------------
+  const selectedBank = useMemo(
+    () => bankAccounts.find((b) => b.id === bankAccountId),
+    [bankAccounts, bankAccountId]
+  );
 
-  const p = payable;
+  const numericAmount = useMemo(() => toNumber(amount), [amount]);
 
+  if (!isOpen || !localPayable) return null;
+  const p = localPayable;
+
+  // --------------------------------------------------
+  // Save handler
+  // --------------------------------------------------
   async function handleSave() {
     try {
       setSaving(true);
       setError("");
+      setNeedsRepair(false);
 
-      const value = Number(amount);
-
-      // ---------------------------
-      // Validations (Spanish)
-      // ---------------------------
       if (!entityId) throw new Error("Empresa no seleccionada");
       if (!userId) throw new Error("Usuario no válido");
       if (!p.id) throw new Error("Cuenta por pagar inválida");
       if (!paymentDate) throw new Error("Fecha requerida");
-      if (!bankAccount) throw new Error("Cuenta bancaria requerida");
-      if (!Number.isFinite(value) || value <= 0) {
+      if (!selectedBank) throw new Error("Cuenta bancaria requerida");
+
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
         throw new Error("Monto inválido");
       }
-      if (value > p.balance) {
+
+      if (numericAmount > p.balance) {
         throw new Error("El monto excede el saldo pendiente");
       }
 
+      // ✅ CRITICAL FIX:
+      // Prevent orphan bank movements by validating payable BEFORE creating movement.
+      // If payable lacks supplier account_code, we must repair first.
+      if (!p.account_code || !String(p.account_code).trim()) {
+        setNeedsRepair(true);
+        throw new Error(
+          "El payable no tiene cuenta contable de proveedores. Debe repararse antes de pagar."
+        );
+      }
+
+      // ✅ The Journal must credit the BANK GL ACCOUNT CODE, not necessarily the bankAccountId.
+      const bankGLCode = resolveBankGLCode(selectedBank);
+      if (!bankGLCode) {
+        throw new Error("La cuenta bancaria no tiene código contable (GL).");
+      }
+
       // =====================================================
-      // 1) Create Bank Movement (Libro Bancos)
+      // 1) Bank Movement
       // =====================================================
-      const movement: BankMovement = {
+      const movement: BankMovement = {   
         entityId,
-        // TEMP: using account_code as identifier until real bankAccountId exists
-        bankAccountId: bankAccount,
+        bankAccountId: selectedBank.id!,
         date: paymentDate,
-        amount: value, // normalized internally (negative for "out")
+        amount: numericAmount,
         type: "out",
         description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
         createdBy: userId,
-
-        // Traceability (invoice reference by number)
-        relatedInvoiceId: p.invoiceNumber,
       };
 
       const bankMovementId = await createBankMovement(movement);
 
       // =====================================================
-      // 2) Create Journal Entry (derived from bank movement)
+      // 2) Journal Entry (may fail if payable is broken)
       // =====================================================
       const transactionId = await createPayablePaymentJournalEntry(
         entityId,
         p,
-        value,
+        numericAmount,
         paymentDate,
-        bankAccount,
+        {
+          id: selectedBank.id!,
+          account_code: bankGLCode,
+          name: selectedBank.name,
+        },
         userId,
         { bankMovementId }
       );
 
       // =====================================================
-      // 3) Link Bank Movement → Journal transactionId
+      // 3) Link bank → journal
       // =====================================================
       await linkJournalTransaction(entityId, bankMovementId, transactionId);
 
-      // Done
       onSaved?.();
       onClose();
     } catch (e: any) {
-      setError(e?.message ?? "No se pudo registrar el pago");
+      const msg = e?.message ?? "No se pudo registrar el pago";
+      setError(msg);
+
+      // 🔴 Explicit invariant detection
+      if (
+        /sin cuenta contable/i.test(msg) ||
+        /debe repararse/i.test(msg) ||
+        /no tiene cuenta contable/i.test(msg)
+      ) {
+        setNeedsRepair(true);
+      }
     } finally {
       setSaving(false);
     }
   }
 
+  // --------------------------------------------------
+  // Repair handler (deterministic)
+  // --------------------------------------------------
+  async function handleRepair() {
+  try {
+    setRepairing(true);
+    setError("");
+
+    if (!p.id) {
+      throw new Error("Payable inválido: falta identificador");
+    }
+
+    const picked = await repairPayableAccountFromJournal(entityId, p.id);
+
+    setLocalPayable((prev) =>
+      prev
+        ? {
+            ...prev,
+            account_code: picked.account_code,
+            account_name: picked.account_name,
+          }
+        : prev
+    );
+
+    setNeedsRepair(false);
+    setError(
+      "Cuenta contable reparada correctamente. Ahora puede registrar el pago."
+    );
+
+    onSaved?.();
+    } catch (e: any) {
+      setError(e?.message ?? "No se pudo reparar la cuenta contable");
+      setNeedsRepair(true);
+    } finally {
+      setRepairing(false);
+    }
+  }
+
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <Rnd
@@ -152,13 +260,12 @@ export default function RegisterPayablePaymentModal({
                 {p.supplierName} • Factura {p.invoiceNumber}
               </p>
             </div>
-            <button onClick={onClose} disabled={saving}>
-              ✕
-            </button>
+            <button onClick={onClose} disabled={saving}>✕</button>
           </div>
 
           {/* BODY */}
           <div className="p-6 space-y-4">
+            {/* AMOUNT */}
             <div>
               <label className="text-sm font-medium">Monto a pagar</label>
               <input
@@ -175,6 +282,7 @@ export default function RegisterPayablePaymentModal({
               </div>
             </div>
 
+            {/* DATE */}
             <div>
               <label className="text-sm font-medium">Fecha de pago</label>
               <input
@@ -185,24 +293,49 @@ export default function RegisterPayablePaymentModal({
               />
             </div>
 
+            {/* BANK */}
             <div>
               <label className="text-sm font-medium">Cuenta bancaria</label>
               <select
-                value={bankAccount}
-                onChange={(e) => setBankAccount(e.target.value)}
+                value={bankAccountId}
+                onChange={(e) => setBankAccountId(e.target.value)}
                 className="mt-1 w-full border rounded px-3 py-2 text-sm"
               >
+                <option value="">-- Seleccione una cuenta --</option>
                 {bankAccounts.map((b) => (
-                  <option key={b.code} value={b.code}>
-                    {b.code} — {b.name}
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.number})
                   </option>
                 ))}
               </select>
+
+              {selectedBank && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Se debitará de: <strong>{selectedBank.name}</strong>
+                </div>
+              )}
             </div>
 
+            {/* ERROR */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-3">
                 {error}
+              </div>
+            )}
+
+            {/* REPAIR CTA */}
+            {needsRepair && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                <p className="text-sm text-yellow-800 mb-2">
+                  Esta factura fue creada sin cuenta contable.
+                </p>
+                <button
+                  onClick={handleRepair}
+                  disabled={repairing}
+                  className="px-3 py-2 bg-yellow-600 text-white rounded text-sm"
+                >
+                  {repairing ? "Reparando..." : "🛠 Reparar cuenta contable"}
+                </button>
               </div>
             )}
           </div>

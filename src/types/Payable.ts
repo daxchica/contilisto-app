@@ -15,11 +15,16 @@ export interface Installment {
 export interface Payable {
   id?: string;
   entityId: string;
+  
+  transactionId?: string;
+  invoiceNumber: string;
 
   supplierName?: string;
   supplierRUC?: string;
 
-  invoiceNumber: string;
+  account_code: string;
+  account_name: string;
+
   issueDate: string;     // "YYYY-MM-DD"
   dueDate?: string;
 
@@ -34,7 +39,6 @@ export interface Payable {
 
   installmentSchedule?: Installment[];
 
-  transactionId?: string;
   createdFrom: "ai_journal" | "manual_journal" | "sri_invoice";
 
   createdAt?: any; // serverTimestamp

@@ -5,14 +5,22 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchPayables } from "@/services/payablesService";
 import type { Payable } from "@/types/Payable";
 
+import { useBankAccounts } from "@/hooks/useBankAccounts";
+
 import EditPayableTermsModal from "@/components/payables/EditPayableTermsModal";
 import RegisterPayablePaymentModal from "@/components/payables/RegisterPayablePaymentModal";
 import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsTable";
 
 export default function AccountsPayablePage() {
   const { selectedEntity } = useSelectedEntity();
+
   const entityId = selectedEntity?.id ?? null;
   const userId = selectedEntity?.uid ?? null;
+
+  const { 
+    bankAccounts: rawBankAccounts, 
+    loading: accountsLoading 
+  } = useBankAccounts(entityId ?? "", userId ?? "");
 
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +29,9 @@ export default function AccountsPayablePage() {
   const [payingPayable, setPayingPayable] = useState<Payable | null>(null);
   const [expandedPayableId, setExpandedPayableId] = useState<string | null>(null);
 
+  // --------------------------------------------------
+  // Reload payables
+  // --------------------------------------------------
   const reload = useCallback(() => {
     if (!entityId) {
     setPayables([]);
@@ -39,23 +50,26 @@ export default function AccountsPayablePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload]);
 
+  // --------------------------------------------------
+  // Derived data
+  // --------------------------------------------------
   const visiblePayables = useMemo(
     () => payables.filter(p => p.status !== "paid"),
     [payables]
   );
 
   const totalPending = useMemo(
-    () => visiblePayables.reduce(
-            (sum, p) => sum + Number(p.balance || 0), 0),
+    () => 
+      visiblePayables.reduce(
+        (sum, p) => sum + Number(p.balance || 0), 0),
     [visiblePayables]
   );
 
-  const pendingCount = useMemo(
-    () => payables.filter((p) => p.status !== "paid").length,
-    [visiblePayables]
-  );
+  const pendingCount = visiblePayables.length;
 
-  // ✅ Si no hay empresa seleccionada, no intentes cargar ni renderizar modales
+  // --------------------------------------------------
+  // Guards
+  // --------------------------------------------------
   if (!entityId) {
     return (
       <div className="p-6">
@@ -67,10 +81,13 @@ export default function AccountsPayablePage() {
     );
   }
 
-  if (loading) {
+  if (loading || accountsLoading) {
     return <p className="p-6">Cargando cuentas por pagar…</p>;
   }
 
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
   return (
     <div className="p-6">
       {/* HEADER */}
@@ -197,7 +214,7 @@ export default function AccountsPayablePage() {
         </div>
 
         {/* MODALS */}
-        {editingPayable && selectedEntity && (
+        {editingPayable && (
           <EditPayableTermsModal
             isOpen={true}
             entityId={entityId}
@@ -210,18 +227,16 @@ export default function AccountsPayablePage() {
           />
         )}
       
-        {payingPayable && selectedEntity && (
+        {payingPayable && (
           <RegisterPayablePaymentModal
             isOpen={true}
             entityId={entityId}
-            userId={selectedEntity.uid}
+            userId={userId!}
             payable={payingPayable}
-            bankAccounts={[]} // lo conectamos después
+            bankAccounts={rawBankAccounts}
             onClose={() => setPayingPayable(null)}
-            onSaved={() => {
-              setPayingPayable(null);
-              reload();
-            }}
+            onSaved={reload}
+            
           />
         )}
       </div>

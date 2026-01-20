@@ -157,7 +157,6 @@ export default function AccountingDashboard() {
 
     const invoice = invoiceNumbers[0];
     if (!confirm(`¿Eliminar factura ${invoice}?`)) return;
-
     await deleteJournalEntriesByTransactionId(entityId, transactionId);
 
     setSessionJournal(prev =>
@@ -305,9 +304,9 @@ export default function AccountingDashboard() {
       {showAccountsModal && (
         <ChartOfAccountsModal
           entityId={entityId}
-          accounts={accounts}
+          entityName={selectedEntity?.name ?? ""}
           onClose={() => setShowAccountsModal(false)}
-          onUploadComplete={loadAccounts}
+          onAccountsChanged={loadAccounts}
         />
       )}
 
@@ -322,6 +321,15 @@ export default function AccountingDashboard() {
           onSave={async (entries, note) => {
             const tx = entries[0]?.transactionId ?? crypto.randomUUID();
 
+            const invoiceNumber =
+              previewMetadata?.invoice_number ||
+              entries[0]?.invoice_number ||
+              "";
+
+            if (!invoiceNumber) {
+              throw new Error("No se pudo determinar el número de factura");
+            }
+
             const fixedEntries = entries.map(e => ({
               ...e,
               entityId,
@@ -329,6 +337,9 @@ export default function AccountingDashboard() {
               transactionId: tx,
               description: note,
               createdAt: e.createdAt ?? Date.now(),
+
+              // ✅ CRITICAL: persist invoice number on EVERY line
+              invoice_number: e.invoice_number || invoiceNumber,
             }));
 
             const saved = await saveJournalEntries(entityId, fixedEntries, userId);

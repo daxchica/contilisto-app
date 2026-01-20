@@ -27,6 +27,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  writeBatch
 } from "firebase/firestore";
 
 /* ============================================================================
@@ -57,6 +58,7 @@ export interface BankMovement {
    * Movement type
    */
   type: BankMovementType;
+  transactionId?: string;
 
   /**
    * User-facing description (Spanish)
@@ -245,6 +247,33 @@ export async function deleteBankMovement(
   }
 
   await deleteDoc(ref);
+}
+
+// ============================================================================
+// ADD THIS FUNCTION (exported) to src/services/bankMovementService.ts
+// Deletes bank movements linked to a given journal transaction id.
+// ============================================================================
+
+export async function deleteBankMovementsByJournalTransactionId(
+  entityId: string,
+  journalTransactionId: string
+): Promise<void> {
+  if (!entityId) throw new Error("entityId requerido");
+  if (!journalTransactionId) throw new Error("journalTransactionId requerido");
+
+  const colRef = collection(db, "entities", entityId, "bankMovements");
+  const qRef = query(
+    colRef,
+    where("relatedJournalTransactionId", "==", journalTransactionId)
+  );
+
+  const snap = await getDocs(qRef);
+
+  if (snap.empty) return;
+
+  const batch = writeBatch(db);
+  snap.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }
 
 /* ============================================================================

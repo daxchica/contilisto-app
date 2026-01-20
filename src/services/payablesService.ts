@@ -1,25 +1,15 @@
+// ============================================================================
 // src/services/payablesService.ts
-//
-// CONTILISTO v1.0 — Payables Service (Accounts Payable)
-//
-// USER-FACING (Spanish):
-// - "Cuentas por pagar": obligaciones con proveedores.
-// - Los pagos se aplican contra el saldo pendiente y/o el calendario.
-//
-// ENGINEERING NOTES (English):
-// - Payable docId = transactionId (1 invoice = 1 payable).
-// - Always read the latest payable snapshot before applying payment to avoid stale UI state.
-// - Payment application must be idempotent-safe at the business level (no overpay).
-// - Keep Firestore writes free of undefined values (Firestore does not accept undefined).
+// Accounts Payable — CONTILISTO v1.0
+// ============================================================================
 
 import { db } from "@/firebase-config";
 import {
-  collection,
   doc,
   getDoc,
-  getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
 
@@ -29,332 +19,325 @@ import {
   buildInstallmentSchedule,
 } from "@/utils/payable";
 
-/* =========================================================
+import {
+  fetchJournalEntriesByTransactionId,
+  deleteJournalEntriesByTransactionId,
+} from "./journalService";
+
+import {
+  deleteBankMovementsByJournalTransactionId,
+} from "./bankMovementService";
+
+/* ============================================================================
  * HELPERS
- * ========================================================= */
+ * ========================================================================== */
 
-/**
- * Compute balance + status from paid/total.
- * NOTE: balance is always rounded to 2 decimals.
- */
-function computeStatus(
-  paid: number,
-  total: number
-): { balance: number; status: PayableStatus } {
-  const balance = Number((Number(total || 0) - Number(paid || 0)).toFixed(2));
-  if (balance <= 0) return { balance, status: "paid" };
-  if (paid > 0) return { balance, status: "partial" };
-  return { balance, status: "pending" };
+const n2 = (x: any) =>
+  Number.isFinite(Number(x)) ? Number(Number(x).toFixed(2)) : 0;
+
+const normAcc = (c?: string) => (c || "").replace(/\./g, "").trim();
+
+function assertPayableAccount(account_code?: string) {
+  const c = normAcc(account_code);
+  if (!c) throw new Error("Payable requiere cuenta contable");
+
+  if (!c.startsWith("20101") && !c.startsWith("211") && !c.startsWith("20103")) {
+    throw new Error(`Cuenta inválida para CxP: ${account_code}`);
+  }
 }
 
-/**
- * Safe UTC due date calculation (avoids timezone drift).
- */
-function calculateDueDate(issueDate: string, termsDays: number): string {
-  const [y, m, d] = (issueDate || "").split("-").map(Number);
-  if (!y || !m || !d) return "";
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + termsDays);
-  return date.toISOString().slice(0, 10);
+function assertTransactionId(tx: unknown): asserts tx is string {
+  if (typeof tx !== "string" || !tx.trim()) {
+    throw new Error("Payable inválido: falta transactionId");
+  }
 }
 
-/**
- * Basic numeric safety.
- */
-function n2(x: any): number {
-  const v = Number(x);
-  return Number.isFinite(v) ? Number(v.toFixed(2)) : 0;
+function assertInvoiceInvariant(
+  payable: Pick<Payable, "invoiceNumber" | "issueDate">
+) {
+  if (!payable.invoiceNumber?.trim()) {
+    throw new Error("Payable requiere número de factura");
+  }
+  if (!payable.issueDate?.trim()) {
+    throw new Error("Payable requiere fecha de emisión");
+  }
 }
 
-/* =========================================================
+function computeStatus(paid: number, total: number) {
+  const balance = n2(total - paid);
+  if (balance <= 0) return { balance, status: "paid" as PayableStatus };
+  if (paid > 0) return { balance, status: "partial" as PayableStatus };
+  return { balance, status: "pending" as PayableStatus };
+}
+
+/* ============================================================================
  * FETCH
- * ========================================================= */
-export async function fetchPayables(entityId: string): Promise<Payable[]> {
-  if (!entityId) return [];
-  const colRef = collection(db, "entities", entityId, "payables");
-  const snap = await getDocs(colRef);
+ * ========================================================================== */
 
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as Payable),
-  }));
+export async function fetchPayableByTransactionId(
+  entityId: string,
+  transactionId: string
+): Promise<Payable | null> {
+  if (!entityId || !transactionId) return null;
+
+  const ref = doc(db, "entities", entityId, "payables", transactionId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return null;
+
+  return { id: snap.id, ...(snap.data() as Payable) };
 }
 
-/* =========================================================
+/* ============================================================================
  * UPSERT PAYABLE
- *
- * ✅ docId = transactionId (unique per invoice)
- * ✅ does not overwrite createdAt if exists
- * ========================================================= */
+ * ========================================================================== */
+
 export async function upsertPayable(
   entityId: string,
   payable: Omit<
     Payable,
-    | "id"
-    | "entityId"
-    | "status"
-    | "balance"
-    | "createdAt"
-    | "updatedAt"
+    "id" | "entityId" | "status" | "balance" | "createdAt" | "updatedAt"
   >
 ) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!payable.transactionId) throw new Error("Payable requiere transactionId");
+  assertTransactionId(payable.transactionId);
+  assertPayableAccount(payable.account_code);
+  assertInvoiceInvariant(payable);
 
-  const ref = doc(db, "entities", entityId, "payables", payable.transactionId);
-  const existing = await getDoc(ref);
+  const tx = payable.transactionId;
+  const ref = doc(db, "entities", entityId, "payables", tx);
+  const snap = await getDoc(ref);
 
-  const paid = n2(payable.paid ?? 0);
-  const total = n2(payable.total ?? 0);
+  const paid = n2((payable as any).paid ?? 0);
+  const total = n2((payable as any).total ?? 0);
+
+  if (total <= 0) throw new Error("Payable requiere total > 0");
+  if (paid < 0 || paid > total) throw new Error("Monto pagado inválido");
 
   const { balance, status } = computeStatus(paid, total);
 
-  const termsDays = payable.termsDays ?? 30;
-  const installments = payable.installments ?? 1;
-
-  const dueDate =
-    payable.dueDate ?? calculateDueDate(payable.issueDate, termsDays);
-
-  const installmentSchedule =
-    payable.installmentSchedule ??
-    buildInstallmentSchedule(total, payable.issueDate, termsDays, installments);
-
-  // NOTE (English):
-  // With merge:true, createdAt could be overwritten if we always send it.
-  // Only set createdAt when doc does not exist yet.
-  const basePayload: any = {
+  const payload: any = {
+    ...(snap.exists() ? snap.data() : {}),
     ...payable,
     entityId,
     paid,
     total,
     balance,
     status,
-    termsDays,
-    installments,
-    dueDate,
-    installmentSchedule,
-    createdFrom: payable.createdFrom ?? "ai_journal",
+    installmentSchedule:
+      (payable as any).installmentSchedule ??
+      buildInstallmentSchedule(
+        total,
+        payable.issueDate,
+        payable.termsDays,
+        payable.installments
+      ),
     updatedAt: serverTimestamp(),
+    ...(snap.exists() ? {} : { createdAt: serverTimestamp() }),
   };
 
-  if (!existing.exists()) {
-    basePayload.createdAt = serverTimestamp();
-  }
-
-  await setDoc(ref, basePayload, { merge: true });
-
-  return payable.transactionId;
+  await setDoc(ref, payload, { merge: true });
 }
 
-/* =========================================================
- * APPLY PAYMENT TO PAYABLE
- *
- * IMPORTANT (English):
- * - Always fetch the latest payable from Firestore to avoid stale UI data.
- * - Prevent overpay.
- * - If schedule doesn't exist, fallback to paid += amount.
- * ========================================================= */
+/* ============================================================================
+ * APPLY PAYMENT
+ * ========================================================================== */
+
 export async function applyPayablePayment(
   entityId: string,
   payable: Payable,
   amount: number
 ) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!payable?.id) throw new Error("payableId faltante");
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Monto inválido");
-
-  const payableRef = doc(db, "entities", entityId, "payables", payable.id);
-  const snap = await getDoc(payableRef);
-  if (!snap.exists()) throw new Error("Cuentas por pagar no existe");
-
-  const current = { id: snap.id, ...(snap.data() as Payable) } as Payable;
-
-  const total = n2(current.total ?? 0);
-  const paidNow = n2(current.paid ?? 0);
-  const { balance: balanceNow } = computeStatus(paidNow, total);
-
-  const payAmount = n2(amount);
-
-  // USER-FACING (Spanish): block overpay
-  if (payAmount > balanceNow) {
-    throw new Error("El monto excede el saldo pendiente");
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Monto de pago inválido");
   }
 
-  // If there is a schedule, apply payment to installments.
-  // Otherwise, fallback to simple paid += amount.
-  let paidDelta = 0;
-  let updatedSchedule = current.installmentSchedule ?? [];
+  if (!payable?.id) throw new Error("Payable inválido (id faltante)");
 
-  if (Array.isArray(updatedSchedule) && updatedSchedule.length > 0) {
-    const res = applyPaymentToInstallments(updatedSchedule, payAmount);
-    updatedSchedule = res.updatedSchedule;
-    paidDelta = n2(res.paidDelta);
-    if (paidDelta <= 0) throw new Error("El pago no pudo aplicarse");
-  } else {
-    // Fallback: no schedule yet (or older payables)
-    paidDelta = payAmount;
+  const ref = doc(db, "entities", entityId, "payables", payable.id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Payable no existe");
+
+  const current = snap.data() as Payable;
+
+  assertTransactionId(current.transactionId);
+  assertPayableAccount(current.account_code);
+
+  const paidNow = n2(current.paid);
+  const total = n2(current.total);
+  const { balance } = computeStatus(paidNow, total);
+
+  if (amount > balance) throw new Error("El monto excede el saldo pendiente");
+
+  let paidDelta = amount;
+  let schedule = current.installmentSchedule ?? [];
+
+  if (schedule.length) {
+    const res = applyPaymentToInstallments(schedule, amount);
+    schedule = res.updatedSchedule;
+    paidDelta = res.paidDelta;
   }
 
   const paid = n2(paidNow + paidDelta);
-  const { balance, status } = computeStatus(paid, total);
-
-  await updateDoc(payableRef, {
-    installmentSchedule: updatedSchedule,
-    paid,
-    balance,
-    status,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-/* =========================================================
- * UPDATE STATUS (manual override)
- * ========================================================= */
-export async function updatePayableStatus(
-  entityId: string,
-  payableId: string,
-  status: PayableStatus
-) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!payableId) throw new Error("payableId faltante");
-
-  const ref = doc(db, "entities", entityId, "payables", payableId);
+  const next = computeStatus(paid, total);
 
   await updateDoc(ref, {
-    status,
+    installmentSchedule: schedule,
+    paid,
+    balance: next.balance,
+    status: next.status,
     updatedAt: serverTimestamp(),
   });
 }
 
-/* =========================================================
- * REGISTER PAYMENT (legacy/minimal)
- *
- * NOTE (English):
- * - Prefer using: BankMovement -> Journal -> applyPayablePayment
- * - This function can stay for backward compatibility.
- * ========================================================= */
-export async function registerPayablePayment(
+/* ============================================================================
+ * REPAIR LEGACY PAYABLE (NO account_code)
+ * ========================================================================== */
+
+export async function repairPayableAccountFromJournal(
+  entityId: string,
+  payableId: string
+) {
+  const ref = doc(db, "entities", entityId, "payables", payableId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Payable no existe");
+
+  const payable = snap.data() as Payable;
+  assertTransactionId(payable.transactionId);
+
+  if (payable.account_code) return payable;
+
+  if (n2(payable.paid) > 0) {
+    throw new Error("No se puede reparar un payable con pagos registrados");
+  }
+
+  const entries = await fetchJournalEntriesByTransactionId(
+    entityId,
+    payable.transactionId
+  );
+
+  const candidates = entries.filter((e) => {
+    const c = normAcc(e.account_code);
+    return (
+      (c.startsWith("20103") || c.startsWith("20101") || c.startsWith("211")) &&
+      n2(e.credit) > 0
+    );
+  });
+
+  if (candidates.length !== 1) {
+    throw new Error("Asiento ambiguo o inválido para reparación");
+  }
+
+  const picked = candidates[0];
+  assertPayableAccount(picked.account_code);
+
+  await updateDoc(ref, {
+    account_code: picked.account_code,
+    account_name: picked.account_name,
+    updatedAt: serverTimestamp(),
+  });
+
+  return picked;
+}
+
+/* ============================================================================
+ * UPDATE PAYABLE TERMS
+ * ========================================================================== */
+
+export async function updatePayableTerms(
   entityId: string,
   payableId: string,
-  amount: number,
-  paymentDate: string,
-  bankAccountId?: string
+  termsDays: number,
+  installments: number
 ) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!payableId) throw new Error("payableId faltante");
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Monto inválido");
-  if (!paymentDate) throw new Error("paymentDate faltante");
+  if (!entityId) throw new Error("entityId requerido");
+  if (!payableId) throw new Error("payableId requerido");
+
+  if (!Number.isInteger(termsDays) || termsDays < 0) {
+    throw new Error("Plazo de días inválido");
+  }
+  if (!Number.isInteger(installments) || installments < 1) {
+    throw new Error("Número de cuotas inválido");
+  }
 
   const ref = doc(db, "entities", entityId, "payables", payableId);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Payable no existe");
 
-  const current = { id: snap.id, ...(snap.data() as Payable) } as Payable;
+  const current = snap.data() as Payable;
 
-  const total = n2(current.total ?? 0);
-  const paidNow = n2(current.paid ?? 0);
-  const { balance: balanceNow } = computeStatus(paidNow, total);
-
-  const payAmount = n2(amount);
-  if (payAmount > balanceNow) {
-    throw new Error("El monto excede el saldo pendiente");
+  if (n2(current.paid) > 0) {
+    throw new Error("No se pueden modificar los plazos de un payable con pagos registrados");
   }
 
-  let paid = paidNow;
-  let installmentSchedule = current.installmentSchedule ?? [];
+  assertTransactionId(current.transactionId);
+  assertPayableAccount(current.account_code);
+  assertInvoiceInvariant(current);
 
-  if (Array.isArray(installmentSchedule) && installmentSchedule.length > 0) {
-    const { updatedSchedule, paidDelta } = applyPaymentToInstallments(
-      installmentSchedule,
-      payAmount
-    );
-    if (n2(paidDelta) <= 0) throw new Error("El pago no pudo aplicarse");
-    installmentSchedule = updatedSchedule;
-    paid = n2(paid + paidDelta);
-  } else {
-    paid = n2(paid + payAmount);
-  }
+  const total = n2(current.total);
+  if (total <= 0) throw new Error("Total inválido");
 
-  const { balance, status } = computeStatus(paid, total);
-
-  // NOTE (English):
-  // We do not write fields that might not exist in the Payable type to avoid TS errors.
-  // If you want lastPaymentDate/lastPaymentBankAccountId, add them to Payable type first.
-  await updateDoc(ref, {
-    paid,
-    balance,
-    status,
-    installmentSchedule,
-    updatedAt: serverTimestamp(),
-  });
-
-  // paymentDate and bankAccountId are accepted for UI flow,
-  // but not persisted unless you add typed fields to Payable.
-  void paymentDate;
-  void bankAccountId;
-}
-
-/* =========================================================
- * UPDATE TERMS (PRODUCTION SAFE)
- * ========================================================= */
-export async function updatePayableTerms(
-  entityId: string,
-  payableId: string,
-  termsDays: number,
-  installments: number,
-  issueDate: string
-) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!payableId) throw new Error("payableId faltante");
-
-  if (!Number.isFinite(termsDays) || termsDays < 1 || termsDays > 3650) {
-    throw new Error("termsDays inválido (1..3650)");
-  }
-  if (!Number.isFinite(installments) || installments < 1 || installments > 60) {
-    throw new Error("installments inválido (1..60)");
-  }
-  if (!issueDate) throw new Error("issueDate faltante");
-
-  // 1) Validate entity exists
-  const entityRef = doc(db, "entities", entityId);
-  if (!(await getDoc(entityRef)).exists()) {
-    throw new Error(`Empresa no existe: entities/${entityId}`);
-  }
-
-  // 2) Validate payable exists
-  const payableRef = doc(db, "entities", entityId, "payables", payableId);
-  const payableSnap = await getDoc(payableRef);
-  if (!payableSnap.exists()) {
-    throw new Error(`Payable no existe en la empresa seleccionada: ${payableId}`);
-  }
-
-  const payable = payableSnap.data() as Payable;
-
-  // 3) Accounting lock: cannot change terms if already paid
-  if ((payable.paid ?? 0) > 0) {
-    throw new Error("No se pueden modificar plazos cuando ya existen pagos registrados");
-  }
-
-  // 4) Recalculate due date + schedule
-  const dueDate = calculateDueDate(issueDate, termsDays);
   const installmentSchedule = buildInstallmentSchedule(
-    n2(payable.total ?? 0),
-    issueDate,
+    total,
+    current.issueDate,
     termsDays,
     installments
   );
 
-  const { balance, status } = computeStatus(payable.paid ?? 0, payable.total);
-
-  // 5) Update
-  await updateDoc(payableRef, {
+  await updateDoc(ref, {
     termsDays,
     installments,
-    issueDate,
-    dueDate,
     installmentSchedule,
-    balance,
-    status,
+    balance: total,
+    status: "pending",
     updatedAt: serverTimestamp(),
   });
+}
+
+/* ============================================================================
+ * DELETE PAYABLE (CASCADE)
+ * ========================================================================== */
+
+async function deletePayable(entityId: string, payableId: string) {
+  await deleteDoc(doc(db, "entities", entityId, "payables", payableId));
+}
+
+async function fetchPaymentsForPayable(
+  entityId: string,
+  payableId: string
+): Promise<{ transactionId: string }[]> {
+  const ref = doc(db, "entities", entityId, "payables", payableId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return [];
+
+  const payable = snap.data() as any;
+  const txs: string[] = Array.isArray(payable.paymentTransactionIds)
+    ? payable.paymentTransactionIds.filter((x: any) => typeof x === "string" && x.trim())
+    : [];
+
+  return txs.map((transactionId) => ({ transactionId }));
+}
+
+export async function deletePayableCascade(
+  entityId: string,
+  transactionId: string
+) {
+  const payable = await fetchPayableByTransactionId(entityId, transactionId);
+  if (!payable) return;
+
+  // ✅ Fix TS: payable.id could be undefined
+  if (!payable.id) {
+    throw new Error("Payable inválido: falta id");
+  }
+
+  const payments = await fetchPaymentsForPayable(entityId, payable.id);
+
+  for (const p of payments) {
+    // ✅ Fix TS: p.transactionId could be undefined
+    if (!p.transactionId) continue;
+
+    await deleteJournalEntriesByTransactionId(entityId, p.transactionId);
+    await deleteBankMovementsByJournalTransactionId(entityId, p.transactionId);
+  }
+
+  await deletePayable(entityId, payable.id);
 }
