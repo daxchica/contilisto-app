@@ -312,6 +312,7 @@ export default function AccountingDashboard() {
 
       {showPreviewModal && previewMetadata && (
         <JournalPreviewModal
+          open={showPreviewModal}
           entries={previewEntries}
           metadata={previewMetadata}
           entityId={entityId}

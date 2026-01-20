@@ -1,12 +1,12 @@
 // ============================================================================
 // src/components/JournalPreviewModal.tsx
-// CONTILISTO — STABLE VERSION
+// CONTILISTO — STABLE & DRAG-SAFE VERSION
 // ============================================================================
 
 import React, {
   useEffect,
-  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Rnd } from "react-rnd";
@@ -23,6 +23,7 @@ import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
 // ---------------------------------------------------------------------------
 
 interface Props {
+  open: boolean;
   entries: JournalEntry[];
   metadata: InvoicePreviewMetadata;
   accounts: Account[];
@@ -35,8 +36,6 @@ interface Props {
 type Row = Omit<JournalEntry, "debit" | "credit"> & {
   debit: number;
   credit: number;
-  _debitRaw?: string;
-  _creditRaw?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -69,17 +68,12 @@ function createEmptyRow(entityId: string, userId: string): Row {
   };
 }
 
-function safeParseNumber(v: string | undefined) {
-  if (!v) return 0;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
 // ---------------------------------------------------------------------------
 // COMPONENT
 // ---------------------------------------------------------------------------
 
 export default function JournalPreviewModal({
+  open,
   entries,
   metadata,
   accounts,
@@ -88,23 +82,22 @@ export default function JournalPreviewModal({
   onClose,
   onSave,
 }: Props) {
+
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
   // -------------------------------------------------------------------------
-  // CENTERED MODAL (DRAGGABLE)
+  // STABLE INITIAL POSITION (CRITICAL FIX)
   // -------------------------------------------------------------------------
 
-  const MODAL_WIDTH = 900;
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-
-  useLayoutEffect(() => {
-    const x = Math.max(20, (window.innerWidth - MODAL_WIDTH) / 2);
-    const y = Math.max(20, (window.innerHeight - 500) / 2);
-    setPosition({ x, y });
-  }, []);
+  const initialPosition = useRef({
+    x: Math.max(20, window.innerWidth / 2 - 450),
+    y: Math.max(20, window.innerHeight / 2 - 300),
+  });
+  // ✅ ADD THIS
+  const [position, setPosition] = useState(initialPosition.current);
 
   // -------------------------------------------------------------------------
   // ACCOUNTS
@@ -116,38 +109,41 @@ export default function JournalPreviewModal({
   );
 
   // -------------------------------------------------------------------------
-  // INIT
+  // INIT ROWS
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    const prepared: Row[] = entries.map((e) => ({
-      ...e,
-      id: e.id ?? crypto.randomUUID(),
-      debit: Number(e.debit ?? 0),
-      credit: Number(e.credit ?? 0),
-      date: e.date ?? todayISO(),
-      _debitRaw: undefined,
-      _creditRaw: undefined,
-    }));
+  if (!open) return;
 
-    setRows(prepared);
+  // reset position when modal opens
+  setPosition(initialPosition.current);
 
-    const invoice = metadata.invoice_number ?? "";
+  const prepared = entries.map((e) => ({
+    ...e,
+    id: e.id ?? crypto.randomUUID(),
+    debit: Number(e.debit ?? 0),
+    credit: Number(e.credit ?? 0),
+    date: e.date ?? todayISO(),
+  }));
 
-    if (metadata.invoiceType === "sale") {
-      setNote(invoice ? `Factura de venta ${invoice}` : "");
-    } else {
-      const mainExpense = prepared.find((e) =>
-        e.account_code?.startsWith("5")
-      );
-      const desc = mainExpense?.account_name ?? "";
-      setNote(
-        invoice && desc
-          ? `Factura ${invoice} - ${desc}`
-          : invoice || desc
-      );
-    }
-  }, [entries, metadata]);
+  setRows(prepared);
+
+  const invoice = metadata.invoice_number ?? "";
+
+  if (metadata.invoiceType === "sale") {
+    setNote(invoice ? `Factura de venta ${invoice}` : "");
+  } else {
+    const mainExpense = prepared.find((e) =>
+      e.account_code?.startsWith("5")
+    );
+    const desc = mainExpense?.account_name ?? "";
+    setNote(
+      invoice && desc
+        ? `Factura ${invoice} - ${desc}`
+        : invoice || desc
+    );
+  }
+}, [open, entries, metadata]);
 
   // -------------------------------------------------------------------------
   // TOTALS
@@ -156,12 +152,12 @@ export default function JournalPreviewModal({
   const totals = useMemo(() => {
     const debit = rows.reduce((s, r) => s + r.debit, 0);
     const credit = rows.reduce((s, r) => s + r.credit, 0);
+    const diff = debit - credit;
 
     const nonZeroLines = rows.filter(
       (r) => Number(r.debit ?? 0) > 0 || Number(r.credit ?? 0) > 0
     ).length;
 
-    const diff = debit - credit;
     const balanced =
       Math.abs(diff) < 0.01 &&
       (debit > 0 || credit > 0) &&
@@ -201,7 +197,10 @@ export default function JournalPreviewModal({
   };
 
   const removeRow = (idx: number) => {
-    if (rows.length <= 1) return;
+    if (rows.length <= 2) {
+      alert("El asiento debe tener al menos dos lineas");
+      return;
+    }
     setRows((prev) => prev.filter((_, i) => i !== idx));
     setSelectedIdx(null);
   };
@@ -212,11 +211,10 @@ export default function JournalPreviewModal({
 
   const handleSave = async () => {
     if (!totals.balanced || saving) return;
-
+    
     try {
       setSaving(true);
-      await onSave(rows, note);
-
+    
       if (metadata.invoiceType === "expense") {
         const supplierRUC = metadata.issuerRUC;
         const supplierName = metadata.issuerName;
@@ -224,7 +222,7 @@ export default function JournalPreviewModal({
         for (const r of rows) {
           if (
             supplierRUC &&
-            Number(r.debit ?? 0) > 0 &&
+            r.debit > 0 &&
             r.account_code &&
             !r.account_code.startsWith("133") &&
             !r.account_code.startsWith("201")
@@ -241,6 +239,7 @@ export default function JournalPreviewModal({
         }
       }
 
+      await onSave(rows, note);
       onClose();
     } finally {
       setSaving(false);
@@ -252,7 +251,6 @@ export default function JournalPreviewModal({
   // -------------------------------------------------------------------------
 
   const isSale = metadata.invoiceType === "sale";
-
   const partyLabel = isSale ? "Cliente" : "Proveedor";
   const partyName = isSale ? metadata.buyerName : metadata.issuerName || "Proveedor no detectado";
   const partyRUC = isSale ? metadata.buyerRUC ?? "" : metadata.issuerRUC;
@@ -262,18 +260,18 @@ export default function JournalPreviewModal({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50">
+    <div className={`fixed inset-0 z-50 transition-opacity ${
+      open ? "bg-black/50 pointer-events-auto" : "pointer-events-none opacity-0"}`}>
       <Rnd
+        disableDragging={saving}
         position={position}
-        size={{ 
-          width: typeof window !== "undefined"
-            ? Math.min(MODAL_WIDTH, window.innerWidth - 24)
-            : MODAL_WIDTH,
-          height: "auto" 
-        }}
+        onDragStop={(_, data) => setPosition({ x: data.x, y: data.y })}
+        size={{ width: 900, height: "auto" }}
         enableResizing={false}
         dragHandleClassName="drag-header"
+        cancel=".no-drag"
         bounds="window"
+        style={{overflow: "visible" }}
         className="bg-white rounded-xl shadow-2xl"
       >
         {/* HEADER */}
@@ -285,7 +283,9 @@ export default function JournalPreviewModal({
         </div>
 
         {/* BODY */}
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 no-drag">
+
+          {/* METADATA */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 text-sm bg-gray-100 p-4 rounded">
           {/* LEFT COLUMN - CLIENT */}
           <div className="space-y-1">
@@ -319,11 +319,15 @@ export default function JournalPreviewModal({
             <button onClick={addRow} className="px-3 py-1 bg-emerald-600 text-white rounded">
               ➕ Agregar
             </button>
-            <button onClick={duplicateRow} className="px-3 py-1 bg-indigo-600 text-white rounded">
+            <button 
+              onClick={duplicateRow}
+              disabled={selectedIdx == null} 
+              className="px-3 py-1 bg-indigo-600 text-white rounded">
               ⧉ Duplicar
             </button>
           </div>
 
+          <div className="no-drag">
           {/* TABLE */}
           <table className="w-full text-sm border">
             <thead className="bg-gray-200">
@@ -421,6 +425,7 @@ export default function JournalPreviewModal({
               Confirmar Asiento
             </button>
           </div>
+        </div>
         </div>
       </Rnd>
     </div>
