@@ -112,38 +112,45 @@ export default function JournalPreviewModal({
   // INIT ROWS
   // -------------------------------------------------------------------------
 
+  const hasPositioned = useRef(false);
+
   useEffect(() => {
-  if (!open) return;
+    if (!open) {
+      hasPositioned.current = false;
+      return;
+    }
 
-  // reset position when modal opens
-  setPosition(initialPosition.current);
+    if (!hasPositioned.current) {
+      setPosition(initialPosition.current);
+      hasPositioned.current = true;
 
-  const prepared = entries.map((e) => ({
-    ...e,
-    id: e.id ?? crypto.randomUUID(),
-    debit: Number(e.debit ?? 0),
-    credit: Number(e.credit ?? 0),
-    date: e.date ?? todayISO(),
-  }));
+      const prepared = entries.map((e) => ({
+        ...e,
+        id: e.id ?? crypto.randomUUID(),
+        debit: Number(e.debit ?? 0),
+        credit: Number(e.credit ?? 0),
+        date: e.date ?? todayISO(),
+      }));
 
-  setRows(prepared);
+      setRows(prepared);
 
-  const invoice = metadata.invoice_number ?? "";
+      const invoice = metadata.invoice_number ?? "";
 
-  if (metadata.invoiceType === "sale") {
-    setNote(invoice ? `Factura de venta ${invoice}` : "");
-  } else {
-    const mainExpense = prepared.find((e) =>
-      e.account_code?.startsWith("5")
-    );
-    const desc = mainExpense?.account_name ?? "";
-    setNote(
-      invoice && desc
-        ? `Factura ${invoice} - ${desc}`
-        : invoice || desc
-    );
-  }
-}, [open, entries, metadata]);
+      if (metadata.invoiceType === "sale") {
+        setNote(invoice ? `Factura de venta ${invoice}` : "");
+      } else {
+        const mainExpense = prepared.find((e) =>
+          e.account_code?.startsWith("5")
+        );
+        const desc = mainExpense?.account_name ?? "";
+        setNote(
+          invoice && desc
+            ? `Factura ${invoice} - ${desc}`
+            : invoice || desc
+        );
+      }
+    }
+  }, [open, entries, metadata]);
 
   // -------------------------------------------------------------------------
   // TOTALS
@@ -266,12 +273,12 @@ export default function JournalPreviewModal({
         disableDragging={saving}
         position={position}
         onDragStop={(_, data) => setPosition({ x: data.x, y: data.y })}
-        size={{ width: 900, height: "auto" }}
         enableResizing={false}
+        updatePositionOnResize={false}
         dragHandleClassName="drag-header"
-        cancel=".no-drag"
+        cancel="input, textarea, button, select, .account-picker"
         bounds="window"
-        style={{overflow: "visible" }}
+        style={{ width: 900 }}
         className="bg-white rounded-xl shadow-2xl"
       >
         {/* HEADER */}
@@ -283,7 +290,7 @@ export default function JournalPreviewModal({
         </div>
 
         {/* BODY */}
-        <div className="p-5 space-y-4 no-drag">
+        <div className="p-5 space-y-4">
 
           {/* METADATA */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 text-sm bg-gray-100 p-4 rounded">
@@ -299,6 +306,7 @@ export default function JournalPreviewModal({
               <div>{partyRUC || "-"}</div>
             </div>
           </div>
+          
           
           {/* RIGHT COLUMN - DOCUMENT */}
           <div className="space-y-2">
@@ -343,12 +351,19 @@ export default function JournalPreviewModal({
               {rows.map((r, idx) => (
                 <tr
                   key={r.id}
-                  onClick={() => setSelectedIdx(idx)}
+                  onMouseDown={(e) => {
+                    if ((e.target as HTMLElement).closest("input, button, [role='listbox']")) {
+                      return;
+                    }
+                  
+                  setSelectedIdx(idx)
+                  }}
                   className={selectedIdx === idx ? "bg-emerald-50" : ""}
                 >
                   <td className="border p-2 font-mono">{r.account_code}</td>
                   <td className="border p-2">
                     <AccountPicker
+                      key={`account-picker-${r.id}`}
                       accounts={leafAccounts}
                       value={{ code: r.account_code ?? "", name: r.account_name ?? "" }}
                       onChange={(acc) =>
@@ -399,6 +414,7 @@ export default function JournalPreviewModal({
               </tr>
             </tbody>
           </table>
+          </div>
 
           {/* NOTE */}
           <div className="flex gap-3 items-center">
@@ -426,7 +442,7 @@ export default function JournalPreviewModal({
             </button>
           </div>
         </div>
-        </div>
+        
       </Rnd>
     </div>
   );
