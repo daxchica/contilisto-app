@@ -115,13 +115,46 @@ export default function JournalPreviewModal({
   useEffect(() => {
     if (!open) return;
     
-    const prepared = entries.map((e) => ({
-      ...e,
-      id: e.id ?? crypto.randomUUID(),
-      debit: Number(e.debit ?? 0),
-      credit: Number(e.credit ?? 0),
-      date: e.date ?? todayISO(),
-    }));
+    const prepared =
+      entries.length > 0
+        ? entries.map((e) => ({
+            ...e,
+            id: e.id ?? crypto.randomUUID(),
+            debit: Number(e.debit ?? 0),
+            credit: Number(e.credit ?? 0),
+            date: e.date ?? todayISO(),
+          }))
+        : [createEmptyRow(entityId, userId)];
+
+    // 🔹 AUTO-ADD IVA ROW IF MISSING (EXPENSE ONLY)
+    if (metadata.invoiceType === "expense") {
+      const hasIVA = prepared.some(r => r.account_code?.startsWith("133"));
+      const hasExpense = prepared.find(r => r.account_code?.startsWith("5"));
+      const hasAP = prepared.find(r => r.account_code?.startsWith("201"));
+
+      if (!hasIVA && hasExpense && hasAP) {
+        const ivaBase = hasExpense.debit || 0;
+        const ivaAmount = Number((ivaBase * 0.15).toFixed(2));
+
+        if (ivaAmount > 0) {
+          // Insert IVA BEFORE Accounts Payable
+          prepared.splice(
+            prepared.indexOf(hasAP),
+            0,
+            {
+              ...createEmptyRow(entityId, userId),
+              account_code: "133010102",
+              account_name: "IVA crédito en compras",
+              debit: ivaAmount,
+              credit: 0,
+            }
+          );
+
+          // Increase AP credit to keep balance
+          hasAP.credit = Number((hasAP.credit + ivaAmount).toFixed(2));
+        }
+      }
+    }
 
     setRows(prepared);
 
@@ -140,25 +173,38 @@ export default function JournalPreviewModal({
           : invoice || desc
       );
     }
-  }, [open, entries, metadata]);
+  }, [open, entries, metadata, entityId, userId]);
 
   // -------------------------------------------------------------------------
   // TOTALS
   // -------------------------------------------------------------------------
 
   const totals = useMemo(() => {
-    const debit = rows.reduce((s, r) => s + r.debit, 0);
-    const credit = rows.reduce((s, r) => s + r.credit, 0);
-    const diff = debit - credit;
+    const debit = Number(rows.reduce((s, r) => s + r.debit, 0).toFixed(2));
+    const credit = Number(rows.reduce((s, r) => s + r.credit, 0).toFixed(2));
+    const diff = Number((debit - credit).toFixed(2));
 
     const nonZeroLines = rows.filter(
       (r) => Number(r.debit ?? 0) > 0 || Number(r.credit ?? 0) > 0
     ).length;
 
+    const hasExpense = rows.some(
+      r => r.debit > 0 && r.account_code?.startsWith("5")
+    );
+
+    const hasIVA = rows.some(
+      r => r.debit > 0 && r.account_code?.startsWith("133")
+    );
+
+    const hasAP = rows.some(
+      r => r.credit > 0 && r.account_code?.startsWith("201")
+    );
+
     const balanced =
       Math.abs(diff) < 0.01 &&
-      (debit > 0 || credit > 0) &&
-      nonZeroLines >= 2;
+      hasExpense &&
+      hasAP &&
+      (metadata.invoiceType === "sale" || hasIVA);
 
     return { debit, credit, balanced };
   }, [rows]);
@@ -194,12 +240,22 @@ export default function JournalPreviewModal({
   };
 
   const removeRow = (idx: number) => {
+    const r = rows[idx];
+
+    const IVA_PREFIX = "133";
+    const AP_PREFIX = "201";
+
+    if ( r.account_code?.startsWith(IVA_PREFIX) || r.account_code?.startsWith(AP_PREFIX)
+    ) {
+      alert("Esta linea es obligatoria para facturas de gasto");
+      return;
+    }
+
     if (rows.length <= 2) {
       alert("El asiento debe tener al menos dos lineas");
       return;
     }
     setRows((prev) => prev.filter((_, i) => i !== idx));
-    setSelectedIdx(null);
   };
 
   // -------------------------------------------------------------------------
@@ -209,39 +265,44 @@ export default function JournalPreviewModal({
   const handleSave = async () => {
     if (!totals.balanced || saving) return;
     
-    try {
-      setSaving(true);
-    
-      if (metadata.invoiceType === "expense") {
-        const supplierRUC = metadata.issuerRUC;
-        const supplierName = metadata.issuerName;
+    setSaving(true);
 
-        for (const r of rows) {
+    let saved = false;
+    
+    try {
+      // 1️⃣ Guardar asiento (CRÍTICO)
+      await onSave(rows, note);
+      // -----------------------------------------------------
+      // 1️⃣ AI LEARNING (NON-BLOCKING)
+      // -----------------------------------------------------
+      if (metadata.invoiceType === "expense" && metadata.issuerRUC) {
+        rows.forEach(r => {
           if (
-            supplierRUC &&
             r.debit > 0 &&
-            r.account_code &&
-            !r.account_code.startsWith("133") &&
-            !r.account_code.startsWith("201")
+            r.account_code?.startsWith("5")
           ) {
-            await saveContextualAccountHint(
+            saveContextualAccountHint(
               userId,
-              supplierRUC,
-              supplierName,
+              metadata.issuerRUC,
+              metadata.issuerName,
               note,
               r.account_code,
               r.account_name ?? ""
-            );
+            ).catch(() => {
+              // ❌ SILENCIOSO
+            });
           }
-        }
+        });
       }
-
-      await onSave(rows, note);
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
+  
+      saved = true;
+      } catch (err) {
+        console.error("Error saving journal:", err);
+        alert("Error al guardar el asiento. Revisa permisos o conexion.");
+      } finally {
+        if (saved) onClose();
+      }
+    };
 
   // -------------------------------------------------------------------------
   // METADATA LABELS (SRI RULE)
@@ -368,11 +429,14 @@ export default function JournalPreviewModal({
                   </td>
                   <td className="border p-2 text-right">
                     <input
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={r.debit !== undefined && r.debit !== 0 ? r.debit.toString() : ""}
+                      value={r.debit === 0 ? "" : r.debit}
                       onChange={(e) =>
                         patchRow(idx, {
-                          debit: parseFloat(e.target.value) || 0,
+                          debit: e.target.value === "" ? 0 : Number(e.target.value),
                           credit: 0,
                         })
                       }
@@ -380,11 +444,14 @@ export default function JournalPreviewModal({
                   </td>
                   <td className="border p-2 text-right">
                     <input
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={r.credit || ""}
+                      value={r.credit === 0 ? "" : r.credit}
                       onChange={(e) =>
                         patchRow(idx, {
-                          credit: parseFloat(e.target.value) || 0,
+                          credit: e.target.value === "" ? 0 : Number(e.target.value),
                           debit: 0,
                         })
                       }

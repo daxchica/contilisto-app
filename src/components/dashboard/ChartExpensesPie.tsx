@@ -95,7 +95,10 @@ export default function ChartExpensesPie({ entries }: ChartExpensesPieProps) {
 
           {/* Tooltip elegante */}
           <Tooltip
-            formatter={(value: number) => `$${value.toFixed(2)}`}
+            formatter={(value) => {
+              const num = typeof value === "number" ? value: Number(value);
+              return isNaN(num) ? "$0.00" : `$${num.toFixed(2)}`;
+            }}
             contentStyle={{
               backgroundColor: "white",
               borderRadius: "10px",

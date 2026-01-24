@@ -31,9 +31,14 @@ export default function CompaniesPage() {
     if (!user?.uid) return;
 
     const load = async () => {
-      
-      const data = await fetchEntities(user.uid);
-      setEntities(data);
+    
+      try {
+        const data = await fetchEntities(user.uid);
+        setEntities(data);
+      } catch (e) {
+        console.error("FETCH ENTITIES ERROR", e);
+        alert("No se pudo cargar empresas. Revisa permisos en consola.");
+      }
     };
     load();
   }, [loading, user?.uid]);

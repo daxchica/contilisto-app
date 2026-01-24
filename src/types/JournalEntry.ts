@@ -51,4 +51,7 @@ export interface JournalEntry {
   isManual?: boolean;
 
   createdAt?: number;
+
+  customer_name?: string;
+  customerRUC?: string;
 }

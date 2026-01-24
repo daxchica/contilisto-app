@@ -1,3 +1,5 @@
+// src/services/journalService.ts
+
 import { db } from "@/firebase-config";
 import {
   collection,
@@ -10,10 +12,14 @@ import {
 
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { Payable } from "@/types/Payable";
+
 import { upsertPayable, applyPayablePayment } from "./payablesService";
+import { upsertReceivable } from "./receivablesService";
 import { createBankMovement, linkJournalTransaction } from "./bankMovementService";
 
-/* ================= HELPERS ================= */
+/* =============================================================================
+   HELPERS
+============================================================================= */
 
 function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) return value.map(stripUndefined) as any;
@@ -29,13 +35,25 @@ function stripUndefined<T>(value: T): T {
 
 const norm = (c?: string) => (c || "").replace(/\./g, "").trim();
 
+/* =============================================================================
+   CONTROL ACCOUNT HELPERS (ROBUST)
+============================================================================= */
+
+const RECEIVABLE_PREFIXES = ["10102", "130101"];
+const PAYABLE_PREFIXES = ["201", "211"];
+
+function isCustomerReceivableAccount(code?: string) {
+  const c = norm(code);
+  return RECEIVABLE_PREFIXES.some(p => c.startsWith(p));
+}
+
 function isSupplierPayableAccount(code?: string) {
   const c = norm(code);
-  return c.startsWith("20101") || c.startsWith("211");
+  return PAYABLE_PREFIXES.some(p => c.startsWith(p));
 }
 
 function duplicateKey(e: JournalEntry) {
-  return `${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}::${e.date}`;
+  return `${e.entityId}::${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}`;
 }
 
 function resolveInvoiceNumber(e: JournalEntry) {
@@ -52,7 +70,21 @@ function resolveDescription(e: JournalEntry): string {
   return "Asiento contable";
 }
 
-/* ================= FETCH ================= */
+/* --- Safe accessors (JournalEntry may not define these yet) --- */
+
+function getCustomerRUC(e: JournalEntry): string {
+  const anyE = e as any;
+  return String(anyE.customerRUC ?? anyE.customer_ruc ?? "").trim();
+}
+
+function getCustomerName(e: JournalEntry): string {
+  const anyE = e as any;
+  return String(anyE.customer_name ?? anyE.customerName ?? "").trim();
+}
+
+/* =============================================================================
+   FETCH
+============================================================================= */
 
 export async function fetchJournalEntries(entityId: string): Promise<JournalEntry[]> {
   const col = collection(db, "entities", entityId, "journalEntries");
@@ -70,20 +102,137 @@ export async function fetchJournalEntriesByTransactionId(
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as JournalEntry) }));
 }
 
-/* ================= SAVE ================= */
+/* =============================================================================
+   INTERNAL SYNC (Journal → AP / AR)
+============================================================================= */
+
+async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) {
+  const lines = saved.filter(
+    e => Number(e.credit) > 0
+  );
+
+  const grouped = new Map<string, JournalEntry[]>();
+  for (const e of lines) {
+    if (!e.transactionId) continue;
+    if (!grouped.has(e.transactionId)) grouped.set(e.transactionId, []);
+    grouped.get(e.transactionId)!.push(e);
+  }
+
+  for (const [tx, group] of grouped) {
+    const control = group.find(e =>
+      isSupplierPayableAccount(e.account_code)
+    );
+
+    const total = Number(
+      group.reduce((s, e) => s + Number(e.credit || 0), 0).toFixed(2)
+    );
+    if (total <= 0) continue;
+
+    const ref = control ?? group[0];
+
+    await upsertPayable(entityId, {
+      transactionId: tx,
+      invoiceNumber: ref.invoice_number!,
+      issueDate: ref.date,
+
+      supplierName: ref.supplier_name || "Proveedor",
+      supplierRUC: (ref as any).issuerRUC || "",
+
+      account_code: ref.account_code || "201030102",
+      account_name: ref.account_name || "Proveedores",
+
+      total,
+      paid: 0,
+
+      termsDays: 30,
+      installments: 1,
+
+      createdFrom: "ai_journal",
+    });
+  }
+}
+
+async function syncReceivablesFromJournal(entityId: string, saved: JournalEntry[]) {
+  const lines = saved.filter(
+    e => Number(e.debit) > 0
+  );
+
+  const grouped = new Map<string, JournalEntry[]>();
+  for (const e of lines) {
+    if (!e.transactionId) continue;
+    if (!grouped.has(e.transactionId)) grouped.set(e.transactionId, []);
+    grouped.get(e.transactionId)!.push(e);
+  }
+
+  for (const [tx, group] of grouped) {
+    const control = group.find(e =>
+      isCustomerReceivableAccount(e.account_code)
+    );
+
+    const total = Number(
+      group.reduce((s, e) => s + Number(e.debit || 0), 0).toFixed(2)
+    );
+    if (total <= 0) continue;
+
+    const ref = control ?? group[0];
+    const customerRUC = getCustomerRUC(ref);
+
+    if (!customerRUC) {
+      console.warn(`[AR FALLBACK] tx=${tx} missing customerRUC`);
+      continue;
+    }
+
+    await upsertReceivable(entityId, {
+      transactionId: tx,
+      invoiceNumber: ref.invoice_number!,
+      issueDate: ref.date,
+
+      customerName: getCustomerName(ref) || "Cliente",
+      customerRUC,
+
+      account_code: ref.account_code || "13010101",
+      account_name: ref.account_name || "Clientes",
+
+      total,
+      paid: 0,
+      balance: total,
+
+      termsDays: 30,
+      installments: 1,
+
+      status: "pending",
+      createdFrom: "ai_journal",
+    });
+  }
+}
+
+/* =============================================================================
+   SAVE JOURNAL
+============================================================================= */
 
 export async function saveJournalEntries(
   entityId: string,
   entries: JournalEntry[],
   userId: string
 ): Promise<JournalEntry[]> {
+  if (!entityId) {
+    throw new Error("saveJournalEntries: entityId is required");
+  }
+
+  if (!userId) {
+    throw new Error("saveJournalEntries: userId (uid) is required");
+  }
+
   const col = collection(db, "entities", entityId, "journalEntries");
 
   const existing: Record<string, boolean> = {};
   const saved: JournalEntry[] = [];
   const batch = writeBatch(db);
+  const validEntries = entries.filter(
+    e => Number(e.debit || 0) > 0 || Number(e.credit || 0) > 0
+  );
 
-  for (const e of entries) {
+  for (const e of validEntries) {
     const ref = doc(col);
     const id = e.id ?? ref.id;
     const transactionId = e.transactionId ?? ref.id;
@@ -93,12 +242,21 @@ export async function saveJournalEntries(
       id,
       entityId,
       uid: userId,
-      userId,
+      // userId,
       transactionId,
       invoice_number: resolveInvoiceNumber({ ...e, transactionId }),
       description: resolveDescription(e),
-      createdAt: typeof e.createdAt ===  "number" ? e.createdAt : Date.now(),
+      createdAt: typeof (e as any).createdAt === "number" ? (e as any).createdAt : Date.now(),
     };
+
+    // 🔒 HARD VALIDATION (before Firestore)
+    if (!entry.uid) {
+      throw new Error(`JournalEntry ${id} missing uid`);
+    }
+
+    if (!entry.entityId) {
+      throw new Error(`JournalEntry ${id} missing entityId`);
+    }
 
     const key = duplicateKey(entry);
     if (existing[key]) continue;
@@ -108,46 +266,28 @@ export async function saveJournalEntries(
     existing[key] = true;
   }
 
-  if (saved.length) await batch.commit();
+  if (saved.length) {
+    await batch.commit();
 
-  // -------- PAYABLE SYNC --------
-  const payableLines = saved.filter(
-    e => isSupplierPayableAccount(e.account_code) && Number(e.credit) > 0
-  );
+    // 🔁 Infer invoice type from control accounts
+    const hasPayable = saved.some(e => isSupplierPayableAccount(e.account_code));
+    const hasReceivable = saved.some(e => isCustomerReceivableAccount(e.account_code));
 
-  const grouped = new Map<string, JournalEntry[]>();
-  for (const e of payableLines) {
-    const k = e.transactionId!;
-    if (!grouped.has(k)) grouped.set(k, []);
-    grouped.get(k)!.push(e);
-  }
+    if (hasPayable) {
+      await syncPayablesFromJournal(entityId, saved);
+    }
 
-  for (const [tx, lines] of grouped) {
-    const total = Number(
-      lines.reduce((s, e) => s + Number(e.credit), 0).toFixed(2)
-    );
-
-    const ref = lines[0];
-    await upsertPayable(entityId, {
-      transactionId: tx,
-      invoiceNumber: ref.invoice_number!,
-      issueDate: ref.date,
-      supplierName: ref.supplier_name || "Proveedor",
-      supplierRUC: ref.issuerRUC || "",
-      account_code: ref.account_code,
-      account_name: ref.account_name,
-      total,
-      paid: 0,
-      termsDays: 30,
-      installments: 1,
-      createdFrom: "ai_journal",
-    });
+    if (hasReceivable) {
+      await syncReceivablesFromJournal(entityId, saved);
+    }
   }
 
   return saved;
 }
 
-/* ================= DELETE ================= */
+/* =============================================================================
+   DELETE
+============================================================================= */
 
 export async function deleteJournalEntriesByTransactionId(
   entityId: string,
@@ -162,7 +302,9 @@ export async function deleteJournalEntriesByTransactionId(
   await batch.commit();
 }
 
-/* ================= PAYABLE PAYMENT ================= */
+/* =============================================================================
+   PAYABLE PAYMENT (AP → BANK)
+============================================================================= */
 
 export async function createPayablePaymentJournalEntry(
   entityId: string,
@@ -171,48 +313,31 @@ export async function createPayablePaymentJournalEntry(
   paymentDate: string,
   bankAccount: { id: string; account_code: string; name?: string },
   userId: string,
-  options?: { bankMovementId?: string; }
+  options?: { bankMovementId?: string }
 ) {
-  if (!entityId) throw new Error("entityId faltante");
-  if (!userId) throw new Error("userId faltante");
-  if (!payable?.id) throw new Error("Payable inválido");
   if (!payable.account_code) {
-    throw new Error(
-      "El payable no tiene cuenta contable de proveedores. Debe repararse antes de pagar."
-    );
+    throw new Error("Payable sin cuenta contable. Debe repararse.");
   }
 
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (amount <= 0 || amount > payable.balance) {
     throw new Error("Monto inválido");
-  }
-
-  if (amount > payable.balance) {
-    throw new Error("El monto excede el saldo pendiente");
-  }
-
-  if (!bankAccount?.id || !bankAccount.account_code) {
-    throw new Error("Cuenta bancaria requerida");
   }
 
   const tx =
     options?.bankMovementId ??
     doc(collection(db, "entities", entityId, "journalEntries")).id;
 
-  const description =
-  `Pago a proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;  
+  const description = `Pago a proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;
 
   const entries: JournalEntry[] = [
     {
       entityId,
       transactionId: tx,
       date: paymentDate,
-
       account_code: payable.account_code,
       account_name: payable.account_name,
-      
       debit: amount,
       credit: 0,
-
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
       description,
@@ -222,13 +347,10 @@ export async function createPayablePaymentJournalEntry(
       entityId,
       transactionId: tx,
       date: paymentDate,
-
       account_code: bankAccount.account_code,
       account_name: bankAccount.name || "Banco",
-
       debit: 0,
       credit: amount,
-
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
       description,
@@ -237,18 +359,17 @@ export async function createPayablePaymentJournalEntry(
   ];
 
   await saveJournalEntries(entityId, entries, userId);
-  
+
   const bankMovementId = await createBankMovement({
     entityId,
     bankAccountId: bankAccount.id,
     date: paymentDate,
-    amount: -amount,
+    amount,
     type: "out",
-    description: `Pago a proveedor ${payable.supplierName ?? "Proveedor"} - Factura ${payable.invoiceNumber}`,
+    description,
   });
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
-
   await applyPayablePayment(entityId, payable, amount);
 
   return tx;

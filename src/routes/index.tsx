@@ -19,7 +19,7 @@ import AccountingDashboard from "@/pages/AccountingDashboard";
 import FinancialStatements from "@/pages/FinancialStatements";
 import LedgerPage from "@/pages/LedgerPage";
 import BankBookPage from "@/pages/BankBookPage";
-import CarteraCobro from "@/pages/CarteraCobro";
+import CarteraCobro from "@/pages/AccountReceivables";
 
 import Declaraciones from "@/pages/Declaraciones";
 import FlujoCaja from "@/pages/CashFlowPage";
