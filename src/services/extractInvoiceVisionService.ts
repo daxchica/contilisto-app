@@ -1,3 +1,4 @@
+import { JournalEntry } from "@/types/JournalEntry";
 import { getContextualAccountHint } from "./firestoreHintsService";
 
 // ============================================================================
@@ -20,6 +21,13 @@ export interface ExtractedInvoiceResponse {
   success: boolean;
   invoiceType: "sale" | "expense";
 
+  invoiceIdentitySource?: "sri-authorization";
+
+  __extraction?: {
+    pageCount: number;
+    source: "ocr" | "layout";
+  };
+
   issuerRUC: string;
   issuerName: string;
 
@@ -29,6 +37,7 @@ export interface ExtractedInvoiceResponse {
   invoiceDate?: string;
   invoice_number?: string;
 
+  taxableBase?: number;
   subtotal15?: number;
   subtotal0?: number;
   iva?: number;
@@ -37,7 +46,8 @@ export interface ExtractedInvoiceResponse {
   concepto?: string;
   ocr_text?: string;
 
-  entries: any[];
+  entries: VisionEntry[];
+
 }
 
 const n = (x: any) => {
@@ -67,12 +77,20 @@ function nonZeroLines(entries: VisionEntry[]) {
  * Ensure at least 2 non-zero lines and try to keep them balanced.
  * (PreviewModal requires nonZeroLines >= 2 and balanced)
  */
-function ensureMinimumValidEntries(data: any) {
+function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
+  if ((data as any).__extraction?.pageCount > 1) {
+    // No normalizar ni reconstruir importes en multipagina
+    return data;
+  }
+
   if (!Array.isArray(data.entries)) data.entries = [];
 
-  const total = n(data.total);
-  const subtotal = n(data.subtotal15) + n(data.subtotal0);
+  const taxableBase = n(data.taxableBase);
+  const subtotal0 = n(data.subtotal0);
   const iva = n(data.iva);
+  const total = n(data.total);
+
+  const base = taxableBase + subtotal0;
 
   // ----------------------------
   // SALES normalization
@@ -90,12 +108,12 @@ function ensureMinimumValidEntries(data: any) {
     }
 
     // Ensure revenue line exists
-    if (subtotal > 0 && !hasAccountPrefix(data.entries, "401")) {
+    if (base > 0 && !hasAccountPrefix(data.entries, "401")) {
       data.entries.push({
         account_code: "401010101",
         account_name: "Ingresos por servicios",
         debit: 0,
-        credit: subtotal,
+        credit: base,
         source: "normalized-sale",
       });
     }
@@ -134,7 +152,7 @@ function ensureMinimumValidEntries(data: any) {
         String(e?.account_code ?? "").startsWith("5") && n(e?.debit) > 0);
 
     if (!hasExpenseDebit) {
-      const base = subtotal; // base = subtotal15 + subtotal0
+      const base = taxableBase; // base = subtotal15 + subtotal0
       if (base > 0) {
         data.entries.push({
           account_code: "502010101",
@@ -235,6 +253,19 @@ export async function extractInvoiceVision(
     if (!data?.success) {
       throw new Error(data?.error || "Vision OCR failed to process invoice.");
     }
+
+    // ------------------------------------------------------------------------
+    // 🔍 DEBUG — Totales recibidos del backend (antes de normalizar)
+    // ------------------------------------------------------------------------
+    console.log("PREVIEW TOTALS:", {
+      invoiceType: data.invoiceType,
+      pageCount: data.__extraction?.pageCount,
+      subtotal12: data.subtotal12,
+      subtotal15: data.subtotal15,
+      subtotal0: data.subtotal0,
+      iva: data.iva,
+      total: data.total,
+    });
 
     // ------------------------------------------------------------------------
     // ✅ HARD RELIABILITY GUARANTEES (BEFORE MODAL)

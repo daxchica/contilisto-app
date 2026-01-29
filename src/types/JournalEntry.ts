@@ -3,7 +3,19 @@
 // Central accounting entry type — CONTILISTO v1.0
 // ============================================================================
 
-export type EntrySource = "ai" | "manual" | "edited" | "vision" | "initial";
+export type EntrySource = 
+  | "vision"
+  | "ocr"
+  | "ai" 
+  | "manual" 
+  | "learned"
+  | "edited" 
+  | "vision" 
+  | "initial"
+  | "normalized-sale"
+  | "normalized-expense"
+  | "placeholder";
+  
 export type JournalType = "expense" | "income" | "liability";
 
 export interface JournalEntry {

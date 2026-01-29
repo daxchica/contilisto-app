@@ -86,10 +86,17 @@ function getCustomerName(e: JournalEntry): string {
    FETCH
 ============================================================================= */
 
-export async function fetchJournalEntries(entityId: string): Promise<JournalEntry[]> {
+export async function fetchJournalEntries(entityId: string) {
   const col = collection(db, "entities", entityId, "journalEntries");
-  const snap = await getDocs(col);
-  return snap.docs.map(d => ({ id: d.id, ...(d.data() as JournalEntry) }));
+  if (!entityId) return [];
+
+  try {
+    const snap = await getDocs(col);
+    return snap.docs.map(d => ({ id: d.id, ...(d.data() as JournalEntry) }));
+  } catch (err) {
+    console.warn("fetchJournalEntries blocked:", err);
+    return [];
+  }
 }
 
 export async function fetchJournalEntriesByTransactionId(

@@ -1,6 +1,6 @@
 // ============================================================================
 // AccountingDashboard.tsx
-// CONTILISTO — STABLE VERSION
+// CONTILISTO — STABLE VERSION (UPGRADED, SAFE)
 // ============================================================================
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -22,10 +22,11 @@ import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
 import {
   fetchJournalEntries,
   saveJournalEntries,
-  deleteJournalEntriesByTransactionId,
 } from "@/services/journalService";
 
 import {
+  checkProcessedInvoice,
+  logProcessedInvoice,
   deleteInvoicesFromFirestoreLog,
 } from "../services/firestoreLogService";
 
@@ -33,8 +34,12 @@ import {
   deleteInvoicesFromLocalLog,
 } from "../services/localLogService";
 
+import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
+import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
+
 import { extractInvoiceVision } from "../services/extractInvoiceVisionService";
 import { fetchCustomAccounts } from "../services/chartOfAccountsService";
+import { getPdfPageCount } from "@/utils/pdfUtils";
 import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 
 // ---------------------------------------------------------------------------
@@ -118,9 +123,15 @@ export default function AccountingDashboard() {
       setAccounts([]);
       return;
     }
-    const custom = await fetchCustomAccounts(entityId);
-    setAccounts([...ECUADOR_COA, ...custom]);
-  }, [entityId]);
+
+    try {
+      const custom = await fetchCustomAccounts(entityId);
+      setAccounts([...ECUADOR_COA, ...custom]);
+    } catch (err: any) {
+    console.error("❌ fetchCustomAccounts blocked:", err.message);
+    setAccounts([...ECUADOR_COA]); // fallback
+  }
+}, [entityId]);
 
   useEffect(() => {
     loadAccounts();
@@ -136,12 +147,16 @@ export default function AccountingDashboard() {
       return;
     }
 
-    fetchJournalEntries(entityId).then(setSessionJournal);
-  }, [entityId, logRefreshTrigger]);
+    fetchJournalEntries(entityId)
+      .then(setSessionJournal)
+      .catch((err) => {
+        console.warn("Journal load skipped:", err.message);
+      });
+  }, [entityId, userId, logRefreshTrigger]);
 
   // -------------------------------------------------------------------------
   // DELETE JOURNAL (SAFE)
-  // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
 
   const handleDeleteSelected = useCallback(async () => {
     if (!selectedEntries.length) {
@@ -157,7 +172,7 @@ export default function AccountingDashboard() {
 
     alert(
       "⚠️ Este asiento tiene efectos en Cuentas por Pagar.\n" +
-      "Por seguridad contable, primero debes revertir o pagar la factura."
+        "Por seguridad contable, primero debes revertir o pagar la factura."
     );
   }, [selectedEntries]);
 
@@ -169,13 +184,135 @@ export default function AccountingDashboard() {
     async (files: FileList | null) => {
       if (!files?.length || showPreviewModal) return;
 
+      if (!userId || !entityId) {
+        alert("Sesión o empresa inválida. Recarga la página.");
+        return;
+      }
+
       const base64 = await fileToBase64(files[0]);
-      const data = await extractInvoiceVision(base64, entityRUC, userId);
+
+      // ------------------------------------------------------------------
+      // 1️⃣ Detect page count FIRST (multi-page safety)
+      // ------------------------------------------------------------------
+      let pageCount = 1;
+      try {
+        pageCount = await getPdfPageCount(base64);
+      } catch (err) {
+        console.warn("⚠️ Failed to detect PDF page count, assuming 1", err);
+      }
+
+      const forceVision = pageCount > 1;
+    
+      // ------------------------------------------------------------------
+      // 2️⃣ OCR only if single-page
+      // ------------------------------------------------------------------
+      const ocr = forceVision ? null : await extractInvoiceOCR(base64);
+      const incomplete = forceVision ? true : isInvoiceIncomplete(ocr!);
+
+      console.log(
+        forceVision
+          ? `📄 Multi-page (${pageCount}) → forcing Vision`
+          : incomplete
+            ? "📸 Using Vision extraction"
+            : "📄 Using OCR extraction"
+      );
+
+      // ------------------------------------------------------------------
+      // 3️⃣ Final extraction decision
+      // ------------------------------------------------------------------
+      const data = forceVision || incomplete
+        ? await extractInvoiceVision(base64, entityRUC, userId)
+        : ocr!;
+
+      (data as any).__extraction = {
+        forcedVision: forceVision,
+        pageCount,
+        source: forceVision || incomplete ? "vision" : "ocr",
+      };
 
       if (!data.entries.length) {
         alert("No se generaron asientos contables.");
         return;
       }
+
+      const raw = data as Record<string, any>;
+      console.log("Invoice extraction result:", data);
+
+      console.group("🧾 Invoice Debug Trace");
+      console.log("Source:", incomplete ? "VISION" : "OCR");
+      console.log("Entries:", data.entries);
+      console.log("Invoice number:", data.invoice_number);
+      console.log("Issuer:", data.issuerName, data.issuerRUC);
+
+      console.log("Extraction meta:", (data as any).__extraction);
+
+      const totalsDebug =
+        "subtotal12" in data || "iva" in data || "total" in data
+          ? {
+              subtotal12: (data as any).subtotal12,
+              iva: (data as any).iva,
+              total: (data as any).total,
+            }
+          : "(not available in OCR result)";
+
+      console.log("Totals:", totalsDebug);
+      console.groupEnd();
+
+      const invoiceType =
+        data.invoiceType === "sale" || data.invoiceType === "expense"
+          ? data.invoiceType
+          : "expense";
+
+      const metadata: InvoicePreviewMetadata = {
+        invoiceType,
+        issuerRUC: normalizeString(data.issuerRUC, raw.ruc_emisor, raw.ruc),
+        issuerName: normalizeString(
+          data.issuerName,
+          raw.razon_social,
+          raw.emisor,
+          raw.company_name,
+          raw.nombreComercial
+        ),
+        buyerName: normalizeString(
+          data.buyerName,
+          raw.cliente,
+          raw.razonSocialCliente
+        ),
+        buyerRUC: normalizeString(data.buyerRUC, raw.ruc_cliente),
+        invoiceDate: normalizeString(
+          data.invoiceDate,
+          raw.fecha_emision,
+          raw.fechaFactura
+        ),
+        invoice_number: normalizeString(
+          data.invoice_number,
+          raw.numeroFactura,
+          raw.numFactura,
+          raw.secuencial,
+          raw.factura
+        ),
+
+        invoiceIdentitySource: data.invoiceIdentitySource,
+      };
+
+      const invoiceNumber = metadata.invoice_number ?? "";
+
+      if (!metadata.invoice_number) {
+        console.warn( "Invoice number missing — backend fallback applied (SIN-NUMERO or SRI)."
+        );
+      }
+
+      const alreadyProcessed = await checkProcessedInvoice(
+        entityId,
+        invoiceNumber
+      );
+
+      if (alreadyProcessed) {
+        alert(`La factura ${invoiceNumber} ya fue procesada.`);
+        return;
+      }
+
+      if (showPreviewModal) return;
 
       const normalized: JournalEntry[] = data.entries.map((e: any) => ({
         ...e,
@@ -187,25 +324,10 @@ export default function AccountingDashboard() {
         credit: Number(e.credit ?? 0),
       }));
 
-      const raw = data as Record<string, any>;
-
-      const metadata: InvoicePreviewMetadata = {
-        invoiceType: data.invoiceType,
-        issuerRUC: normalizeString(data.issuerRUC, raw.ruc_emisor, raw.ruc),
-        issuerName: normalizeString(data.issuerName, raw.razon_social, raw.emisor, raw.company_name, raw.nombreComercial), 
-        buyerName: normalizeString(data.buyerName, raw.cliente, raw.razonSocialCliente),
-        buyerRUC: normalizeString(data.buyerRUC, raw.ruc_cliente),
-        invoiceDate: normalizeString(data.invoiceDate, raw.fecha_emision, raw.fechaFactura),
-        invoice_number: normalizeString(data.invoice_number, raw.numeroFactura, raw.numFactura, raw.secuencial, raw.factura),
-      };
-
-      console.log("RAW extractInvoiceVision data:", data);
       setPreviewEntries(normalized);
       setPreviewMetadata(metadata);
       setShowPreviewModal(true);
-        
     },
-    
     [showPreviewModal, entityId, entityRUC, userId]
   );
 
@@ -217,7 +339,6 @@ export default function AccountingDashboard() {
     <>
       <div className="pt-20 pb-32 px-4 w-full">
         <div className="w-full max-w-6xl mx-auto">
-
           <div className="flex justify-end gap-2 mb-4">
             {entityId && (
               <>
@@ -287,30 +408,28 @@ export default function AccountingDashboard() {
                 "";
 
               if (!invoiceNumber) {
-                throw new Error("No se pudo determinar el número de factura");
+                console.warn("Invoice number missing — allowing manual or authorization-based fallback.");
               }
 
-              const fixedEntries = entries.map(e => ({
+              const fixedEntries = entries.map((e) => ({
                 ...e,
                 entityId,
                 uid: userId,
                 transactionId: tx,
                 description: note,
                 createdAt: e.createdAt ?? Date.now(),
-
-                // ✅ CRITICAL: persist invoice number on EVERY line
                 invoice_number: e.invoice_number || invoiceNumber,
               }));
 
               await saveJournalEntries(entityId, fixedEntries, userId);
+              await logProcessedInvoice(entityId, invoiceNumber);
 
-              setLogRefreshTrigger(v => v + 1);
+              setLogRefreshTrigger((v) => v + 1);
               setShowPreviewModal(false);
-
             } catch (err) {
               console.error("Error saving journal:", err);
               alert("Error al guardar el asiento. Revisa permisos o conexión.");
-            } 
+            }
           }}
         />
       )}
@@ -322,7 +441,7 @@ export default function AccountingDashboard() {
           accounts={accounts}
           onClose={() => setShowManualModal(false)}
           onAddEntries={async () => {
-            setLogRefreshTrigger(v => v + 1);
+            setLogRefreshTrigger((v) => v + 1);
           }}
         />
       )}

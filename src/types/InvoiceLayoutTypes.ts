@@ -1,11 +1,12 @@
 // src/types/InvoiceLayoutTypes.ts
 
+import type { EntrySource } from "./JournalEntry";
+
 export interface TextBlock {
   str: string;
   x: number;
   y: number;
 }
-export type EntrySource = "ai" | "manual" | "edited" | "vision";
 
 export interface JournalEntry {
   id?: string;

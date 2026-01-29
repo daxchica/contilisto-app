@@ -42,6 +42,17 @@ type Row = Omit<JournalEntry, "debit" | "credit"> & {
 // HELPERS
 // ---------------------------------------------------------------------------
 
+const moneyFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatMoney(n: number | string | undefined | null) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "0.00";
+  return moneyFormatter.format(v);
+}
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 function isLeafAccount(account: Account, all: Account[]) {
@@ -429,32 +440,44 @@ export default function JournalPreviewModal({
                   </td>
                   <td className="border p-2 text-right">
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text"
                       inputMode="decimal"
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={r.debit === 0 ? "" : r.debit}
-                      onChange={(e) =>
+                      value={r.debit ? formatMoney(r.debit) : ""}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(",", ".");
+                        const num = Number(raw);
                         patchRow(idx, {
-                          debit: e.target.value === "" ? 0 : Number(e.target.value),
+                          debit: Number.isFinite(num) ? num : 0,
                           credit: 0,
                         })
-                      }
+                      }}
+                      onBlur={() => {
+                        patchRow(idx, {
+                          debit: Number(Number(r.debit || 0).toFixed(2)),
+                        });
+                      }}
                     />
                   </td>
                   <td className="border p-2 text-right">
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text"
                       inputMode="decimal"
                       className="w-full border rounded px-2 py-1 text-right"
-                      value={r.credit === 0 ? "" : r.credit}
-                      onChange={(e) =>
+                      value={r.credit ? formatMoney(r.credit) : ""}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(",", ".");
+                        const num = Number(raw);
                         patchRow(idx, {
-                          credit: e.target.value === "" ? 0 : Number(e.target.value),
+                          credit: Number.isFinite(num) ? num : 0,
                           debit: 0,
-                        })
-                      }
+                        });
+                      }}
+                      onBlur={() => {
+                        patchRow(idx, {
+                          credit: Number(Number(r.credit || 0).toFixed(2)),
+                        });
+                      }}
                     />
                   </td>
                   <td className="border p-2 text-center">
@@ -462,12 +485,29 @@ export default function JournalPreviewModal({
                   </td>
                 </tr>
               ))}
-              <tr className="font-bold bg-gray-100">
-                <td />
-                <td className="text-right p-2">Totales</td>
-                <td className="text-right p-2">{totals.debit.toFixed(2)}</td>
-                <td className="text-right p-2">{totals.credit.toFixed(2)}</td>
-                <td className="text-center">
+              <tr className="font-bold bg-gray-100 border-t-2 border-gray-400">
+                {/* Código */}
+                <td className="border p-2" />
+
+                {/* Cuenta */}
+                <td className="border p-2 text-right">Totales</td>
+
+                {/* Débito */}
+                <td className="border p-2">
+                  <div className="w-full px-2 py-1 text-right">
+                    {formatMoney(totals.debit)}
+                  </div>
+                </td>
+
+                {/* Crédito */}
+                <td className="border p-2">
+                  <div className="w-full px-2 py-1 text-right">
+                    {formatMoney(totals.credit)}
+                  </div>
+                </td>
+
+                {/* Status */}
+                <td className="border p-2 text-center">
                   {totals.balanced ? "✔" : "⚠"}
                 </td>
               </tr>
