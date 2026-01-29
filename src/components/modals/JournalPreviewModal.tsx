@@ -17,6 +17,7 @@ import type { JournalEntry } from "../../types/JournalEntry";
 import AccountPicker from "../AccountPicker";
 import { saveContextualAccountHint } from "@/services/firestoreHintsService";
 import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
+import { validateJournalStructure } from "@/utils/validateJournalStructure.ts";
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -172,7 +173,13 @@ export default function JournalPreviewModal({
     const invoice = metadata.invoice_number ?? "";
 
     if (metadata.invoiceType === "sale") {
-      setNote(invoice ? `Factura de venta ${invoice}` : "");
+      const parts = [
+        invoice && `Factura de venta ${invoice}`,
+        metadata.buyerName && `Cliente: ${metadata.buyerName}`,
+      ].filter(Boolean);
+
+      setNote(parts.join(" · "));
+      
     } else {
       const mainExpense = prepared.find((e) =>
         e.account_code?.startsWith("5")
@@ -195,30 +202,13 @@ export default function JournalPreviewModal({
     const credit = Number(rows.reduce((s, r) => s + r.credit, 0).toFixed(2));
     const diff = Number((debit - credit).toFixed(2));
 
-    const nonZeroLines = rows.filter(
-      (r) => Number(r.debit ?? 0) > 0 || Number(r.credit ?? 0) > 0
-    ).length;
-
-    const hasExpense = rows.some(
-      r => r.debit > 0 && r.account_code?.startsWith("5")
+    const balanced = validateJournalStructure(
+      rows,
+      metadata.invoiceType
     );
-
-    const hasIVA = rows.some(
-      r => r.debit > 0 && r.account_code?.startsWith("133")
-    );
-
-    const hasAP = rows.some(
-      r => r.credit > 0 && r.account_code?.startsWith("201")
-    );
-
-    const balanced =
-      Math.abs(diff) < 0.01 &&
-      hasExpense &&
-      hasAP &&
-      (metadata.invoiceType === "sale" || hasIVA);
 
     return { debit, credit, balanced };
-  }, [rows]);
+  }, [rows, metadata.invoiceType]);
 
   // -------------------------------------------------------------------------
   // ROW ACTIONS
@@ -374,7 +364,7 @@ export default function JournalPreviewModal({
           
           {/* RIGHT COLUMN - DOCUMENT */}
           <div className="space-y-2">
-            <div className="flex-gap-2">
+            <div className="flex gap-2">
               <span className="font-semibold">Factura:</span>
               <span>{metadata.invoice_number || "-"}</span>
             </div>
@@ -523,7 +513,10 @@ export default function JournalPreviewModal({
               onChange={(e) => setNote(e.target.value)}
             />
             <span className={totals.balanced ? "text-green-600" : "text-red-600"}>
-              {totals.balanced ? "✔ Balanceado" : "⚠ Desbalance"}
+              {totals.balanced 
+                ? "✔ Balanceado" 
+                : "⚠ Desbalance"
+              }
             </span>
           </div>
 

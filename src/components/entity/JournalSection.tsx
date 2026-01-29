@@ -15,8 +15,12 @@ interface Props {
 
 export default function JournalSection({ entries, entityId, entityName, userId, onSaved }: Props) {
   const isBalanced = (): boolean => {
-    const debit = entries.reduce((sum, e) => sum + (e.debit ?? 0), 0);
-    const credit = entries.reduce((sum, e) => sum + (e.credit ?? 0), 0);
+    const debit = Number(
+      entries.reduce((sum, e) => sum + Number(e.debit ?? 0), 0).toFixed(2));
+
+    const credit = Number(
+      entries.reduce((sum, e) => sum + Number(e.credit ?? 0), 0).toFixed(2));
+      
     return Math.abs(debit - credit) < 0.01;
   };
 
