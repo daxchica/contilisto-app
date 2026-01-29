@@ -4,6 +4,12 @@
  * If issuerRUC === entityRUC → SALE
  * Else → EXPENSE
  * Never guess this using buyer data or GPT.
+ * 
+ * SRI RULE (ECUADOR):
+ * - There is ONLY ONE authorization code (49 digits).
+ * - Access key = authorization code = clave de acceso.
+ * - Invoice number MUST be derived from this code when available.
+ * - OCR invoice numbers are validation-only.
  */
 // ============================================================================
 // CONTILISTO — netlify/functions/extract-invoice-vision.ts
@@ -236,6 +242,28 @@ function pageHasTotals(items: TextItemLite[]): boolean {
   );
 }
 
+function extractAccessKey(text: string, items: TextItemLite[]): string {
+  // 1️⃣ Prefer layout (barcode block text)
+  for (const i of items) {
+    const s = i.str.replace(/\s+/g, "");
+    if (/^\d{49}$/.test(s)) return s;
+  }
+
+  // 2️⃣ OCR fallback
+  const m = (text || "").replace(/\s+/g, "").match(/\d{49}/);
+  return m?.[0] ?? "";
+}
+
+function invoiceNumberFromAccessKey(accessKey: string): string {
+  if (!/^\d{49}$/.test(accessKey)) return "";
+
+  const estab = accessKey.slice(23, 26);
+  const ptoEmi = accessKey.slice(26, 29);
+  const sec = accessKey.slice(29, 38);
+
+  return `${estab}-${ptoEmi}-${sec}`;
+}
+
 // ---------------------------------------------------------------------------
 // INVOICE TYPE
 // ---------------------------------------------------------------------------
@@ -434,20 +462,49 @@ function extractBuyerFromOCR(text: string) {
 // INVOICE NUMBER & DATE (LAYOUT + OCR)
 // ---------------------------------------------------------------------------
 
-function extractInvoiceNumber(text: string, items: TextItemLite[]) {
-  const fromLayout = items.find((i) => /\b\d{3}-\d{3}-\d{6,}\b/.test(i.str.replace(/\s+/g, "")));
-  if (fromLayout) return fromLayout.str.replace(/\s+/g, "");
+function extractInvoiceNumber(
+  text: string, 
+  items: TextItemLite[],
+  accessKey: string
+): string {
+  // 1️⃣ Authoritative source
+  const fromKey = invoiceNumberFromAccessKey(accessKey);
+  if (fromKey) return fromKey;
 
-  const m = (text || "").match(/\b\d{3}-\d{3}-\d{6,}\b/);
+  // 2️⃣ Printed invoice number under barcode (15 digits OR dashed)
+  const printed = items.find((i) => {
+    const s = i.str.replace(/\s+/g, "");
+    return (
+      /^\d{15}$/.test(s) ||
+      /^\d{3}-\d{3}-\d{6,9}$/.test(s)
+    );
+  });
+
+  if (printed) {
+    const raw = printed.str.replace(/\s+/g, "");
+    return raw.includes("-")
+      ? raw
+      : `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`;
+  }
+
+  // 3️⃣ OCR fallback (lowest confidence)
+  const m = (text || "").match(/\b\d{3}-\d{3}-\d{6,9}\b/);
   return m?.[0] ?? "";
 }
 
-function extractInvoiceDate(text: string, items: TextItemLite[]) {
-  const dateRe = /\b\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?\b/;
 
+
+
+
+function extractInvoiceDate(text: string, items: TextItemLite[]): string {
+  const dateRe =
+    /\b\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?\b/;
+
+  // 1️⃣ Prefer layout
   const fromLayout = items.find((i) => dateRe.test(i.str));
   if (fromLayout) return fromLayout.str.trim().slice(0, 10);
 
+  // 2️⃣ OCR fallback
   const m = (text || "").match(dateRe);
   return (m?.[0] ?? "").slice(0, 10);
 }
@@ -771,7 +828,10 @@ export const handler: Handler = async (event) => {
     }
 
     const buffer = new Uint8Array(Buffer.from(base64, "base64"));
-    const { text, page1Items, allPagesItems, pageCount } = await extractText(buffer);
+    const { text, page1Items, allPagesItems, pageCount } = 
+      await extractText(buffer);
+
+    const accessKey = extractAccessKey(text, page1Items);
 
     // Issuer name: LEFT margin, Cuadro 1
     const issuerName = extractIssuerNameFromLayout(page1Items);
@@ -864,7 +924,7 @@ export const handler: Handler = async (event) => {
       buyerName,
       buyerRUC,
 
-      invoice_number: extractInvoiceNumber(text, page1Items),
+      invoice_number: extractInvoiceNumber(text, page1Items, accessKey),
       invoiceDate: extractInvoiceDate(text, page1Items),
       concepto: "",
 
@@ -882,7 +942,10 @@ export const handler: Handler = async (event) => {
     };
 
     if (!parsed.invoice_number) {
-      parsed.warnings = [...(parsed.warnings ?? []), "Invoice number not detected."];
+      parsed.warnings = [
+        ...(parsed.warnings ?? []), 
+        "Invoice number not detected."
+      ];
     }
 
     // Expense context
