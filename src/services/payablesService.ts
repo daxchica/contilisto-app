@@ -27,7 +27,7 @@ import {
 
 import {
   fetchJournalEntriesByTransactionId,
-  deleteJournalEntriesByTransactionId,
+  annulInvoiceByTransaction,
 } from "./journalService";
 
 import {
@@ -362,7 +362,7 @@ export async function deletePayableCascade(
     // ✅ Fix TS: p.transactionId could be undefined
     if (!p.transactionId) continue;
 
-    await deleteJournalEntriesByTransactionId(entityId, p.transactionId);
+    await annulInvoiceByTransaction(entityId, p.transactionId);
     await deleteBankMovementsByJournalTransactionId(entityId, p.transactionId);
   }
 

@@ -64,7 +64,11 @@ function isLeafAccount(account: Account, all: Account[]) {
   );
 }
 
-function createEmptyRow(entityId: string, userId: string): Row {
+function createEmptyRow(
+  entityId: string, 
+  userId: string,
+  invoiceNumber?: string,
+): Row {
   return {
     id: crypto.randomUUID(),
     entityId,
@@ -75,6 +79,7 @@ function createEmptyRow(entityId: string, userId: string): Row {
     debit: 0,
     credit: 0,
     description: "",
+    invoice_number: invoiceNumber,
     source: "edited",
     createdAt: Date.now(),
   };
@@ -122,10 +127,11 @@ export default function JournalPreviewModal({
   // INIT ROWS
   // -------------------------------------------------------------------------
 
-  const hasPositioned = useRef(false);
-
   useEffect(() => {
     if (!open) return;
+
+    const invoiceNumber = metadata.invoice_number ?? "";
+    
     
     const prepared =
       entries.length > 0
@@ -135,8 +141,9 @@ export default function JournalPreviewModal({
             debit: Number(e.debit ?? 0),
             credit: Number(e.credit ?? 0),
             date: e.date ?? todayISO(),
+            invoice_number: e.invoice_number ?? invoiceNumber,
           }))
-        : [createEmptyRow(entityId, userId)];
+        : [createEmptyRow(entityId, userId, invoiceNumber)];
 
     // 🔹 AUTO-ADD IVA ROW IF MISSING (EXPENSE ONLY)
     if (metadata.invoiceType === "expense") {
@@ -170,11 +177,9 @@ export default function JournalPreviewModal({
 
     setRows(prepared);
 
-    const invoice = metadata.invoice_number ?? "";
-
     if (metadata.invoiceType === "sale") {
       const parts = [
-        invoice && `Factura de venta ${invoice}`,
+        invoiceNumber && `Factura de venta ${invoiceNumber}`,
         metadata.buyerName && `Cliente: ${metadata.buyerName}`,
       ].filter(Boolean);
 
@@ -186,9 +191,9 @@ export default function JournalPreviewModal({
       );
       const desc = mainExpense?.account_name ?? "";
       setNote(
-        invoice && desc
-          ? `Factura ${invoice} - ${desc}`
-          : invoice || desc
+        invoiceNumber && desc
+          ? `Factura ${invoiceNumber} - ${desc}`
+          : invoiceNumber || desc
       );
     }
   }, [open, entries, metadata, entityId, userId]);
@@ -200,7 +205,6 @@ export default function JournalPreviewModal({
   const totals = useMemo(() => {
     const debit = Number(rows.reduce((s, r) => s + r.debit, 0).toFixed(2));
     const credit = Number(rows.reduce((s, r) => s + r.credit, 0).toFixed(2));
-    const diff = Number((debit - credit).toFixed(2));
 
     const balanced = validateJournalStructure(
       rows,
@@ -209,6 +213,58 @@ export default function JournalPreviewModal({
 
     return { debit, credit, balanced };
   }, [rows, metadata.invoiceType]);
+
+  // -------------------------------------------------------------------------
+  // SAVE
+  // -------------------------------------------------------------------------
+
+  const handleSave = async () => {
+    if (saving || !totals.balanced ) return;
+    
+    setSaving(true);
+    
+    try {
+      // 🔧 NORMALIZE before sending up
+      const normalized: JournalEntry[] = rows.map(r => ({
+        ...r,
+        debit: Number(r.debit ?? 0),
+        credit: Number(r.credit ?? 0),
+        invoice_number: r.invoice_number ?? metadata.invoice_number,
+      }));
+
+      // 1️⃣ Guardar asiento (CRÍTICO)
+      await onSave(normalized, note);
+      // -----------------------------------------------------
+      // 1️⃣ AI LEARNING (NON-BLOCKING)
+      // -----------------------------------------------------
+      if (metadata.invoiceType === "expense" && metadata.issuerRUC) {
+        normalized.forEach(r => {
+          const debit = r.debit ?? 0;
+
+          if (
+            (r.debit ?? 0) > 0 &&
+            r.account_code?.startsWith("5")
+          ) {
+            saveContextualAccountHint(
+              userId,
+              metadata.issuerRUC,
+              metadata.issuerName,
+              note,
+              r.account_code,
+              r.account_name ?? ""
+            ).catch(() => {});
+          }
+        });
+      }
+  
+      onClose();
+      } catch (err) {
+        console.error("Error saving journal:", err);
+        alert("Error al guardar el asiento. Revisa permisos o conexion.");
+      } finally {
+        setSaving(false);
+      }
+    };
 
   // -------------------------------------------------------------------------
   // ROW ACTIONS
@@ -258,52 +314,6 @@ export default function JournalPreviewModal({
     }
     setRows((prev) => prev.filter((_, i) => i !== idx));
   };
-
-  // -------------------------------------------------------------------------
-  // SAVE
-  // -------------------------------------------------------------------------
-
-  const handleSave = async () => {
-    if (!totals.balanced || saving) return;
-    
-    setSaving(true);
-
-    let saved = false;
-    
-    try {
-      // 1️⃣ Guardar asiento (CRÍTICO)
-      await onSave(rows, note);
-      // -----------------------------------------------------
-      // 1️⃣ AI LEARNING (NON-BLOCKING)
-      // -----------------------------------------------------
-      if (metadata.invoiceType === "expense" && metadata.issuerRUC) {
-        rows.forEach(r => {
-          if (
-            r.debit > 0 &&
-            r.account_code?.startsWith("5")
-          ) {
-            saveContextualAccountHint(
-              userId,
-              metadata.issuerRUC,
-              metadata.issuerName,
-              note,
-              r.account_code,
-              r.account_name ?? ""
-            ).catch(() => {
-              // ❌ SILENCIOSO
-            });
-          }
-        });
-      }
-  
-      saved = true;
-      } catch (err) {
-        console.error("Error saving journal:", err);
-        alert("Error al guardar el asiento. Revisa permisos o conexion.");
-      } finally {
-        if (saved) onClose();
-      }
-    };
 
   // -------------------------------------------------------------------------
   // METADATA LABELS (SRI RULE)

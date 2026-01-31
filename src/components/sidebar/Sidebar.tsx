@@ -256,10 +256,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
         {/* ✅ Unificado */}
         <LinkRow to="/contactos" icon="👥" label="Contactos" requiresEntity />
-         <LinkRow to="/contabilidad" icon="📊" label="Procesamiento Contable" requiresEntity />
+        <LinkRow to="/contabilidad" icon="📊" label="Procesamiento Contable" requiresEntity />
         
 
-        <LinkRow to="/cartera" icon="💼" label="Documentos x Cobrar" requiresEntity />
+        <LinkRow to="/accountsreceivable" icon="💼" label="Documentos x Cobrar" requiresEntity />
         <LinkRow to="/accountspayable" icon="💼" label="Documentos x Pagar" requiresEntity />
 
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">

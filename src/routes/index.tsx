@@ -32,6 +32,7 @@ import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
+import AccountsReceivablePage from "@/pages/AccountReceivables";
 import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";
@@ -52,7 +53,7 @@ export default function AppRoutes() {
       <Route path="/dashboard" element={<AppLayout><DashboardHome/></AppLayout>}/>
       <Route path="/contactos" element={<AppLayout><ContactsPage/></AppLayout>}/>
       <Route path="/facturacion" element={<AppLayout><InvoicePage/></AppLayout>}/>
-      <Route path="/cartera" element={<AppLayout><CarteraCobro/></AppLayout>}/>
+      <Route path="/accountsreceivable" element={<AppLayout><AccountsReceivablePage/></AppLayout>}/>
       <Route path="/accountspayable" element={<AppLayout><AccountsPayablePage/></AppLayout>}/>
       <Route path="/impuestos" element={<AppLayout><Declaraciones /></AppLayout>}/>
       <Route path="/flujo-caja" element={<AppLayout><FlujoCaja/></AppLayout>}/>
