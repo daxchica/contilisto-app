@@ -9,7 +9,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
-import { fetchCashflow } from "@/services/cashflowService";
+import { getRealCashFlow } from "@/services/cashFlowService";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 
 function money(n: number): string {
@@ -39,7 +39,7 @@ export default function CashFlowPage() {
       try {
         setLoading(true);
         setError("");
-        const res = await fetchCashflow(
+        const res = await getRealCashFlow(
           entityId, 
           from || undefined, 
           to || undefined

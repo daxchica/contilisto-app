@@ -19,7 +19,7 @@ import AccountingDashboard from "@/pages/AccountingDashboard";
 import FinancialStatements from "@/pages/FinancialStatements";
 import LedgerPage from "@/pages/LedgerPage";
 import BankBookPage from "@/pages/BankBookPage";
-import CarteraCobro from "@/pages/AccountReceivables";
+import CarteraCobro from "@/pages/receivables/AccountReceivables";
 
 import Declaraciones from "@/pages/Declaraciones";
 import FlujoCaja from "@/pages/CashFlowPage";
@@ -32,7 +32,7 @@ import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
-import AccountsReceivablePage from "@/pages/AccountReceivables";
+import AccountsReceivablePage from "@/pages/receivables/AccountReceivables";
 import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";

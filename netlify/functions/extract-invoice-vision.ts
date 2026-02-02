@@ -24,6 +24,7 @@ import { Handler } from "@netlify/functions";
 import { randomUUID } from "crypto";
 import { getContextualHint } from "./_server/contextualHintsService";
 import { extractExpenseContextFromItems } from "./_server/extractExpenseContext";
+import { invoiceNumberFromAccessKey } from "@/utils/sriInvoice";
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -254,16 +255,6 @@ function extractAccessKey(text: string, items: TextItemLite[]): string {
   return m?.[0] ?? "";
 }
 
-function invoiceNumberFromAccessKey(accessKey: string): string {
-  if (!/^\d{49}$/.test(accessKey)) return "";
-
-  const estab = accessKey.slice(23, 26);
-  const ptoEmi = accessKey.slice(26, 29);
-  const sec = accessKey.slice(29, 38);
-
-  return `${estab}-${ptoEmi}-${sec}`;
-}
-
 // ---------------------------------------------------------------------------
 // INVOICE TYPE
 // ---------------------------------------------------------------------------
@@ -461,39 +452,6 @@ function extractBuyerFromOCR(text: string) {
 // ---------------------------------------------------------------------------
 // INVOICE NUMBER & DATE (LAYOUT + OCR)
 // ---------------------------------------------------------------------------
-
-function extractInvoiceNumber(
-  text: string, 
-  items: TextItemLite[],
-  accessKey: string
-): string {
-  // 1️⃣ Authoritative source
-  const fromKey = invoiceNumberFromAccessKey(accessKey);
-  if (fromKey) return fromKey;
-
-  // 2️⃣ Printed invoice number under barcode (15 digits OR dashed)
-  const printed = items.find((i) => {
-    const s = i.str.replace(/\s+/g, "");
-    return (
-      /^\d{15}$/.test(s) ||
-      /^\d{3}-\d{3}-\d{6,9}$/.test(s)
-    );
-  });
-
-  if (printed) {
-    const raw = printed.str.replace(/\s+/g, "");
-    return raw.includes("-")
-      ? raw
-      : `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`;
-  }
-
-  // 3️⃣ OCR fallback (lowest confidence)
-  const m = (text || "").match(/\b\d{3}-\d{3}-\d{6,9}\b/);
-  return m?.[0] ?? "";
-}
-
-
-
 
 
 function extractInvoiceDate(text: string, items: TextItemLite[]): string {
@@ -831,8 +789,25 @@ export const handler: Handler = async (event) => {
     const { text, page1Items, allPagesItems, pageCount } = 
       await extractText(buffer);
 
+
+    const parseWarnings: string[] = [];
+
     const accessKey = extractAccessKey(text, page1Items);
 
+    const invoice_number = 
+      accessKey
+        ? invoiceNumberFromAccessKey(accessKey)
+        : "";
+
+    if (!accessKey) {
+      parseWarnings.push(    
+        "Access key (49 digits) not detected; invoice number cannot be derived from SRI key."
+      );
+    }
+    
+    // ------------------------------------------------------------------
+    // ISSUER
+    // ------------------------------------------------------------------
     // Issuer name: LEFT margin, Cuadro 1
     const issuerName = extractIssuerNameFromLayout(page1Items);
 
@@ -852,7 +827,9 @@ export const handler: Handler = async (event) => {
 
     const invoiceType = determineInvoiceType(issuerRUC, userRUC);
 
-    const parseWarnings: string[] = [];
+    // ------------------------------------------------------------------
+    // BUYER (ONLY FOR SALES)
+    // ------------------------------------------------------------------
     let buyerName = "";
     let buyerRUC = "";
 
@@ -917,6 +894,9 @@ export const handler: Handler = async (event) => {
       });
     }
 
+    // ------------------------------------------------------------------
+    // PARSED STRUCTURE
+    // ------------------------------------------------------------------
     const parsed: ParsedInternal = {
       issuerRUC,
       issuerName: issuerName || "",
@@ -924,7 +904,7 @@ export const handler: Handler = async (event) => {
       buyerName,
       buyerRUC,
 
-      invoice_number: extractInvoiceNumber(text, page1Items, accessKey),
+      invoice_number,
       invoiceDate: extractInvoiceDate(text, page1Items),
       concepto: "",
 
@@ -957,7 +937,11 @@ export const handler: Handler = async (event) => {
     // Fallback for concept
     parsed.concepto = parsed.concepto || parsed.invoice_number || "Expense (no description)";
 
-    const { lines, warnings: accountingWarnings } = await buildAccounting(parsed, uid, invoiceType);
+    // ------------------------------------------------------------------
+    // ACCOUNTING
+    // ------------------------------------------------------------------
+    const { lines, warnings: accountingWarnings } = 
+      await buildAccounting(parsed, uid, invoiceType);
 
     const transactionId = randomUUID();
     const balance = {
@@ -974,6 +958,9 @@ export const handler: Handler = async (event) => {
         ? [...(parsed.warnings ?? []), ...accountingWarnings]
         : undefined;
 
+    // ------------------------------------------------------------------
+    // RESPONSE
+    // ------------------------------------------------------------------
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -1010,12 +997,22 @@ export const handler: Handler = async (event) => {
         entries: lines.map((l) => ({
           id: randomUUID(),
           transactionId,
+
           account_code: l.accountCode,
           account_name: l.accountName,
           debit: Number(safeNumber(l.debit).toFixed(2)),
           credit: Number(safeNumber(l.credit).toFixed(2)),
+          
+          supplier_name: parsed.issuerName,
+          supplier_ruc: parsed.issuerRUC,
+          
           issuerRUC: parsed.issuerRUC,
+          issuerName: parsed.issuerName,
           entityRUC: userRUC,
+
+          invoice_number: parsed.invoice_number,
+          date: parsed.invoiceDate,
+
           source: "vision",
         })),
       } satisfies FunctionResponse),

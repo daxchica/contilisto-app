@@ -1,3 +1,10 @@
+/**
+ * ⚠️ NOTE:
+ * This dashboard uses ACCOUNTING data (journal-based).
+ * Projected Cash Flow (AR / AP) is handled via installments.
+ * Real Cash Flow (bank movements) lives in CashFlowPage.
+ */
+
 import React, { useState, useEffect, useMemo } from "react";
 
 import IncomeCard from "../components/dashboard/IncomeCard";
@@ -7,13 +14,17 @@ import ARCard from "../components/dashboard/ARCard";
 import APCard from "../components/dashboard/APCard";
 import ChartIncomeVsExpenses from "../components/dashboard/ChartIncomeVsExpenses";
 import ChartExpensesPie from "../components/dashboard/ChartExpensesPie";
+import CashFlowTable from "../components/dashboard/CashFlowTable";
 
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
+import { getRealCashFlow } from "@/services/cashFlowService";
+
 import { JournalEntry } from "@/types/JournalEntry";
+import { CashFlowItem } from "@/types/CashFlow";
 
 /* ============================================================================
- * SAFETY HELPERS — UI NEUTRAL
+ * HELPERS
  * ========================================================================== */
 
 function startsWithSafe(value: unknown, prefix: string): boolean {
@@ -26,75 +37,113 @@ function startsWithSafe(value: unknown, prefix: string): boolean {
 
 const DashboardHome: React.FC = () => {
   const { selectedEntity } = useSelectedEntity();
+
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [projectedCashFlow, setProjectedCashFlow] = useState<CashFlowItem[]>([]);
+  const [cashFlowLoading, setCashFlowLoading] = useState(false);
 
   /* =======================
-   * LOAD ENTRIES
+   * DATE WINDOW (90 DAYS)
+   * ======================= */
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, []);
+
+  const ninetyDaysFromNow = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 90);
+    d.setHours(23, 59, 59, 999);
+    return d.getTime();
+  }, []);
+
+  /* =======================
+   * LOAD JOURNAL ENTRIES
    * ======================= */
   useEffect(() => {
-    const load = async () => {
-      if (!selectedEntity?.id) {
-        setEntries([]);
-        return;
-      }
-      const data = await fetchJournalEntries(selectedEntity.id);
-      setEntries(Array.isArray(data) ? data : []);
-    };
-    load();
+    if (!selectedEntity?.id) {
+      setEntries([]);
+      return;
+    }
+
+    fetchJournalEntries(selectedEntity.id)
+      .then((data) => setEntries(Array.isArray(data) ? data : []))
+      .catch(() => setEntries([]));
   }, [selectedEntity?.id]);
 
   /* =======================
-   * DERIVED VALUES
+   * LOAD PROJECTED CASH FLOW (AR / AP)
+   * ======================= */
+  useEffect(() => {
+    if (!selectedEntity?.id) {
+      setProjectedCashFlow([]);
+      return;
+    }
+
+    setCashFlowLoading(true);
+
+    getRealCashFlow(selectedEntity.id, today, ninetyDaysFromNow)
+      .then((data) =>
+        setProjectedCashFlow(Array.isArray(data) ? data : [])
+      )
+      .catch(() => setProjectedCashFlow([]))
+      .finally(() => setCashFlowLoading(false));
+  }, [selectedEntity?.id, today, ninetyDaysFromNow]);
+
+  /* =======================
+   * ACCOUNTING KPIs
    * ======================= */
 
-  const totalIncome = useMemo(() => {
-    return entries
-      .filter(e => startsWithSafe(e.account_code, "4"))
-      .reduce((sum, e) => sum + (e.credit || 0), 0);
-  }, [entries]);
+  const totalIncome = useMemo(
+    () =>
+      entries
+        .filter((e) => startsWithSafe(e.account_code, "4"))
+        .reduce((sum, e) => sum + (e.credit ?? 0), 0),
+    [entries]
+  );
 
-  const totalExpenses = useMemo(() => {
-    return entries
-      .filter(
-        e =>
-          startsWithSafe(e.account_code, "5") ||
-          startsWithSafe(e.account_code, "6")
-      )
-      .reduce((sum, e) => sum + (e.debit || 0), 0);
-  }, [entries]);
+  const totalExpenses = useMemo(
+    () =>
+      entries
+        .filter(
+          (e) =>
+            startsWithSafe(e.account_code, "5") ||
+            startsWithSafe(e.account_code, "6")
+        )
+        .reduce((sum, e) => sum + (e.debit ?? 0), 0),
+    [entries]
+  );
 
   const profit = totalIncome - totalExpenses;
 
+  /* =======================
+   * AR / AP (PROJECTED)
+   * ======================= */
+
   const accountsReceivable = useMemo(() => {
-    return entries
-      .filter(e => startsWithSafe(e.account_code, "113"))
-      .reduce(
-        (sum, e) => sum + ((e.debit || 0) - (e.credit || 0)),
-        0
-      );
-  }, [entries]);
+    return projectedCashFlow
+      .filter((i) => i.type === "AR" && i.status !== "paid")
+      .reduce((sum, i) => sum + i.amount, 0);
+  }, [projectedCashFlow]);
 
   const accountsPayable = useMemo(() => {
-    return entries
-      .filter(
-        e =>
-          startsWithSafe(e.account_code, "20103") ||
-          startsWithSafe(e.account_code, "20104") ||
-          startsWithSafe(e.account_code, "20105")
-      )
-      .reduce(
-        (sum, e) => sum + ((e.credit || 0) - (e.debit || 0)),
-        0
-      );
-  }, [entries]);
+    return projectedCashFlow
+      .filter((i) => i.type === "AP" && i.status !== "paid")
+      .reduce((sum, i) => sum + i.amount, 0);
+  }, [projectedCashFlow]);
+
+  /* =======================
+   * CHART DATA
+   * ======================= */
 
   const monthlyIncome = useMemo(() => {
     const out: Record<string, number> = {};
     entries
-      .filter(e => startsWithSafe(e.account_code, "4"))
-      .forEach(e => {
+      .filter((e) => startsWithSafe(e.account_code, "4"))
+      .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
-        out[month] = (out[month] || 0) + (e.credit || 0);
+        out[month] = (out[month] || 0) + (e.credit ?? 0);
       });
     return out;
   }, [entries]);
@@ -103,19 +152,19 @@ const DashboardHome: React.FC = () => {
     const out: Record<string, number> = {};
     entries
       .filter(
-        e =>
+        (e) =>
           startsWithSafe(e.account_code, "5") ||
           startsWithSafe(e.account_code, "6")
       )
-      .forEach(e => {
+      .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
-        out[month] = (out[month] || 0) + (e.debit || 0);
+        out[month] = (out[month] || 0) + (e.debit ?? 0);
       });
     return out;
   }, [entries]);
 
   /* =======================
-   * RENDER — UNCHANGED UI
+   * RENDER
    * ======================= */
 
   return (
@@ -148,11 +197,18 @@ const DashboardHome: React.FC = () => {
             expenses={monthlyExpenses}
           />
         </div>
-
         <div>
           <ChartExpensesPie entries={entries} />
         </div>
       </div>
+
+      {cashFlowLoading ? (
+        <div className="p-4 text-center text-gray-500">
+          Cargando flujo de caja proyectado…
+        </div>
+      ) : (
+        <CashFlowTable items={projectedCashFlow} />
+      )}
     </>
   );
 };

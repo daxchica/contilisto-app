@@ -104,6 +104,8 @@ export default function JournalPreviewModal({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const invoiceType: "sale" | "expense" =
+    metadata.invoiceType ?? "expense";
 
   // -------------------------------------------------------------------------
   // STABLE INITIAL POSITION (CRITICAL FIX)
@@ -208,7 +210,7 @@ export default function JournalPreviewModal({
 
     const balanced = validateJournalStructure(
       rows,
-      metadata.invoiceType
+      invoiceType
     );
 
     return { debit, credit, balanced };
@@ -237,18 +239,21 @@ export default function JournalPreviewModal({
       // -----------------------------------------------------
       // 1️⃣ AI LEARNING (NON-BLOCKING)
       // -----------------------------------------------------
-      if (metadata.invoiceType === "expense" && metadata.issuerRUC) {
+      if (invoiceType === "expense" && metadata.issuerRUC) {
+        const issuerRUC = metadata.issuerRUC;
+        const issuerName = metadata.issuerName ?? "PROVEEDOR";
+
         normalized.forEach(r => {
-          const debit = r.debit ?? 0;
+          const debit = Number(r.debit ?? 0);
 
           if (
-            (r.debit ?? 0) > 0 &&
+            debit > 0 &&
             r.account_code?.startsWith("5")
           ) {
             saveContextualAccountHint(
               userId,
-              metadata.issuerRUC,
-              metadata.issuerName,
+              issuerRUC,
+              issuerName,
               note,
               r.account_code,
               r.account_name ?? ""
@@ -320,9 +325,17 @@ export default function JournalPreviewModal({
   // -------------------------------------------------------------------------
 
   const isSale = metadata.invoiceType === "sale";
-  const partyLabel = isSale ? "Cliente" : "Proveedor";
-  const partyName = isSale ? metadata.buyerName : metadata.issuerName || "Proveedor no detectado";
-  const partyRUC = isSale ? metadata.buyerRUC ?? "" : metadata.issuerRUC;
+  const partyLabel = isSale 
+    ? "Cliente" 
+    : "Proveedor";
+
+  const partyName = isSale 
+    ? metadata.buyerName 
+    : metadata.issuerName || "Proveedor no detectado";
+
+  const partyRUC = isSale 
+    ? metadata.buyerRUC ?? "" 
+    : metadata.issuerRUC;
 
   // -------------------------------------------------------------------------
   // RENDER
@@ -376,7 +389,7 @@ export default function JournalPreviewModal({
           <div className="space-y-2">
             <div className="flex gap-2">
               <span className="font-semibold">Factura:</span>
-              <span>{metadata.invoice_number || "-"}</span>
+              <span>{metadata?.invoice_number ?? "-"}</span>
             </div>
 
             <div className="flex gap-2">

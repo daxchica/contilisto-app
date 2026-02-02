@@ -1,5 +1,5 @@
 // ============================================================================
-// src/services/cashflowService.ts
+// src/services/cashFlowService.ts
 // ---------------------------------------------------------------------------
 // Cash Flow Service — CONTILISTO v1.0
 //
@@ -12,16 +12,23 @@
 import type { BankMovement } from "./bankMovementService";
 import { fetchBankMovements } from "./bankMovementService";
 
+/* ============================================================================
+ * TYPES
+ * ========================================================================== */
+
 export type CashflowCategory =
   | "operating"
   | "investing"
   | "financing"
   | "uncategorized";
 
+export type CashflowDirection = "in" | "out";
+
 export interface CashflowEvent {
   id: string;
-  date: string;
-  amount: number;
+  date: string; // YYYY-MM-DD
+  amount: number; // signed
+  direction: CashflowDirection;
   category: CashflowCategory;
   description: string;
   bankAccountId: string;
@@ -34,6 +41,8 @@ export interface CashflowTotals {
   financing: number;
   uncategorized: number;
   net: number;
+  inflow: number;
+  outflow: number;
 }
 
 export interface CashflowResult {
@@ -41,43 +50,82 @@ export interface CashflowResult {
   totals: CashflowTotals;
 }
 
-/* ---------------------------------------------------------------------------
- * Category resolver (simple v1)
- * ---------------------------------------------------------------------------
- * TODO (v2):
- * - Classify by linked journal transaction
- * - Classify by counter-account
- * ---------------------------------------------------------------------------
- */
-function resolveCategory(
-  movement: BankMovement
-): CashflowCategory {
-  if (movement.relatedJournalTransactionId) {
-    return "operating"; // default safe assumption
+/* ============================================================================
+ * INTERNAL HELPERS
+ * ========================================================================== */
+
+function resolveCategory(m: BankMovement): CashflowCategory {
+  if (m.relatedJournalTransactionId) {
+    return "operating";
   }
   return "uncategorized";
 }
 
-/* ---------------------------------------------------------------------------
- * Fetch Cash Flow from Bank Movements
- * ---------------------------------------------------------------------------
- */
-export async function fetchCashflow(
-  entityId: string,
-  from?: string,
-  to?: string
-): Promise<CashflowResult> {
-  const movements = await fetchBankMovements(entityId, from, to);
+function resolveDirection(amount: number): CashflowDirection {
+  return amount >= 0 ? "in" : "out";
+}
 
-  const events: CashflowEvent[] = movements.map((m) => ({
-    id: m.id!,
-    date: m.date,
-    amount: m.amount,
-    category: resolveCategory(m),
-    description: m.description,
-    bankAccountId: m.bankAccountId,
-    reference: m.reference,
-  }));
+/**
+ * Normalize to YYYY-MM-DD for Firestore string queries
+ */
+function normalizeDate(input?: string | number): string | undefined {
+  if (input === undefined || input === null || input === "") return undefined;
+
+  if (typeof input === "number") {
+    const d = new Date(input);
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toISOString().slice(0, 10);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toISOString().slice(0, 10);
+}
+
+function safeId(m: BankMovement, idx: number): string {
+  return m.id ?? `${m.date ?? "no-date"}_${idx}`;
+}
+
+/* ============================================================================
+ * PUBLIC API
+ * ========================================================================== */
+
+/**
+ * REAL cash flow (Libro Bancos)
+ */
+export async function getRealCashFlow(
+  entityId: string,
+  from?: string | number,
+  to?: string | number
+): Promise<CashflowResult> {
+  const fromDate = normalizeDate(from);
+  const toDate = normalizeDate(to);
+
+  const movements = await fetchBankMovements(
+    entityId,
+    fromDate,
+    toDate
+  );
+
+  const events: CashflowEvent[] = movements.map((m, idx) => {
+    const amount = Number(m.amount) || 0;
+
+    return {
+      id: safeId(m, idx),
+      date: m.date,
+      amount,
+      direction: resolveDirection(amount),
+      category: resolveCategory(m),
+      description: m.description ?? "Movimiento bancario",
+      bankAccountId: m.bankAccountId,
+      reference: m.reference,
+    };
+  });
+
+  // Ensure deterministic order (Firestore already sorts, but UI safety)
+  events.sort((a, b) => a.date.localeCompare(b.date));
 
   const totals: CashflowTotals = {
     operating: 0,
@@ -85,11 +133,16 @@ export async function fetchCashflow(
     financing: 0,
     uncategorized: 0,
     net: 0,
+    inflow: 0,
+    outflow: 0,
   };
 
   for (const e of events) {
     totals[e.category] += e.amount;
     totals.net += e.amount;
+
+    if (e.direction === "in") totals.inflow += e.amount;
+    else totals.outflow += Math.abs(e.amount);
   }
 
   return { events, totals };

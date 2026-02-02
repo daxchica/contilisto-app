@@ -10,6 +10,9 @@ import { useBankAccounts } from "@/hooks/useBankAccounts";
 import EditPayableTermsModal from "@/components/payables/EditPayableTermsModal";
 import RegisterPayablePaymentModal from "@/components/payables/RegisterPayablePaymentModal";
 import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsTable";
+import { resolvePayableDueDate } from "@/utils/payable";
+import { resolveSupplierName, resolveSupplierRUC } from "@/utils/supplier";
+
 
 export default function AccountsPayablePage() {
   const { selectedEntity } = useSelectedEntity();
@@ -148,9 +151,14 @@ export default function AccountsPayablePage() {
               <React.Fragment key={p.id}>
                 <tr className="border-t">
                   <td className="p-2">
-                    {p.supplierName || "Proveedor"}
-                    {p.supplierRUC && (
-                      <div className="text-xs text-gray-400">{p.supplierRUC}</div>
+                    <div className="font-medium">
+                      {resolveSupplierName(p)}
+                    </div>
+
+                    {resolveSupplierRUC(p) && (
+                      <div className="text-xs text-gray-400">
+                        {resolveSupplierRUC(p)}
+                      </div>
                     )}
                   </td>
 
@@ -161,7 +169,7 @@ export default function AccountsPayablePage() {
                     ${Number(p.balance || 0).toFixed(2)}
                   </td>
 
-                  <td className="p-2">{p.dueDate || "—"}</td>
+                  <td className="p-2">{resolvePayableDueDate(p) ?? "—"}</td>
 
                   <td className="p-2">
                     {p.status === "paid" ? (

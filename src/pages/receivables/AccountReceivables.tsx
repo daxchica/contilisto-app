@@ -7,6 +7,7 @@ import type { Receivable } from "@/types/Receivable";
 import { fetchReceivables } from "@/services/receivablesService";
 
 import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsTable";
+import { resolveReceivableDueDate } from "@/utils/payable";
 
 export default function AccountsReceivablePage() {
   const { selectedEntity } = useSelectedEntity();
@@ -144,7 +145,7 @@ export default function AccountsReceivablePage() {
                     ${Number(r.balance || 0).toFixed(2)}
                   </td>
 
-                  <td className="p-2">{r.dueDate || "—"}</td>
+                  <td className="p-2">{resolveReceivableDueDate(r) || "—"}</td>
 
                   <td className="p-2">
                     {r.status === "paid" ? (

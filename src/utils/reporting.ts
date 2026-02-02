@@ -98,6 +98,7 @@ export function getAccountsPayable(journalEntries: any[]) {
         string,
         {
           supplierName: string;
+          supplierRUC: string;
           balance: number;
         }
       >
@@ -110,9 +111,17 @@ export function getAccountsPayable(journalEntries: any[]) {
         norm((entry as any).supplierName) ||
         "PROVEEDOR";
 
-      if (!acc[supplierName]) {
-        acc[supplierName] = {
+      const supplierRUC =
+        norm((entry as any).supplier_ruc) ||
+        norm((entry as any).supplierRUC) ||
+        "9999999999999";
+
+      const key = `${supplierRUC}::${supplierName}`;
+
+      if (!acc[key]) {
+        acc[key] = {
           supplierName,
+          supplierRUC,
           balance: 0,
         };
       }

@@ -89,13 +89,14 @@ function duplicateKey(e: JournalEntry) {
   return `${e.entityId}::${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}::${d}`;
 }
 
+/** 
 function resolveInvoiceNumber(e: JournalEntry) {
   if (e.invoice_number?.trim()) return e.invoice_number.trim();
   if (!e.transactionId) {
     throw new Error("Asiento manual sin invoice_number requiere transactionId");
   }
   return `MANUAL-${e.transactionId}`;
-}
+} */
 
 function resolveDescription(e: JournalEntry): string {
   if (e.description?.trim()) return e.description.trim();
@@ -183,8 +184,20 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
       continue;
     }
 
-    const supplierName = (control as any).supplier_name?.trim() || "Proveedor";
-    const supplierRUC = String((control as any).issuerRUC ?? "").trim();
+    const supplierName =
+      String(
+        (control as any).supplier_name ??
+        (control as any).issuerName ??
+        ""
+      ).trim() || "PROVEEDOR";
+
+    const supplierRUC =
+      String(
+        (control as any).supplier_ruc ??
+        (control as any).supplierRUC ??
+        (control as any).issuerRUC ??
+        ""
+      ).trim();
 
     if (!control.account_code?.trim()) {
       console.warn(`[AP SYNC] tx=${tx} missing payable account_code`);
@@ -310,10 +323,14 @@ export async function saveJournalEntries(
       entityId,
       uid: userId,
       transactionId,
-      invoice_number: resolveInvoiceNumber({ ...e, transactionId }),
+
+      invoice_number: e.invoice_number ?? `MANUAL-${transactionId}`,
+      
       description: resolveDescription(e),
       createdAt:
-        typeof (e as any).createdAt === "number" ? (e as any).createdAt : Date.now(),
+        typeof (e as any).createdAt === "number" 
+          ? (e as any).createdAt 
+          : Date.now(),
     };
 
     // 🔒 HARD VALIDATION (before Firestore)

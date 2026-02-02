@@ -98,3 +98,43 @@ function addDays(date: string, days: number): string {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
+
+export function resolvePayableDueDate(p: any): string | null {
+  // 1️⃣ Installments → next unpaid
+  if (Array.isArray(p.installmentSchedule)) {
+    const next = p.installmentSchedule.find(
+      (i: any) => Number(i.balance) > 0
+    );
+    if (next?.dueDate) return next.dueDate;
+  }
+
+  // 2️⃣ Terms → issueDate + termsDays
+  if (p.issueDate && Number.isFinite(p.termsDays)) {
+    const d = new Date(p.issueDate);
+    d.setDate(d.getDate() + Number(p.termsDays));
+    return d.toISOString().slice(0, 10);
+  }
+
+  // 3️⃣ Fallback
+  return p.issueDate ?? null;
+}
+
+export function resolveReceivableDueDate(r: any): string | null {
+  // 1️⃣ Installments → next unpaid
+  if (Array.isArray(r.installmentSchedule)) {
+    const next = r.installmentSchedule.find(
+      (i: any) => Number(i.balance) > 0
+    );
+    if (next?.dueDate) return next.dueDate;
+  }
+
+  // 2️⃣ Terms → issueDate + termsDays
+  if (r.issueDate && Number.isFinite(r.termsDays)) {
+    const d = new Date(r.issueDate);
+    d.setDate(d.getDate() + Number(r.termsDays));
+    return d.toISOString().slice(0, 10);
+  }
+
+  // 3️⃣ Fallback
+  return r.issueDate ?? null;
+}
