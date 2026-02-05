@@ -20,8 +20,12 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
 import { getRealCashFlow } from "@/services/cashFlowService";
 
+import { getCashflowForecast } from "@/services/cashflowForecastServices";
+import { buildDailyCashFlowSeries } from "@/utils/buildDailyCashFlowSeries";
+
 import { JournalEntry } from "@/types/JournalEntry";
 import { CashFlowItem } from "@/types/CashFlow";
+import CashFlowChart from "@/components/dashboard/CashFlowChart";
 
 /* ============================================================================
  * HELPERS
@@ -42,54 +46,124 @@ const DashboardHome: React.FC = () => {
   const [projectedCashFlow, setProjectedCashFlow] = useState<CashFlowItem[]>([]);
   const [cashFlowLoading, setCashFlowLoading] = useState(false);
 
+  const [projectedLoading, setProjectedLoading] = useState(false);
+
+  const [realEvents, setRealEvents] = useState<any[]>([]);
+  const [realLoading, setRealLoading] = useState(false);
+
+
   /* =======================
-   * DATE WINDOW (90 DAYS)
+   * DATE WINDOW
    * ======================= */
-  const today = useMemo(() => {
+  const todayStart = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   }, []);
 
-  const ninetyDaysFromNow = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 90);
-    d.setHours(23, 59, 59, 999);
-    return d.getTime();
-  }, []);
+  const last30Start = useMemo(() => {
+    return todayStart - 29 * 24 * 60 * 60 * 1000;
+  }, [todayStart]);
+
+  const todayISO = useMemo(() => {
+    return new Date(todayStart).toISOString().slice(0, 10);
+  }, [todayStart]);
+
+  const last30ISO = useMemo(() => {
+    return new Date(last30Start).toISOString().slice(0, 10);
+  }, [last30Start]);
 
   /* =======================
    * LOAD JOURNAL ENTRIES
    * ======================= */
   useEffect(() => {
-    if (!selectedEntity?.id) {
-      setEntries([]);
-      return;
+    let cancelled = false;
+
+    async function load() {
+      if (!selectedEntity?.id) {
+        setEntries([]);
+        return;
+      }
+
+      try {
+        const data = await fetchJournalEntries(selectedEntity.id);
+        if (!cancelled) setEntries(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (!cancelled) setEntries([]);
+      }
     }
 
-    fetchJournalEntries(selectedEntity.id)
-      .then((data) => setEntries(Array.isArray(data) ? data : []))
-      .catch(() => setEntries([]));
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEntity?.id]);
 
   /* =======================
    * LOAD PROJECTED CASH FLOW (AR / AP)
    * ======================= */
   useEffect(() => {
-    if (!selectedEntity?.id) {
-      setProjectedCashFlow([]);
-      return;
+    let cancelled = false;
+
+    async function loadProjected() {
+      if (!selectedEntity?.id) {
+        setProjectedCashFlow([]);
+        return;
+      }
+
+      setProjectedLoading(true);
+      try {
+        
+        const data = await getCashflowForecast(
+        selectedEntity.id,
+        last30Start,
+        todayStart
+      );
+
+        if (!cancelled) {
+          setProjectedCashFlow(Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        if (!cancelled) setProjectedCashFlow([]);
+      } finally {
+        if (!cancelled) setProjectedLoading(false);
+      }
     }
 
-    setCashFlowLoading(true);
+    loadProjected();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntity?.id, last30Start, todayStart]);
 
-    getRealCashFlow(selectedEntity.id, today, ninetyDaysFromNow)
-      .then((data) =>
-        setProjectedCashFlow(Array.isArray(data) ? data : [])
-      )
-      .catch(() => setProjectedCashFlow([]))
-      .finally(() => setCashFlowLoading(false));
-  }, [selectedEntity?.id, today, ninetyDaysFromNow]);
+  /* =======================
+   * LOAD REAL CASH FLOW (BANK MOVEMENTS) — last 30 days (ISO dates)
+   * ======================= */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReal() {
+      if (!selectedEntity?.id) {
+        setRealEvents([]);
+        return;
+      }
+
+      setRealLoading(true);
+      try {
+        const res = await getRealCashFlow(selectedEntity.id, last30ISO, todayISO);
+        if (!cancelled) setRealEvents(Array.isArray(res?.events) ? res.events : []);
+      } catch (e) {
+        if (!cancelled) setRealEvents([]);
+      } finally {
+        if (!cancelled) setRealLoading(false);
+      }
+    }
+
+    loadReal();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEntity?.id, last30ISO, todayISO]);
 
   /* =======================
    * ACCOUNTING KPIs
@@ -122,16 +196,22 @@ const DashboardHome: React.FC = () => {
    * ======================= */
 
   const accountsReceivable = useMemo(() => {
-    return projectedCashFlow
-      .filter((i) => i.type === "AR" && i.status !== "paid")
-      .reduce((sum, i) => sum + i.amount, 0);
-  }, [projectedCashFlow]);
+  return entries
+    .filter(e => startsWithSafe(e.account_code, "130"))
+    .reduce(
+      (sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)),
+      0
+    );
+}, [entries]);
 
   const accountsPayable = useMemo(() => {
-    return projectedCashFlow
-      .filter((i) => i.type === "AP" && i.status !== "paid")
-      .reduce((sum, i) => sum + i.amount, 0);
-  }, [projectedCashFlow]);
+  return entries
+    .filter(e => startsWithSafe(e.account_code, "201"))
+    .reduce(
+      (sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)),
+      0
+    );
+}, [entries]);
 
   /* =======================
    * CHART DATA
@@ -162,6 +242,20 @@ const DashboardHome: React.FC = () => {
       });
     return out;
   }, [entries]);
+
+  /* =======================
+   * DASHBOARD CASH FLOW SERIES (REAL vs PROJECTED) — Daily last 30 days
+   * ======================= */
+  const cashFlowSeries = useMemo(() => {
+    return buildDailyCashFlowSeries({
+      realEvents,
+      projectedItems: projectedCashFlow,
+      days: 30,
+      endDateMs: todayStart,
+    });
+  }, [realEvents, projectedCashFlow, todayStart]);
+
+  const isCashFlowLoading = realLoading || projectedLoading;
 
   /* =======================
    * RENDER
@@ -202,7 +296,15 @@ const DashboardHome: React.FC = () => {
         </div>
       </div>
 
-      {cashFlowLoading ? (
+      {/* CASH FLOW GRAPH (REAL vs PROJECTED) */}
+      <div className="mb-6">
+        <CashFlowChart 
+          data={cashFlowSeries} 
+          loading={cashFlowLoading} />
+      </div>
+
+      {/* PROJECTED CASH FLOW TABLE (installments) */}
+      {isCashFlowLoading ? (
         <div className="p-4 text-center text-gray-500">
           Cargando flujo de caja proyectado…
         </div>

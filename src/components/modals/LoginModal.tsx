@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/firebase-config";
 import { useNavigate } from "react-router-dom";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 
 interface LoginModalProps {
   isOpen: boolean;

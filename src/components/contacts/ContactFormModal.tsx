@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "@/components/Modal";
+import Modal from "@/components/ui/Modal";
 import { saveContact } from "@/services/contactService";
 import type {
   Contact,

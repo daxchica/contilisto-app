@@ -9,6 +9,10 @@ import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries";
 import { useInitialBalances } from "@/hooks/useInitialBalances";
 
+/* -------------------------------------------------------------------------- */
+/* CONFIG                                                                      */
+/* -------------------------------------------------------------------------- */
+
 const COLUMNS = [
   "Código",
   "Cuenta",
@@ -37,6 +41,10 @@ type Row = {
   parent: string | null;
 };
 
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
 function getParentCode(code: string): string | null {
   if (code.length <= 1) return null;
   if (code.length <= 3) return code.slice(0, 1);
@@ -44,6 +52,10 @@ function getParentCode(code: string): string | null {
   if (code.length <= 7) return code.slice(0, 5);
   return code.slice(0, code.length - 2);
 }
+
+/* -------------------------------------------------------------------------- */
+/* COMPONENT                                                                  */
+/* -------------------------------------------------------------------------- */
 
 export default function BalanceSheet({
   entries,
@@ -64,9 +76,10 @@ export default function BalanceSheet({
     });
   };
 
-  // ---------------------------------------------------------
-  // DATE FILTERING (Balance Inicial SIEMPRE incluido)
-  // ---------------------------------------------------------
+  /* ------------------------------------------------------------------------ */
+  /* FILTER ENTRIES (Balance inicial SIEMPRE entra)                            */
+  /* ------------------------------------------------------------------------ */
+
   const filteredEntries = useMemo(() => {
     const byEntity = entries.filter((e) => e.entityId === entityId);
     if (!startDate && !endDate) return byEntity;
@@ -75,10 +88,9 @@ export default function BalanceSheet({
     const to = endDate ? new Date(endDate) : null;
 
     return byEntity.filter((e) => {
-      // ✅ Balance inicial siempre entra
       if (e.source === "initial") return true;
-
       if (!e.date) return false;
+
       const d = new Date(e.date);
       if (from && d < from) return false;
       if (to && d > to) return false;
@@ -91,9 +103,10 @@ export default function BalanceSheet({
     [filteredEntries]
   );
 
-  // ---------------------------------------------------------
-  // Account initial balances (NEVER filtered by date)
-  // ---------------------------------------------------------
+  /* ------------------------------------------------------------------------ */
+  /* INITIAL BALANCES (never date-filtered)                                   */
+  /* ------------------------------------------------------------------------ */
+
   const initialByCode = useMemo(() => {
     const map: Record<string, number> = {};
 
@@ -106,12 +119,14 @@ export default function BalanceSheet({
 
       map[code] = (map[code] || 0) + Number(b.initial_balance || 0);
     }
+
     return map;
   }, [initialBalances, entityId]);
 
-  // ---------------------------------------------------------------------
-  // Net result of the fiscal period (if not provided externally via prop)
-  // ---------------------------------------------------------------------
+  /* ------------------------------------------------------------------------ */
+  /* RESULTADO DEL EJERCICIO                                                   */
+  /* ------------------------------------------------------------------------ */
+
   const resultadoDelEjercicio = useMemo(() => {
     if (typeof resultadoProp === "number") return resultadoProp;
 
@@ -122,73 +137,81 @@ export default function BalanceSheet({
 
     const ventas = sumByPrefix("7", "credit");
     const gastos = sumByPrefix("5", "debit");
+
     return ventas - gastos;
   }, [resultadoProp, filteredEntries]);
 
-  // -------------------------------------------------------------------------
-  // Construct hierarchical Balance Sheet following Ecuadorian PUC structure
-  // -------------------------------------------------------------------------
-  const groupedAccounts = useMemo(() => {
-    const eligible = ECUADOR_COA.filter((acc) => {
-      const f = acc.code[0];
-      if (!["1", "2", "3"].includes(f)) return false;
-      if (acc.code.startsWith("3")) return /^3(01|06|07)/.test(acc.code);
-      return true;
-    });
+  /* ------------------------------------------------------------------------ */
+  /* BUILD BALANCE SHEET (JOURNAL-AUTHORITATIVE)                               */
+  /* ------------------------------------------------------------------------ */
 
-    const childrenByParent = new Map<string, string[]>();
-    for (const acc of eligible) {
-      const parent = getParentCode(acc.code);
-      if (parent) {
-        if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
-        childrenByParent.get(parent)!.push(acc.code);
+  const groupedAccounts = useMemo(() => {
+    /* 1️⃣ Accounts used in Trial Balance */
+    const usedAccountCodes = new Set([
+      ...Object.keys(groupedEntries),
+      ...Object.keys(initialByCode),
+    ]);
+
+    /* 2️⃣ Expand with parents */
+    const requiredCodes = new Set<string>();
+    for (const code of usedAccountCodes) {
+      let cur: string | null = code;
+      while (cur) {
+        requiredCodes.add(cur);
+        cur = getParentCode(cur);
       }
     }
-    const isLeaf = (code: string) => !childrenByParent.has(code);
 
+    /* 3️⃣ Only Balance Sheet groups (1–3) */
+    const bsCodes = Array.from(requiredCodes).filter((c) =>
+      ["1", "2", "3"].includes(c.charAt(0))
+    );
+
+    /* 4️⃣ COA lookup (names only) */
+    const coaByCode = new Map<string, string>(
+      ECUADOR_COA.map((a: any) => [a.code, a.name])
+    );
+
+    /* 5️⃣ Build rows journal-first */
     const map = new Map<string, Row>();
-    for (const acc of eligible) {
-      const code = acc.code;
+
+    for (const code of bsCodes) {
       const g = groupedEntries[code] || { debit: 0, credit: 0 };
 
       map.set(code, {
         code,
-        name: acc.name,
+        name: coaByCode.get(code) ?? "CUENTA NO DEFINIDA EN PUC",
         initialBalance: initialByCode[code] || 0,
-        debit: isLeaf(code) ? g.debit : 0,
-        credit: isLeaf(code) ? g.credit : 0,
+        debit: g.debit,
+        credit: g.credit,
         balance: 0,
         level: detectLevel(code),
         parent: getParentCode(code),
       });
     }
 
-    // Inject resultado del ejercicio
-    if (!map.has("3")) {
-      map.set("3", {
-        code: "3",
-        name: "PATRIMONIO NETO",
-        initialBalance: 0,
-        debit: 0,
-        credit: 0,
-        balance: 0,
-        level: 1,
-        parent: null,
-      });
-    }
+    /* 6️⃣ Inject Resultado del Ejercicio */
+    map.set("3", {
+      code: "3",
+      name: "PATRIMONIO NETO",
+      initialBalance: 0,
+      debit: 0,
+      credit: 0,
+      balance: 0,
+      level: 1,
+      parent: null,
+    });
 
-    if (!map.has("307")) {
-      map.set("307", {
-        code: "307",
-        name: "RESULTADO DEL EJERCICIO",
-        initialBalance: 0,
-        debit: 0,
-        credit: 0,
-        balance: 0,
-        level: 2,
-        parent: "3",
-      });
-    }
+    map.set("307", {
+      code: "307",
+      name: "RESULTADO DEL EJERCICIO",
+      initialBalance: 0,
+      debit: 0,
+      credit: 0,
+      balance: 0,
+      level: 2,
+      parent: "3",
+    });
 
     if (resultadoDelEjercicio > 0) {
       map.set("30701", {
@@ -214,19 +237,12 @@ export default function BalanceSheet({
       });
     }
 
-    // Ensure relations exist
-    for (const row of map.values()) {
-      if (!row.parent) continue;
-      if (!childrenByParent.has(row.parent)) childrenByParent.set(row.parent, []);
-      const arr = childrenByParent.get(row.parent)!;
-      if (!arr.includes(row.code)) arr.push(row.code);
-    }
-
-    // Bottom-up rollup
+    /* 7️⃣ Roll-up bottom-up */
     const allCodes = Array.from(map.keys()).sort((a, b) => b.length - a.length);
     for (const code of allCodes) {
       const row = map.get(code)!;
       if (!row.parent) continue;
+
       const parent = map.get(row.parent);
       if (!parent) continue;
 
@@ -235,20 +251,24 @@ export default function BalanceSheet({
       parent.credit += row.credit;
     }
 
-    // Compute balances by group rule
+    /* 8️⃣ Compute balances */
     for (const row of map.values()) {
       const group = row.code.charAt(0);
-      if (group === "1") row.balance = row.initialBalance + row.debit - row.credit;
-      else if (group === "2" || group === "3") row.balance = row.initialBalance - row.debit + row.credit;
-      else row.balance = 0;
+      if (group === "1")
+        row.balance = row.initialBalance + row.debit - row.credit;
+      else
+        row.balance = row.initialBalance - row.debit + row.credit;
     }
 
     return Array.from(map.values())
-      .filter((acc) => acc.level <= level)
+      .filter((r) => r.level <= level)
       .sort((a, b) => a.code.localeCompare(b.code));
   }, [groupedEntries, initialByCode, resultadoDelEjercicio, level]);
 
-  // Collapse visibility
+  /* ------------------------------------------------------------------------ */
+  /* VISIBILITY                                                               */
+  /* ------------------------------------------------------------------------ */
+
   const isVisible = (acc: Row) => {
     if (!acc.parent) return true;
     for (const code of collapsedCodes) {
@@ -256,6 +276,10 @@ export default function BalanceSheet({
     }
     return true;
   };
+
+  /* ------------------------------------------------------------------------ */
+  /* EXPORTS                                                                  */
+  /* ------------------------------------------------------------------------ */
 
   const exportPDF = () => {
     const doc = new jsPDF();
@@ -294,107 +318,74 @@ export default function BalanceSheet({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.setAttribute("download", "balance-general.csv");
-    document.body.appendChild(a);
+    a.download = "balance-general.csv";
     a.click();
-    document.body.removeChild(a);
   };
+
+  /* ------------------------------------------------------------------------ */
+  /* RENDER                                                                  */
+  /* ------------------------------------------------------------------------ */
 
   return (
     <div className="w-full">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
+      <div className="flex flex-col lg:flex-row justify-between gap-3 mb-3">
         <h1 className="text-lg font-bold text-blue-800">📘 Balance General</h1>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="nivel" className="text-sm text-gray-600">
-            Nivel:
-          </label>
+        <div className="flex gap-2 items-center">
           <select
-            id="nivel"
             className="border rounded px-2 py-1 text-sm"
             value={level}
             onChange={(e) => setLevel(Number(e.target.value))}
           >
-            {[1, 2, 3, 4, 5].map((lvl) => (
-              <option key={lvl} value={lvl}>
-                Nivel {lvl}
+            {[1, 2, 3, 4, 5].map((l) => (
+              <option key={l} value={l}>
+                Nivel {l}
               </option>
             ))}
           </select>
 
-          <button
-            onClick={exportPDF}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1 rounded"
-          >
-            📄 Exportar PDF
+          <button onClick={exportPDF} className="btn-primary">
+            📄 PDF
           </button>
-
-          <button
-            onClick={exportCSV}
-            className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1 rounded"
-          >
-            📊 Exportar CSV
+          <button onClick={exportCSV} className="btn-success">
+            📊 CSV
           </button>
         </div>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full border border-gray-200 text-sm">
+        <table className="min-w-full border text-sm">
           <thead className="bg-gray-100">
             <tr>
-              {COLUMNS.map((col) => (
-                <th key={col} className="px-3 py-2 text-left font-semibold">
-                  {col}
+              {COLUMNS.map((c) => (
+                <th key={c} className="px-3 py-2 text-left">
+                  {c}
                 </th>
               ))}
             </tr>
           </thead>
-
           <tbody>
-            {groupedAccounts.filter(isVisible).map((acc) => {
-              const hasChildren = groupedAccounts.some(
-                (child) => child.parent === acc.code
-              );
-              const isCollapsed = collapsedCodes.has(acc.code);
-
-              return (
-                <tr key={acc.code} className="border-t">
-                  <td className="px-3 py-1 font-semibold">{acc.code}</td>
-
-                  <td className="px-3 py-1">
-                    <span
-                      onClick={() => hasChildren && toggleCollapse(acc.code)}
-                      className={`cursor-pointer select-none ${
-                        hasChildren ? "text-blue-600 font-semibold" : ""
-                      }`}
-                    >
-                      {`${"    ".repeat(acc.level - 1)}${
-                        hasChildren ? (isCollapsed ? "► " : "▼ ") : ""
-                      }${acc.name}`}
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-1 text-right">
-                    {formatAmount(acc.initialBalance)}
-                  </td>
-                  <td className="px-3 py-1 text-right">
-                    {formatAmount(acc.debit)}
-                  </td>
-                  <td className="px-3 py-1 text-right">
-                    {formatAmount(acc.credit)}
-                  </td>
-                  <td
-                    className={`px-3 py-1 text-right ${
-                      acc.balance < 0 ? "text-red-600 font-semibold" : ""
-                    }`}
-                  >
-                    {formatAmount(acc.balance)}
-                  </td>
-                </tr>
-              );
-            })}
+            {groupedAccounts.filter(isVisible).map((acc) => (
+              <tr key={acc.code} className="border-t">
+                <td className="px-3 py-1 font-semibold">{acc.code}</td>
+                <td className="px-3 py-1">
+                  {" ".repeat((acc.level - 1) * 2)}
+                  {acc.name}
+                </td>
+                <td className="px-3 py-1 text-right">
+                  {formatAmount(acc.initialBalance)}
+                </td>
+                <td className="px-3 py-1 text-right">
+                  {formatAmount(acc.debit)}
+                </td>
+                <td className="px-3 py-1 text-right">
+                  {formatAmount(acc.credit)}
+                </td>
+                <td className="px-3 py-1 text-right">
+                  {formatAmount(acc.balance)}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

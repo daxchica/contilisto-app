@@ -2,9 +2,10 @@
 import React from "react";
 
 interface ModalProps {
-  title: string;
+  title?: string;
   onClose: () => void;
   children: React.ReactNode;
+  maxWidthClass?: string;
 }
 
 export default function Modal({ title, onClose, children }: ModalProps) {

@@ -17,7 +17,7 @@ import type { JournalEntry } from "../../types/JournalEntry";
 import AccountPicker from "../AccountPicker";
 import { saveContextualAccountHint } from "@/services/firestoreHintsService";
 import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
-import { validateJournalStructure } from "@/utils/validateJournalStructure.ts";
+import { validateJournalStructure } from "@/utils/validators/validateJournalStructure";
 
 // ---------------------------------------------------------------------------
 // TYPES

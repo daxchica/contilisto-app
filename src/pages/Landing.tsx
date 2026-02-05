@@ -103,7 +103,6 @@ export default function Landing() {
                   </button>
 
                   <button
-                    to="/register"
                     onClick={scrollToPricing}
                     className="text-center text-sm text-blue-700 font-medium"
                   >
