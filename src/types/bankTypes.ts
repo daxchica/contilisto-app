@@ -28,16 +28,28 @@ export interface BankBookEntry {
   createdAt: string;
 }
 
-// Movimiento bancario simple usado en conciliación
+/* ============================================================================
+ * Types
+ * ========================================================================== */
+
+export type BankMovementType = "in" | "out" | "transfer";
+
 export interface BankMovement {
-  id: string;
+  id?: string;
+
   entityId: string;
-  bankAccountId?: string;
-  date: string;          // ISO date string
-  amount: number;        // positive value
-  type: "INGRESO" | "EGRESO";
+  bankAccountId: string;
+  date: string;
+  amount: number;
+  type: BankMovementType;
+  transactionId?: string;
   description: string;
-  status: "recorded" | "matched" | "pending" | "unknown";
-  createdBy: string;
-  createdAt: string;
+  reference?: string;
+  relatedInvoiceId?: string;
+  relatedJournalTransactionId?: string;
+  reconciled?: boolean;
+  reconciledAt?: any;
+  createdAt?: any;
+  updatedAt?: any;
+  createdBy?: string;
 }

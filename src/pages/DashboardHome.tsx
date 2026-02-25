@@ -18,7 +18,7 @@ import CashFlowTable from "../components/dashboard/CashFlowTable";
 
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
-import { getRealCashFlow } from "@/services/cashFlowService";
+import { getRealCashFlow } from "@/services/cashFlowRealService";
 
 import { getCashflowForecast } from "@/services/cashflowForecastServices";
 import { buildDailyCashFlowSeries } from "@/utils/buildDailyCashFlowSeries";

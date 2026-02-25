@@ -5,7 +5,7 @@
 // ============================================================================
 
 import type { CashFlowItem } from "@/types/CashFlow";
-import type { CashflowEvent } from "@/services/cashFlowService";
+import type { RealCashflowEvent } from "@/services/cashFlowRealService";
 
 export type CashFlowDay = {
   date: string; // YYYY-MM-DD
@@ -61,7 +61,7 @@ function round2(n: number): number {
  * - Days with no activity are included (continuous axis)
  */
 export function buildDailyCashFlowSeries(args: {
-  realEvents?: CashflowEvent[];
+  realEvents?: RealCashflowEvent[];
   projectedItems?: CashFlowItem[];
   days: number;          // e.g. 30 / 60 / 90
   endDateMs: number;     // REQUIRED: pass todayStart from caller

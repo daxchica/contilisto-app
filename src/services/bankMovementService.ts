@@ -29,63 +29,8 @@ import {
   serverTimestamp,
   writeBatch
 } from "firebase/firestore";
+import type { BankMovement, BankMovementType } from "@/types/bankTypes";
 
-/* ============================================================================
- * Types
- * ========================================================================== */
-
-export type BankMovementType = "in" | "out" | "transfer";
-
-export interface BankMovement {
-  id?: string;
-
-  entityId: string;
-  bankAccountId: string;
-
-  /**
-   * Value date of the movement (YYYY-MM-DD)
-   */
-  date: string;
-
-  /**
-   * Signed amount:
-   *  - Positive => cash inflow
-   *  - Negative => cash outflow
-   */
-  amount: number;
-
-  /**
-   * Movement type
-   */
-  type: BankMovementType;
-  transactionId?: string;
-
-  /**
-   * User-facing description (Spanish)
-   */
-  description: string;
-
-  reference?: string;
-
-  /**
-   * Accounting traceability
-   */
-  relatedInvoiceId?: string;
-  relatedJournalTransactionId?: string;
-
-  /**
-   * Reconciliation flags
-   */
-  reconciled?: boolean;
-  reconciledAt?: any;
-
-  /**
-   * Metadata
-   */
-  createdAt?: any;
-  updatedAt?: any;
-  createdBy?: string;
-}
 
 /* ============================================================================
  * Helpers

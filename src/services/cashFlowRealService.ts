@@ -1,4 +1,4 @@
-import type { BankMovement } from "./bankMovementService";
+import type { BankMovement } from "@/types/bankTypes";
 import { fetchBankMovements } from "./bankMovementService";
 
 import {
@@ -133,7 +133,7 @@ export async function getRealCashBeforeDate(
     const date = m.date;
     if (!date) continue;
 
-    if (date < beforeDate) {
+    if (normalizeDate(date) && normalizeDate(date)! < beforeDate) {
       total += Number((m as any).amount) || 0;
     }
   }

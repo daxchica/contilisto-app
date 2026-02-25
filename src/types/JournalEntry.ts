@@ -3,7 +3,6 @@
 // Central accounting entry type — CONTILISTO v1.0
 // ============================================================================
 
-import type { Timestamp, FieldValue } from "firebase-admin/firestore";
 
 export type EntrySource = 
   | "vision"
@@ -12,7 +11,6 @@ export type EntrySource =
   | "manual" 
   | "learned"
   | "edited" 
-  | "vision" 
   | "initial"
   | "normalized-sale"
   | "normalized-expense"
@@ -23,7 +21,7 @@ export type JournalType = "expense" | "income" | "liability";
 export interface JournalEntry {
   // Identifiers
   id?: string;
-  entityId?: string;
+  entityId: string;
   uid?: string;
   userIdSafe?: string;
   transactionId?: string;
@@ -64,8 +62,8 @@ export interface JournalEntry {
   source?: EntrySource;
   isManual?: boolean;
 
-  createdAt?: number | Timestamp | FieldValue;
-  updatedAt?: Timestamp | FieldValue;
+  createdAt?: number;
+  updatedAt?: number;
 
   customer_name?: string;
   customerRUC?: string;

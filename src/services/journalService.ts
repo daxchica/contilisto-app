@@ -509,8 +509,11 @@ export async function saveJournalEntries(
 
       source: e.source ?? "vision",
 
-      createdAt: e.createdAt ?? serverTimestamp(), 
-      updatedAt: serverTimestamp(),
+      createdAt: typeof e.createdAt === "number"
+        ? e.createdAt
+        : Date.now(), 
+
+      updatedAt: Date.now(),
     };
 
     // 🔒 HARD VALIDATION (before Firestore)
