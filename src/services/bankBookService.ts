@@ -44,7 +44,7 @@ export async function fetchBankBookEntries(
 export async function createBankBookEntry(
   entityId: string,
   entry: BankBookEntry,
-  userId: string
+  userIdSafe: string
 ): Promise<void> {
   if (!entityId) throw new Error("entityId es requerido");
   if (!entry) throw new Error("entry es requerido");
@@ -53,8 +53,8 @@ export async function createBankBookEntry(
 
   await addDoc(ref, {
     ...entry,
-    createdBy: userId,
-    userId,
+    createdBy: userIdSafe,
+    userIdSafe,
     createdAt: Timestamp.now(),
   });
 }

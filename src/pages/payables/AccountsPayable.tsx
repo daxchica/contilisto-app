@@ -18,12 +18,12 @@ export default function AccountsPayablePage() {
   const { selectedEntity } = useSelectedEntity();
 
   const entityId = selectedEntity?.id ?? null;
-  const userId = selectedEntity?.uid ?? null;
+  const userIdSafe = selectedEntity?.uid ?? null;
 
   const { 
     bankAccounts: rawBankAccounts, 
     loading: accountsLoading 
-  } = useBankAccounts(entityId ?? "", userId ?? "");
+  } = useBankAccounts(entityId ?? "", userIdSafe ?? "");
 
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +254,7 @@ export default function AccountsPayablePage() {
           <RegisterPayablePaymentModal
             isOpen={true}
             entityId={entityId}
-            userId={userId!}
+            userIdSafe={userIdSafe!}
             payable={payingPayable}
             bankAccounts={rawBankAccounts}
             onClose={() => setPayingPayable(null)}

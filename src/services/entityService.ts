@@ -2,7 +2,7 @@
 import { db } from "../firebase-config";
 import {
   collection,
-  addDoc,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -18,13 +18,13 @@ import {
 import type { Entity, EntityType } from "../types/Entity";
 import { uidOrThrow } from "../utils/auth";
 import type { JournalEntry } from "@/types/JournalEntry";
+import { getUidOrThrow } from "./firestoreSecurity";
 
 /* =========================
    ENTITIES
 ========================= */
 
-export async function createEntity(params: {
-  id?: string;
+export async function createEntity(data: {
   ruc: string;
   name: string;
   type: EntityType;
@@ -32,25 +32,33 @@ export async function createEntity(params: {
   phone?: string;
   email?: string;
 }): Promise<string> {
-  const uid = uidOrThrow();
+  const uid = getUidOrThrow();
 
-  const data: Omit<Entity, "id"> = {
-    uid,
-    name: params.name.trim(),
-    ruc: params.ruc.trim(),
-    type: params.type,
-    address: params.address?.trim() ?? "",
-    phone: params.phone?.trim() ?? "",
-    email: params.email?.trim() ?? "",
+  const entityRef = doc(collection(db, "entities"));
 
-    obligadoContabilidad: true,
-    
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+  await setDoc(entityRef, {
+    ruc: data.ruc.trim(),
+    name: data.name.trim(),
+    type: data.type,
+    address: data.address?.trim() ?? null,
+    phone: data.phone?.trim() ?? null,
+    email: data.email?.trim() ?? null,
+    createdAt: serverTimestamp(),
+    createdBy: uid,
+  });
 
-  const ref = await addDoc(collection(db, "entities"), data);
-  return ref.id;
+  // Create membership document
+  await setDoc(
+    doc(db, "entities", entityRef.id, "members", uid),
+    {
+      uid,
+      role: "owner",
+      invitedBy: uid,
+      createdAt: serverTimestamp(),
+    }
+  );
+
+  return entityRef.id;
 }
 
 export async function updateEntity(
@@ -63,18 +71,17 @@ export async function updateEntity(
     email?: string;
   }
 ): Promise<void> {
-  const uid = uidOrThrow();
-  const ref = doc(db, "entities", entityId);
+  const uid = getUidOrThrow();
 
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Entity does not exist");
+  // Check membership role
+  const memberRef = doc(db, "entities", entityId, "members", uid);
+  const memberSnap = await getDoc(memberRef);
 
-  const entity = snap.data() as Entity;
-  if (entity.uid !== uid) {
-    throw new Error("SECURITY: cannot update entity not owned by user");
+  if (!memberSnap.exists() || memberSnap.data().role !== "owner") {
+    throw new Error("SECURITY: Only owner can update entity");
   }
 
-  await updateDoc(ref, {
+  await updateDoc(doc(db, "entities", entityId), {
     name: data.name.trim(),
     type: data.type,
     address: data.address?.trim() ?? "",
@@ -88,46 +95,48 @@ export async function updateEntity(
    DELETE ENTITY
 ========================= */
 export async function deleteEntity(entityId: string): Promise<void> {
-  const uid = uidOrThrow();
-  const ref = doc(db, "entities", entityId);
+  const uid = getUidOrThrow();
 
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
+  const memberRef = doc(db, "entities", entityId, "members", uid);
+  const memberSnap = await getDoc(memberRef);
 
-  const entity = snap.data() as Entity;
-  if (entity.uid !== uid) {
-    throw new Error("SECURITY: cannot delete entity not owned by user");
+  if (!memberSnap.exists() || memberSnap.data().role !== "owner") {
+    throw new Error("SECURITY: Only owner can delete entity");
   }
 
-  await deleteDoc(ref);
+  await deleteDoc(doc(db, "entities", entityId));
 }
 
 /* =========================
    FETCH ENTITIES
 ========================= */
-export async function fetchEntities(uid: string): Promise<Entity[]> {
-  const q = query(
-    collection(db, "entities"),
-    where("uid", "==", uid),
+export async function fetchEntities(): Promise<Entity[]> {
+  const uid = getUidOrThrow();
+
+  // 1️⃣ Get all membership docs for current user
+  const membershipQuery = query(
+    collectionGroup(db, "members"),
+    where("uid", "==", uid)
   );
 
-  const snap = await getDocs(q);
+  const membershipSnap = await getDocs(membershipQuery);
 
-  return snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Entity) }))
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-}
+  if (membershipSnap.empty) return [];
 
-export async function fetchJournalEntries(
-  entityId: string
-): Promise<JournalEntry[]> {
-  if (!entityId) return [];
+  // 2️⃣ Extract entity IDs
+  const entityIds = membershipSnap.docs
+    .map(d => d.ref.parent.parent?.id)
+    .filter(Boolean) as string[];
 
-  const colRef = collection(db, "entities", entityId, "journalEntries");
-  const snap = await getDocs(colRef);
+  // 3️⃣ Fetch entities in parallel (PROFESSIONAL)
+  const entityDocs = await Promise.all(
+    entityIds.map(id => getDoc(doc(db, "entities", id)))
+  );
 
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as JournalEntry),
-  }));
+  return entityDocs
+    .filter(d => d.exists())
+    .map(d => ({
+      id: d.id,
+      ...(d.data() as Entity),
+    }));
 }

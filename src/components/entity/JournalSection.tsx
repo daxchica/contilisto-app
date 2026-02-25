@@ -9,11 +9,11 @@ interface Props {
   entries: JournalEntry[];
   entityId: string;
   entityName: string;
-  userId: string;
+  userIdSafe: string;
   onSaved: () => void;
 }
 
-export default function JournalSection({ entries, entityId, entityName, userId, onSaved }: Props) {
+export default function JournalSection({ entries, entityId, entityName, userIdSafe, onSaved }: Props) {
   const isBalanced = (): boolean => {
     const debit = Number(
       entries.reduce((sum, e) => sum + Number(e.debit ?? 0), 0).toFixed(2));
@@ -25,7 +25,7 @@ export default function JournalSection({ entries, entityId, entityName, userId, 
   };
 
   const handleSave = async () => {
-    if (!entityId || !userId) {
+    if (!entityId || !userIdSafe) {
       alert("Entidad o usuario no definidos.");
       return;
     }
@@ -33,11 +33,11 @@ export default function JournalSection({ entries, entityId, entityName, userId, 
       const withMeta = entries.map((e) => ({
         ...e,
         entityId,
-        userId,
+        userIdSafe,
         createdAt: Date.now(),
         source: e.source ?? "manual",
       }));
-      await saveJournalEntries(entityId, withMeta, userId);
+      await saveJournalEntries(entityId, userIdSafe, withMeta);
       onSaved();
     } catch (err) {
       console.error("Error al guardar asientos:", err);

@@ -1,23 +1,21 @@
 // ============================================================================
 // src/components/JournalPreviewModal.tsx
-// CONTILISTO — STABLE & DRAG-SAFE VERSION
+// CONTILISTO — STABLE PRODUCTION VERSION (COMPACT OLD UI)
 // ============================================================================
 
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
+import { getAuth } from "firebase/auth";
 
-import type { Account } from "../../types/AccountTypes";
-import type { JournalEntry } from "../../types/JournalEntry";
-
-import AccountPicker from "../AccountPicker";
-import { saveContextualAccountHint } from "@/services/firestoreHintsService";
+import type { Account } from "@/types/AccountTypes";
+import type { JournalEntry } from "@/types/JournalEntry";
 import type { InvoicePreviewMetadata } from "@/types/InvoicePreviewMetadata";
+
+import AccountPicker from "@/components/AccountPicker";
+import { saveContextualAccountHint } from "@/services/firestoreHintsService";
 import { validateJournalStructure } from "@/utils/validators/validateJournalStructure";
+
+import { isCustomerReceivableAccount, isSupplierPayableAccount } from "@/services/controlAccounts";
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -27,9 +25,14 @@ interface Props {
   open: boolean;
   entries: JournalEntry[];
   metadata: InvoicePreviewMetadata;
+
   accounts: Account[];
+  leafAccounts: Account[];
+  leafCodeSet: Set<string>;
+
   entityId: string;
-  userId: string;
+  userIdSafe: string;
+
   onClose: () => void;
   onSave: (entries: JournalEntry[], note: string) => Promise<void>;
 }
@@ -43,47 +46,80 @@ type Row = Omit<JournalEntry, "debit" | "credit"> & {
 // HELPERS
 // ---------------------------------------------------------------------------
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 const moneyFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-function formatMoney(n: number | string | undefined | null) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "0.00";
-  return moneyFormatter.format(v);
-}
+const toISODateOrNull = (raw: string): string | null => {
+  const s = (raw ?? "").trim();
+  if (!s) return null;
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+  // ISO date or ISO datetime
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
 
-function isLeafAccount(account: Account, all: Account[]) {
-  if ((account as any).isLastLevel) return true;
-  if (account.code.length >= 7) return true;
-  return !all.some(
-    (a) => a.code !== account.code && a.code.startsWith(account.code)
+  // DD/MM/YYYY (or MM/DD/YYYY)
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const y = Number(m[3]);
+
+    // Ecuador default: DD/MM/YYYY
+    let day = a;
+    let month = b;
+
+    // If clearly MM/DD/YYYY (second part can't be month)
+    if (a <= 12 && b > 12) {
+      day = b;
+      month = a;
+    }
+
+    const dd = String(day).padStart(2, "0");
+    const mm = String(month).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
+
+  return null;
+};
+
+const formatMoney = (n: number) =>
+  moneyFormatter.format(Number.isFinite(n) ? n : 0);
+
+const parseMoney = (raw: string) => {
+  const cleaned = (raw ?? "").replace(/\s/g, "").replace(",", ".");
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const createEmptyRow = (
+  entityId: string,
+  uid: string,
+  invoice?: string
+): Row => ({
+  id: crypto.randomUUID(),
+  entityId,
+  uid,
+  date: todayISO(),
+  account_code: "",
+  account_name: "",
+  debit: 0,
+  credit: 0,
+  description: "",
+  invoice_number: invoice ?? "",
+  source: "edited",
+  createdAt: Date.now(),
+});
+
+const areAllRowsPostable = (
+  rows: Row[],
+  leafCodeSet: Set<string>
+) =>
+  rows.every((r) =>
+    leafCodeSet.has((r.account_code ?? "").trim())
   );
-}
-
-function createEmptyRow(
-  entityId: string, 
-  userId: string,
-  invoiceNumber?: string,
-): Row {
-  return {
-    id: crypto.randomUUID(),
-    entityId,
-    uid: userId,
-    date: todayISO(),
-    account_code: "",
-    account_name: "",
-    debit: 0,
-    credit: 0,
-    description: "",
-    invoice_number: invoiceNumber,
-    source: "edited",
-    createdAt: Date.now(),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // COMPONENT
@@ -94,185 +130,85 @@ export default function JournalPreviewModal({
   entries,
   metadata,
   accounts,
+  leafAccounts,
+  leafCodeSet,
   entityId,
-  userId,
+  userIdSafe,
   onClose,
   onSave,
 }: Props) {
-
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const invoiceType: "sale" | "expense" =
-    metadata.invoiceType ?? "expense";
+
+  const invoiceType: "sale" | "expense" = metadata.invoiceType ?? "expense";
 
   // -------------------------------------------------------------------------
-  // STABLE INITIAL POSITION (CRITICAL FIX)
+  // DRAG SAFE POSITION
   // -------------------------------------------------------------------------
 
   const initialPosition = useRef({
-    x: Math.max(20, window.innerWidth / 2 - 450),
-    y: Math.max(20, window.innerHeight / 2 - 300),
+    x:
+      typeof window !== "undefined"
+        ? Math.max(20, window.innerWidth / 2 - 520)
+        : 100,
+    y:
+      typeof window !== "undefined"
+        ? Math.max(20, window.innerHeight / 2 - 360)
+        : 100,
   });
- 
-  // -------------------------------------------------------------------------
-  // ACCOUNTS
-  // -------------------------------------------------------------------------
 
-  const leafAccounts = useMemo(
-    () => accounts.filter((a) => isLeafAccount(a, accounts)),
-    [accounts]
+  const pickerAccounts = useMemo(
+    () => (leafAccounts?.length ? leafAccounts : accounts ?? []),
+    [leafAccounts, accounts]
   );
 
   // -------------------------------------------------------------------------
-  // INIT ROWS
+  // INIT
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setRows([]);
+      return;
+    }
 
     const invoiceNumber = metadata.invoice_number ?? "";
-    
-    
+
     const prepared =
-      entries.length > 0
+      entries?.length > 0
         ? entries.map((e) => ({
             ...e,
             id: e.id ?? crypto.randomUUID(),
             debit: Number(e.debit ?? 0),
             credit: Number(e.credit ?? 0),
-            date: e.date ?? todayISO(),
-            invoice_number: e.invoice_number ?? invoiceNumber,
+            date: toISODateOrNull(String(e.date ?? "")) ?? todayISO(),
+            entityId: e.entityId ?? entityId,
+            uid: (e as any).uid ?? userIdSafe,
           }))
-        : [createEmptyRow(entityId, userId, invoiceNumber)];
-
-    // 🔹 AUTO-ADD IVA ROW IF MISSING (EXPENSE ONLY)
-    if (metadata.invoiceType === "expense") {
-      const hasIVA = prepared.some(r => r.account_code?.startsWith("133"));
-      const hasExpense = prepared.find(r => r.account_code?.startsWith("5"));
-      const hasAP = prepared.find(r => r.account_code?.startsWith("201"));
-
-      if (!hasIVA && hasExpense && hasAP) {
-        const ivaBase = hasExpense.debit || 0;
-        const ivaAmount = Number((ivaBase * 0.15).toFixed(2));
-
-        if (ivaAmount > 0) {
-          // Insert IVA BEFORE Accounts Payable
-          prepared.splice(
-            prepared.indexOf(hasAP),
-            0,
-            {
-              ...createEmptyRow(entityId, userId),
-              account_code: "133010102",
-              account_name: "IVA crédito en compras",
-              debit: ivaAmount,
-              credit: 0,
-            }
-          );
-
-          // Increase AP credit to keep balance
-          hasAP.credit = Number((hasAP.credit + ivaAmount).toFixed(2));
-        }
-      }
-    }
+        : [createEmptyRow(entityId, userIdSafe, invoiceNumber)];
 
     setRows(prepared);
 
-    if (metadata.invoiceType === "sale") {
-      const parts = [
-        invoiceNumber && `Factura de venta ${invoiceNumber}`,
-        metadata.buyerName && `Cliente: ${metadata.buyerName}`,
-      ].filter(Boolean);
+    const party =
+      invoiceType === "sale"
+        ? metadata.buyerName
+        : metadata.issuerName;
 
-      setNote(parts.join(" · "));
-      
-    } else {
-      const mainExpense = prepared.find((e) =>
-        e.account_code?.startsWith("5")
-      );
-      const desc = mainExpense?.account_name ?? "";
-      setNote(
-        invoiceNumber && desc
-          ? `Factura ${invoiceNumber} - ${desc}`
-          : invoiceNumber || desc
-      );
-    }
-  }, [open, entries, metadata, entityId, userId]);
-
-  // -------------------------------------------------------------------------
-  // TOTALS
-  // -------------------------------------------------------------------------
-
-  const totals = useMemo(() => {
-    const debit = Number(rows.reduce((s, r) => s + r.debit, 0).toFixed(2));
-    const credit = Number(rows.reduce((s, r) => s + r.credit, 0).toFixed(2));
-
-    const balanced = validateJournalStructure(
-      rows,
-      invoiceType
+    setNote(
+      invoiceNumber
+        ? `Factura ${invoiceNumber}${
+            party ? ` · ${party}` : ""
+          }`
+        : ""
     );
 
-    return { debit, credit, balanced };
-  }, [rows, metadata.invoiceType]);
+    setSelectedIdx(null);
+  }, [open, entries, metadata, entityId, userIdSafe, invoiceType]);
 
   // -------------------------------------------------------------------------
-  // SAVE
-  // -------------------------------------------------------------------------
-
-  const handleSave = async () => {
-    if (saving || !totals.balanced ) return;
-    
-    setSaving(true);
-    
-    try {
-      // 🔧 NORMALIZE before sending up
-      const normalized: JournalEntry[] = rows.map(r => ({
-        ...r,
-        debit: Number(r.debit ?? 0),
-        credit: Number(r.credit ?? 0),
-        invoice_number: r.invoice_number ?? metadata.invoice_number,
-      }));
-
-      // 1️⃣ Guardar asiento (CRÍTICO)
-      await onSave(normalized, note);
-      // -----------------------------------------------------
-      // 1️⃣ AI LEARNING (NON-BLOCKING)
-      // -----------------------------------------------------
-      if (invoiceType === "expense" && metadata.issuerRUC) {
-        const issuerRUC = metadata.issuerRUC;
-        const issuerName = metadata.issuerName ?? "PROVEEDOR";
-
-        normalized.forEach(r => {
-          const debit = Number(r.debit ?? 0);
-
-          if (
-            debit > 0 &&
-            r.account_code?.startsWith("5")
-          ) {
-            saveContextualAccountHint(
-              userId,
-              issuerRUC,
-              issuerName,
-              note,
-              r.account_code,
-              r.account_name ?? ""
-            ).catch(() => {});
-          }
-        });
-      }
-  
-      onClose();
-      } catch (err) {
-        console.error("Error saving journal:", err);
-        alert("Error al guardar el asiento. Revisa permisos o conexion.");
-      } finally {
-        setSaving(false);
-      }
-    };
-
-  // -------------------------------------------------------------------------
-  // ROW ACTIONS
+  // PATCH
   // -------------------------------------------------------------------------
 
   const patchRow = (idx: number, patch: Partial<Row>) => {
@@ -283,281 +219,408 @@ export default function JournalPreviewModal({
     });
   };
 
+  // -------------------------------------------------------------------------
+  // TOTALS
+  // -------------------------------------------------------------------------
+
+  const totals = useMemo(() => {
+    const debit = Number( rows.reduce((s, r) => s + Number(r.debit ?? 0), 0).toFixed(2));
+    const credit = Number( rows.reduce((s, r) => s + Number(r.credit ?? 0), 0).toFixed(2));
+
+    const mathBalanced = Math.abs(debit - credit) < 0.01;
+    const leafOk = areAllRowsPostable(rows, leafCodeSet);
+
+    let structureOk = true;
+    try {
+      structureOk = validateJournalStructure(rows, invoiceType);
+    } catch {
+      structureOk = false;
+    }
+
+    console.log("ROWS:", rows.map(r => r.account_code));
+    console.log("LEAF CHECK:", rows.map(r =>
+      leafCodeSet.has((r.account_code ?? "").trim())
+    ));
+    console.log("leafCodeSet size:", leafCodeSet.size);
+
+    return { debit, credit, mathBalanced, leafOk, structureOk };
+  }, [rows, leafCodeSet, invoiceType]);
+
+  // -------------------------------------------------------------------------
+  // SAVE
+  // -------------------------------------------------------------------------
+
+  const handleSave = async () => {
+    if (saving) return;
+
+    const authUid = getAuth().currentUser?.uid;
+    if (!authUid || authUid !== userIdSafe) {
+      alert("Sesión inválida.");
+      return;
+    }
+
+    if (!totals.mathBalanced) {
+      alert("El asiento no está balanceado.");
+      return;
+    }
+
+    if (!totals.leafOk) {
+      alert("Solo se permiten subcuentas finales.");
+      return;
+    }
+
+    console.log("Selected codes:", rows.map(r => r.account_code));
+    console.log("Leaf set:", Array.from(leafCodeSet));
+
+    console.log("Leaf contains 401010101:", leafCodeSet.has("401010101"));
+    console.log("Leaf contains 213010101:", leafCodeSet.has("213010101"));
+    console.log("Leaf contains 101030101:", leafCodeSet.has("101030101"));
+
+    setSaving(true);
+
+    try {
+      const invoiceNumber = metadata.invoice_number ?? "";
+
+      let normalized: JournalEntry[] = rows.map((r) => ({
+        ...r,
+        account_code: (r.account_code ?? "").trim(),
+        account_name: (r.account_name ?? "").trim(),
+        entityId,
+        uid: userIdSafe,
+        invoice_number:
+          (r.invoice_number ?? invoiceNumber) || "",
+        debit: Number(Number(r.debit ?? 0).toFixed(2)),
+        credit: Number(Number(r.credit ?? 0).toFixed(2)),
+        date: toISODateOrNull(r.date ?? "") ?? todayISO(),
+      }));
+
+      // ✅ KEY FIX: Inject identity into CONTROL line (subledger link)
+      if (invoiceType === "sale") {
+        const customerName = (metadata.buyerName ?? "").trim();
+        const customerRUC = (metadata.buyerRUC ?? "").trim();
+
+        if (customerName || customerRUC) {
+          normalized = normalized.map((e) => {
+            if (!isCustomerReceivableAccount(e.account_code)) return e;
+
+            return {
+              ...e,
+              // support BOTH naming styles (your services read both)
+              customer_name: customerName,
+              customer_ruc: customerRUC,
+              customerName,
+              customerRUC,
+            } as any;
+          });
+        }
+      } else {
+        // expense: inject supplier identity into AP control line if present
+        const supplierName = (metadata.issuerName ?? "").trim();
+        const supplierRUC = (metadata.issuerRUC ?? "").trim();
+
+        if (supplierName || supplierRUC) {
+          normalized = normalized.map((e) => {
+            if (!isSupplierPayableAccount(e.account_code)) return e;
+
+            return {
+              ...e,
+              supplier_name: supplierName,
+              supplier_ruc: supplierRUC,
+              supplierName,
+              supplierRUC,
+              issuerName: supplierName,
+              issuerRUC: supplierRUC,
+            } as any;
+          });
+        }
+      }
+
+      await onSave(normalized, note);
+
+       // Optional learning (expense only)
+      if (invoiceType === "expense") {
+        const supplierRUC = (metadata.issuerRUC ?? "").trim();
+        const supplierName = (metadata.issuerName ?? "PROVEEDOR").trim();
+
+        if (supplierRUC) {
+          const learned = new Set<string>();
+
+          for (const r of normalized) {
+            const code = (r.account_code ?? "").trim();
+            const debit = Number(r.debit ?? 0);
+
+            if (
+              debit > 0 &&
+              code.startsWith("5") &&
+              leafCodeSet.has(code) &&
+              !learned.has(code)
+            ) {
+              learned.add(code);
+
+              void saveContextualAccountHint(
+                entityId,
+                authUid,
+                supplierRUC,
+                supplierName,
+                code,
+                r.account_name ?? "",
+                note ?? "",
+              ).catch((err) => {
+                console.warn("Contextual learning skipped:", err);
+              });
+              }
+            }
+          }
+        }
+
+        onClose();
+      } catch (err) {
+        console.error(err);
+        alert("Error al guardar.");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+  // -------------------------------------------------------------------------
+  // ROW ACTIONS
+  // -------------------------------------------------------------------------
+
   const addRow = () =>
-    setRows((prev) => [...prev, createEmptyRow(entityId, userId)]);
+    setRows((prev) => [...prev, createEmptyRow(entityId, userIdSafe, metadata.invoice_number),]);
 
   const duplicateRow = () => {
     if (selectedIdx == null) return;
-    const copy = {
+
+    const copy: Row = {
       ...rows[selectedIdx],
       id: crypto.randomUUID(),
       createdAt: Date.now(),
     };
+
     setRows((prev) => {
       const next = [...prev];
       next.splice(selectedIdx + 1, 0, copy);
       return next;
     });
+
     setSelectedIdx(selectedIdx + 1);
   };
 
   const removeRow = (idx: number) => {
-    const r = rows[idx];
-
-    const IVA_PREFIX = "133";
-    const AP_PREFIX = "201";
-
-    if ( r.account_code?.startsWith(IVA_PREFIX) || r.account_code?.startsWith(AP_PREFIX)
-    ) {
-      alert("Esta linea es obligatoria para facturas de gasto");
-      return;
-    }
-
     if (rows.length <= 2) {
-      alert("El asiento debe tener al menos dos lineas");
+      alert("Debe existir al menos dos líneas.");
       return;
     }
     setRows((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // -------------------------------------------------------------------------
-  // METADATA LABELS (SRI RULE)
+  // METADATA
   // -------------------------------------------------------------------------
 
-  const isSale = metadata.invoiceType === "sale";
-  const partyLabel = isSale 
-    ? "Cliente" 
-    : "Proveedor";
+  const isSale = invoiceType === "sale";
 
-  const partyName = isSale 
-    ? metadata.buyerName 
-    : metadata.issuerName || "Proveedor no detectado";
-
-  const partyRUC = isSale 
-    ? metadata.buyerRUC ?? "" 
-    : metadata.issuerRUC;
+  const partyLabel = isSale ? "Cliente" : "Proveedor";
+  const partyName = isSale
+    ? metadata.buyerName ?? "-"
+    : metadata.issuerName ?? "-";
+  const partyRUC = isSale
+    ? metadata.buyerRUC ?? "-"
+    : metadata.issuerRUC ?? "-";
 
   // -------------------------------------------------------------------------
   // RENDER
   // -------------------------------------------------------------------------
 
+  if (!open) return null;
+
   return (
-    <div className={`fixed inset-0 z-50 transition-opacity ${
-      open ? "bg-black/50 pointer-events-auto" : "pointer-events-none opacity-0"}`}>
+    <div className="fixed inset-0 z-50 bg-black/50">
       <Rnd
         disableDragging={saving}
-        defaultPosition={initialPosition.current}
-        onDragStop={(_, data) => 
-          { initialPosition.current = { x: data.x, y: data.y };
+        default={{
+          x: initialPosition.current.x,
+          y: initialPosition.current.y,
+          width: 860,
+          height: "auto",
         }}
         enableResizing={false}
-        updatePositionOnResize={false}
         dragHandleClassName="drag-header"
-        cancel="input, textarea, button, select, .account-picker"
         bounds="window"
-        style={{ width: 900 }}
-        className="bg-white rounded-xl shadow-2xl"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-[920px]"
       >
         {/* HEADER */}
-        <div className="drag-header bg-blue-600 text-white px-4 py-3 rounded-t-xl flex justify-between items-center cursor-move">
-          <span className="font-semibold">
+        <div className="drag-header bg-blue-600 text-white px-6 py-4 rounded-t-xl flex justify-between cursor-move">
+          <span className="text-xl font-semibold">
             Vista previa de asiento contable IA
           </span>
-          <button onClick={onClose}>✖</button>
+          <button onClick={onClose}>×</button>
         </div>
 
         {/* BODY */}
         <div className="p-5 space-y-4">
-
           {/* METADATA */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 text-sm bg-gray-100 p-4 rounded">
-          {/* LEFT COLUMN - CLIENT */}
-          <div className="space-y-1">
-            <div className="flex gap-2">
-              <span className="font-semibold">{partyLabel}:</span>
-              <span className="break-words">{partyName || "-"}</span>
+          <div className="bg-gray-100 rounded-lg p-4 text-sm grid grid-cols-2 gap-4">
+            <div>
+              <div><b>{partyLabel}:</b> {partyName}</div>
+              <div><b>RUC:</b> {partyRUC}</div>
             </div>
-
-            <div className="flex gap-2">
-              <div className="font-semibold">RUC:</div>
-              <div>{partyRUC || "-"}</div>
+            <div>
+              <div><b>Factura:</b> {metadata.invoice_number ?? "-"}</div>
+              <div><b>Fecha:</b> {metadata.invoiceDate ?? "-"}</div>
             </div>
           </div>
-          
-          
-          {/* RIGHT COLUMN - DOCUMENT */}
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <span className="font-semibold">Factura:</span>
-              <span>{metadata?.invoice_number ?? "-"}</span>
-            </div>
 
-            <div className="flex gap-2">
-              <span className="font-semibold">Fecha:</span>
-              <span>{metadata.invoiceDate || "-"}</span>
-            </div>
-          </div> 
-        </div> 
-
-          {/* ACTIONS */}
-          <div className="flex justify-end gap-2">
-            <button onClick={addRow} className="px-3 py-1 bg-emerald-600 text-white rounded">
-              ➕ Agregar
-            </button>
-            <button 
-              onClick={duplicateRow}
-              disabled={selectedIdx == null} 
-              className="px-3 py-1 bg-indigo-600 text-white rounded">
-              ⧉ Duplicar
-            </button>
-          </div>
-
-          <div className="no-drag">
           {/* TABLE */}
-          <table className="w-full text-sm border">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="border p-2 w-[140px]">Código</th>
-                <th className="border p-2 min-w-[360px]">Cuenta</th>
-                <th className="border p-2 w-[140px] text-right">Débito</th>
-                <th className="border p-2 w-[140px] text-right">Crédito</th>
-                <th className="border p-2 w-[60px]" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, idx) => (
-                <tr
-                  key={r.id}
-                  onMouseDown={(e) => {
-                    if ((e.target as HTMLElement).closest("input, button, [role='listbox']")) {
-                      return;
-                    }
-                  
-                  setSelectedIdx(idx)
-                  }}
-                  className={selectedIdx === idx ? "bg-emerald-50" : ""}
-                >
-                  <td className="border p-2 font-mono">{r.account_code}</td>
-                  <td className="border p-2">
-                    <AccountPicker
-                      key={`account-picker-${r.id}`}
-                      accounts={leafAccounts}
-                      value={{ code: r.account_code ?? "", name: r.account_name ?? "" }}
-                      onChange={(acc) =>
-                        patchRow(idx, {
-                          account_code: acc.code,
-                          account_name: acc.name,
-                        })
-                      }
-                    />
+          <div className="border rounded-lg">
+            <table className="w-full table-fixed text-sm">
+              <thead className="bg-gray-200">
+                <tr>
+                  <th className="p-2 text-left w-[110px]">Código</th>
+                  <th className="p-2 text-left">Cuenta</th>
+                  <th className="p-2 text-right w-[130px]">Débito</th>
+                  <th className="p-2 text-right w-[130px]">Crédito</th>
+                  <th className="w-[40px]"/>
+                </tr>
+              </thead>
+
+              <tbody>
+                {rows.map((r, idx) => (
+                  <tr
+                    key={r.id}
+                    className={`border-t ${
+                      selectedIdx === idx
+                        ? "bg-emerald-50"
+                        : ""
+                    }`}
+                    onMouseDown={() => setSelectedIdx(idx)}
+                  >
+                    <td className="p-2 font-mono w-[110px]">
+                      {r.account_code}
+                    </td>
+
+                    <td className="p-2">
+                      <AccountPicker
+                        accounts={pickerAccounts}
+                        value={{
+                          code: r.account_code,
+                          name: r.account_name,
+                        }}
+                        onChange={(acc) =>
+                          patchRow(idx, {
+                            account_code: acc.code,
+                            account_name: acc.name,
+                          })
+                        }
+                      />
+                    </td>
+
+                    <td className="p-2 w-[130px]">
+                      <input
+                        type="text"
+                        className="w-full border rounded px-2 py-1 text-right font-mono"
+                        value={
+                          r.debit
+                            ? formatMoney(r.debit)
+                            : ""
+                        }
+                        onChange={(e) =>
+                          patchRow(idx, {
+                            debit: parseMoney(e.target.value),
+                            credit: 0,
+                          })
+                        }
+                      />
+                    </td>
+
+                    <td className="p-2 w-[130px]">
+                      <input
+                        type="text"
+                        className="w-full border rounded px-2 py-1 text-right font-mono"
+                        value={
+                          r.credit
+                            ? formatMoney(r.credit)
+                            : ""
+                        }
+                        onChange={(e) =>
+                          patchRow(idx, {
+                            credit: parseMoney(e.target.value),
+                            debit: 0,
+                          })
+                        }
+                      />
+                    </td>
+
+                    <td className="p-2 text-center w-[40px]">
+                      <button
+                        onClick={() =>
+                          removeRow(idx)
+                        }
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                <tr className="border-t-2 font-semibold bg-gray-100">
+                  <td colSpan={2} className="p-2 text-right">
+                    Totales
                   </td>
-                  <td className="border p-2 text-right">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full border rounded px-2 py-1 text-right"
-                      value={r.debit ? formatMoney(r.debit) : ""}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(",", ".");
-                        const num = Number(raw);
-                        patchRow(idx, {
-                          debit: Number.isFinite(num) ? num : 0,
-                          credit: 0,
-                        })
-                      }}
-                      onBlur={() => {
-                        patchRow(idx, {
-                          debit: Number(Number(r.debit || 0).toFixed(2)),
-                        });
-                      }}
-                    />
+                  <td className="w-[130px] p-2">
+                   <div className="px-2 py-1 text-right font-mono">
+                    {formatMoney(totals.debit)}
+                    </div>
                   </td>
-                  <td className="border p-2 text-right">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full border rounded px-2 py-1 text-right"
-                      value={r.credit ? formatMoney(r.credit) : ""}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(",", ".");
-                        const num = Number(raw);
-                        patchRow(idx, {
-                          credit: Number.isFinite(num) ? num : 0,
-                          debit: 0,
-                        });
-                      }}
-                      onBlur={() => {
-                        patchRow(idx, {
-                          credit: Number(Number(r.credit || 0).toFixed(2)),
-                        });
-                      }}
-                    />
+                  <td className="w-[130px] p-2">
+                    <div className="px-2 py-1 text-right font-mono">
+                    {formatMoney(totals.credit)}
+                    </div>
                   </td>
-                  <td className="border p-2 text-center">
-                    <button onClick={() => removeRow(idx)}>✖</button>
+                  <td className="text-center w-[40px]">
+                    {totals.mathBalanced
+                      ? "✔"
+                      : "⚠"}
                   </td>
                 </tr>
-              ))}
-              <tr className="font-bold bg-gray-100 border-t-2 border-gray-400">
-                {/* Código */}
-                <td className="border p-2" />
-
-                {/* Cuenta */}
-                <td className="border p-2 text-right">Totales</td>
-
-                {/* Débito */}
-                <td className="border p-2">
-                  <div className="w-full px-2 py-1 text-right">
-                    {formatMoney(totals.debit)}
-                  </div>
-                </td>
-
-                {/* Crédito */}
-                <td className="border p-2">
-                  <div className="w-full px-2 py-1 text-right">
-                    {formatMoney(totals.credit)}
-                  </div>
-                </td>
-
-                {/* Status */}
-                <td className="border p-2 text-center">
-                  {totals.balanced ? "✔" : "⚠"}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          </div>
-
-          {/* NOTE */}
-          <div className="flex gap-3 items-center">
-            <input
-              className="flex-1 border rounded px-3 py-2"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <span className={totals.balanced ? "text-green-600" : "text-red-600"}>
-              {totals.balanced 
-                ? "✔ Balanceado" 
-                : "⚠ Desbalance"
-              }
-            </span>
+              </tbody>
+            </table>
           </div>
 
           {/* FOOTER */}
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={onClose} className="px-4 py-2 bg-gray-300 rounded">
-              Cancelar
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!totals.balanced || saving}
-              className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
-            >
-              Confirmar Asiento
-            </button>
+          <div className="flex justify-between items-center">
+            <input
+              className="flex-1 border rounded px-3 py-2 text-sm"
+              value={note}
+              onChange={(e) =>
+                setNote(e.target.value)
+              }
+              placeholder="Nota / concepto"
+            />
+
+            <div className="flex gap-3 ml-4">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-200 rounded"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={handleSave}
+                disabled={
+                  saving ||
+                  !totals.mathBalanced ||
+                  !totals.leafOk
+                }
+                className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50"
+              >
+                Confirmar Asiento
+              </button>
+            </div>
           </div>
         </div>
-        
       </Rnd>
     </div>
   );

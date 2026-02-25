@@ -1,16 +1,14 @@
-// src/components/ChartOfAccountsModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import {
   createSubaccount,
-  fetchCustomAccounts,
   deleteCustomAccount,
 } from "../../services/chartOfAccountsService";
 import type { Account, CustomAccount } from "../../types/AccountTypes";
-import { auth } from "../../firebase-config";
 import MovableModal from "../ui/MovableModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
+import CreateSubaccountModal from "../accounts/CreateSubaccountModal";
 
 interface Props {
   entityId: string;
@@ -19,9 +17,9 @@ interface Props {
   onAccountsChanged?: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// TREE HELPERS (THIS IS THE KEY PART)
-// ---------------------------------------------------------------------------
+/* =====================================================
+   TREE HELPERS
+===================================================== */
 
 function buildAccountTree(accounts: Account[]) {
   const byCode = new Map<string, Account>();
@@ -35,17 +33,17 @@ function buildAccountTree(accounts: Account[]) {
   const roots: Account[] = [];
 
   for (const acc of accounts) {
-    const parentCode =
-      acc.code.length > 1 ? acc.code.slice(0, acc.code.length - 2) : null;
+    const parent = accounts.find(
+      a => a.level === acc.level - 1 && acc.code.startsWith(a.code)
+    );
 
-    if (parentCode && byCode.has(parentCode)) {
-      children.get(parentCode)!.push(acc);
+    if (parent) {
+      children.get(parent.code)!.push(acc);
     } else {
       roots.push(acc);
     }
   }
 
-  // Sort siblings numerically
   for (const list of children.values()) {
     list.sort((a, b) => Number(a.code) - Number(b.code));
   }
@@ -71,10 +69,9 @@ function flattenTree(
   return result;
 }
 
-
-// ---------------------------------------------------------------------------
-// COMPONENT
-// ---------------------------------------------------------------------------
+/* =====================================================
+   COMPONENT
+===================================================== */
 
 export default function ChartOfAccountsModal({
   entityId,
@@ -84,80 +81,84 @@ export default function ChartOfAccountsModal({
 }: Props) {
   const [q, setQ] = useState("");
   const [selectedCode, setSelectedCode] = useState<string>("");
-  const [custom, setCustom] = useState<CustomAccount[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [creating, setCreating] = useState(false);
-  const [newCode, setNewCode] = useState("");
-  const [newName, setNewName] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const uid = auth.currentUser?.uid ?? "";
+  const [effectiveAccounts, setEffectiveAccounts] = useState<Account[]>([]);
+  const [leafAccounts, setLeafAccounts] = useState<Account[]>([]);
+  const [customAccounts, setCustomAccounts] = useState<CustomAccount[]>([]);
 
-  // ---------------------------------------------------------------------------
-  // LOAD CUSTOM ACCOUNTS
-  // ---------------------------------------------------------------------------
+  /* =====================================================
+     LOAD PLAN
+  ===================================================== */
+
+  const reloadPlan = async () => {
+    const plan = await getEffectiveAccountPlan(entityId);
+    setEffectiveAccounts(plan.effectiveAccounts);
+    setLeafAccounts(plan.leafAccounts);
+    setCustomAccounts(plan.customAccounts);
+  };
 
   useEffect(() => {
+    let active = true;
+
     (async () => {
-      const rows = await fetchCustomAccounts(entityId);
-      setCustom(rows);
+      const plan = await getEffectiveAccountPlan(entityId);
+      if (!active) return;
+
+      setEffectiveAccounts(plan.effectiveAccounts);
+      setLeafAccounts(plan.leafAccounts);
+      setCustomAccounts(plan.customAccounts);
     })();
+
+    return () => {
+      active = false;
+    };
   }, [entityId]);
 
-  // ---------------------------------------------------------------------------
-  // MERGE + TREE ORDER
-  // ---------------------------------------------------------------------------
+  /* =====================================================
+     MEMOS
+  ===================================================== */
 
-  const merged: Account[] = useMemo(() => {
-    const map = new Map<string, Account>();
+  const customMap = useMemo(() => {
+    const map = new Map<string, CustomAccount>();
+    customAccounts.forEach(c => map.set(c.code, c));
+    return map;
+  }, [customAccounts]);
 
-    // System accounts
-    for (const a of ECUADOR_COA) {
-      map.set(a.code, {
-        ...a,
-        level: a.level ?? (Math.floor(a.code.length / 2) || 1),
-      });
-    }
+  const isLeaf = (code: string) =>
+    leafAccounts.some(a => a.code === code);
 
-    // Custom accounts override / extend
-    for (const c of custom) {
-      map.set(c.code, {
-        code: c.code,
-        name: c.name,
-        level: Math.floor(c.code.length / 2) || 1,
-        isReceivable: c.isReceivable ?? false,
-        isPayable: c.isPayable ?? false,
-      });
-    }
-
-    const all = Array.from(map.values());
-    const { roots, children } = buildAccountTree(all);
+  const merged = useMemo(() => {
+    const { roots, children } = buildAccountTree(effectiveAccounts);
     return flattenTree(roots, children);
-  }, [custom]);
+  }, [effectiveAccounts]);
 
-  /* ---------------------------------------------------------------------- */
-  /* TREE UTILITIES */
-  /* ---------------------------------------------------------------------- */
+  const parent = useMemo(() => {
+    return merged.find(a => a.code === selectedCode) ?? null;
+  }, [merged, selectedCode]);
 
   const hasChildren = (code: string) => {
-    return merged.some(
-      (a) =>
+    const parent = effectiveAccounts.find(a => a.code === code);
+    if (!parent) return false;
+
+    return effectiveAccounts.some(
+      a =>
         a.code !== code &&
-        a.code.startsWith(code) &&
-        a.code.length === code.length + 2
+        a.level === parent.level + 1 &&
+        a.code.startsWith(code)
     );
   };
 
-  /* ---------------------------------------------------------------------- */
-  /* FILTER + COLLAPSE LOGIC */
-  /* ---------------------------------------------------------------------- */
+  /* =====================================================
+     FILTER + COLLAPSE
+  ===================================================== */
 
   const visibleRows = useMemo(() => {
-  const result: Account[] = [];
-  const collapsedStack: { code: string; level: number }[] = [];
+    const result: Account[] = [];
+    const collapsedStack: { level: number }[] = [];
 
     for (const row of merged) {
-      // Remove inactive collapsed parents
       while (
         collapsedStack.length &&
         row.level <= collapsedStack[collapsedStack.length - 1].level
@@ -165,241 +166,134 @@ export default function ChartOfAccountsModal({
         collapsedStack.pop();
       }
 
-      // If inside a collapsed parent → skip
       if (collapsedStack.length) continue;
+
+      if (
+        q &&
+        !row.code.includes(q) &&
+        !row.name.toLowerCase().includes(q.toLowerCase())
+      ) {
+        continue;
+      }
 
       result.push(row);
 
-      // If row itself is collapsed → push to stack
       if (collapsed.has(row.code)) {
-        collapsedStack.push({ code: row.code, level: row.level });
+        collapsedStack.push({ level: row.level });
       }
     }
 
     return result;
-  }, [merged, collapsed]);
+  }, [merged, collapsed, q]);
 
-  const parent = selectedCode
-    ? merged.find((a) => a.code === selectedCode) ?? null
-    : null;
-
-  /* -------------------------------------------------- */
-  /* NEXT CHILD CODE (AUTO-SEQUENCE, +2 DIGITS RULE) */
-  /* -------------------------------------------------- */
-
-  const nextChildCode = useMemo(() => {
-    if (!parent) return "";
-
-    const children = merged.filter(
-      (a) =>
-        a.code.startsWith(parent.code) &&
-        a.code.length === parent.code.length + 2
-    );
-
-    if (!children.length) return `${parent.code}01`;
-
-    const max = Math.max(
-      ...children.map((c) => Number(c.code.slice(-2)))
-    );
-
-    return `${parent.code}${String(max + 1).padStart(2, "0")}`;
-  }, [parent, merged]);
-
-  /* ---------------------------------------------------------------------- */
-  /* COLLAPSE TOGGLE */
-  /* ---------------------------------------------------------------------- */
+  /* =====================================================
+     ACTIONS
+  ===================================================== */
 
   const toggleCollapse = (code: string) => {
-    setCollapsed((prev) => {
+    setCollapsed(prev => {
       const next = new Set(prev);
       next.has(code) ? next.delete(code) : next.add(code);
       return next;
     });
   };
 
-  // ---------------------------------------------------------------------------
-  // CREATE SUBACCOUNT
-  // ---------------------------------------------------------------------------
-
-  const startCreate = () => {
-    if (!parent) {
-      alert("Selecciona una cuenta padre primero.");
-      return;
-    }
-    setNewCode(nextChildCode);
-    setCreating(true);
-  };
-
-  const submitCreate = async () => {
-    if (!parent) return;
-
-    const code = newCode.trim();
-    const name = newName.trim();
-
-    if (!code || !name) return alert("Código y nombre son obligatorios.");
-    
-    const expectedLength = parent.code.length + 2;
-
-    if (!/^\d+$/.test(code)) {
-      alert("El código debe ser numérico.");
-      return;
-    }
-
-    if (!code.startsWith(parent.code)) 
-      return alert(`Debe iniciar con ${parent.code}`);
-
-    if (code.length !== expectedLength) {
-      alert(
-        `El código debe tener exactamente ${expectedLength} dígitos ` +
-        `(2 más que la cuenta padre)`
-      );
-      return;
-    }
-
-    if (merged.some((a) => a.code === code)) 
-      return alert("Cuenta ya existe");
-
-    setSaving(true);
-    await createSubaccount(entityId, {
-      code,
-      name,
-      parentCode: parent.code,
-      userId: uid || undefined,
-    });
-
-    setCustom((prev) => [
-      ...prev,
-      {
-        code,
-        name,
-        parentCode: parent.code,
-        entityId,
-        userId: uid || undefined,
-        createdAt: Date.now(),
-        level: Math.floor(code.length / 2) || 1,
-        isReceivable: false,
-        isPayable: false,
-      },
-    ]);
-
-    window.dispatchEvent(new Event("refreshAccounts"));
-    setCreating(false);
-    setNewCode("");
-    setNewName("");
-    setSaving(false);
-    alert("✅ Subcuenta creada.");
-  };
-
-  // ---------------------------------------------------------------------------
-  // DELETE
-  // ---------------------------------------------------------------------------
-
   const remove = async (code: string) => {
-    const row = custom.find((c) => c.code === code);
+    const row = customMap.get(code);
     if (!row) return;
 
     if (!confirm(`¿Eliminar ${code} - ${row.name}?`)) return;
 
     await deleteCustomAccount(entityId, code);
-    setCustom((prev) => prev.filter((c) => c.code !== code));
+    await reloadPlan();
     onAccountsChanged?.();
-    window.dispatchEvent(new Event("refreshAccounts"));
   };
-
-  // ---------------------------------------------------------------------------
-  // TOGGLE FLAGS
-  // ---------------------------------------------------------------------------
 
   const handleToggle = async (
     row: Account,
     flag: "isReceivable" | "isPayable",
     checked: boolean
   ) => {
-    const rowData = custom.find((c) => c.code === row.code);
+    if (!isLeaf(row.code)) {
+      alert("Solo las subcuentas finales pueden marcarse.");
+      return;
+    }
+
+    const rowData = customMap.get(row.code);
     if (!rowData) {
       alert("Solo editable en cuentas personalizadas.");
       return;
     }
 
-    await createSubaccount(entityId, { ...rowData, [flag]: checked });
-    setCustom((prev) =>
-      prev.map((c) =>
-        c.code === row.code ? { ...c, [flag]: checked } : c
-      )
-    );
+    await createSubaccount(entityId, {
+      code: rowData.code,
+      name: rowData.name,
+      parentCode: rowData.parentCode,
+      level: rowData.level,
+      [flag]: checked,
+    });
 
-    window.dispatchEvent(new Event("refreshAccounts"));
+    await reloadPlan();
   };
 
+  /* =====================================================
+     EXPORTS
+  ===================================================== */
+
   const exportCSV = () => {
-  const header = ["Código", "Nombre", "Nivel", "CxC", "CxP"];
+    const header = ["Código", "Nombre", "Nivel", "CxC", "CxP"];
 
-  const rows = visibleRows.map((a) => [
-    a.code,
-    `${"  ".repeat(a.level - 1)}${a.name}`,
-    a.level,
-    a.isReceivable ? "Sí" : "",
-    a.isPayable ? "Sí" : "",
-  ]);
-
-  const csvContent =
-    [header, ...rows]
-      .map((row) =>
-        row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
-      )
-      .join("\n");
-
-  const blob = new Blob(["\ufeff" + csvContent], {
-    type: "text/csv;charset=utf-8;",
-  });
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Plan_de_Cuentas_${entityName}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-const exportPDF = () => {
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "pt",
-    format: "a4",
-  });
-
-  doc.setFontSize(14);
-  doc.text("Plan de Cuentas", 40, 40);
-
-  doc.setFontSize(10);
-  doc.text(`Empresa: ${entityName}`, 40, 60);
-
-  autoTable(doc, {
-    startY: 80,
-    head: [["Código", "Nombre", "CxC", "CxP"]],
-    body: visibleRows.map((a) => [
+    const rows = visibleRows.map(a => [
       a.code,
-      `${"    ".repeat(a.level - 1)}${a.name}`,
-      a.isReceivable ? "✔" : "",
-      a.isPayable ? "✔" : "",
-    ]),
-    styles: {
-      fontSize: 9,
-      cellPadding: 4,
-    },
-    headStyles: {
-      fillColor: [37, 99, 235], // azul similar al modal
-      textColor: 255,
-    },
-    theme: "grid",
-  });
+      `${"  ".repeat(a.level - 1)}${a.name}`,
+      a.level,
+      a.isReceivable ? "Sí" : "",
+      a.isPayable ? "Sí" : "",
+    ]);
 
-  doc.save(`Plan_de_Cuentas_${entityName}.pdf`);
-};
+    const csv =
+      [header, ...rows]
+        .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
 
-  // ---------------------------------------------------------------------------
-  // RENDER
-  // ---------------------------------------------------------------------------
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Plan_de_Cuentas_${entityName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+    doc.text(`Plan de Cuentas – ${entityName}`, 40, 40);
+    doc.text(`Generado: ${new Date().toLocaleDateString()}`, 40, 25);
+
+    autoTable(doc, {
+      startY: 60,
+      head: [["Código", "Nombre", "CxC", "CxP"]],
+      body: visibleRows.map(a => [
+        a.code,
+        `${"    ".repeat(a.level - 1)}${a.name}`,
+        a.isReceivable ? "✔" : "",
+        a.isPayable ? "✔" : "",
+      ]),
+      theme: "grid",
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+    });
+
+    doc.save(`Plan_de_Cuentas_${entityName}.pdf`);
+  };
+
+  /* =====================================================
+     RENDER
+  ===================================================== */
 
   return (
     <MovableModal
@@ -408,86 +302,32 @@ const exportPDF = () => {
       onClose={onClose}
     >
       <input
-        className="coa-modal__search"
         placeholder="Buscar por código o nombre…"
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={e => setQ(e.target.value)}
+        style={{ marginBottom: 12 }}
       />
 
-      <div
-        className="coa-modal__actions"
-        style={{ 
-          display: "flex", 
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 12,
-        }}
-      >
-        {/* LEFT */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="btn" onClick={startCreate}>
-            ➕ Crear subcuenta
-          </button>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+        <button
+          onClick={() => {
+            if (!parent) {
+              alert("Selecciona una cuenta padre primero.");
+              return;
+            }
+            setShowCreateModal(true);
+          }}
+        >
+          ➕ Crear subcuenta
+        </button>
 
-          {parent && (
-            <span className="coa-modal__hint">
-              Padre: <strong>{parent.code}</strong> – {parent.name}
-            </span>
-          )}
-        </div>
-
-        {/* RIGHT */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <button 
-            className="btn"
-            style={{
-              background: "#16a34a", 
-              color: "white",
-              padding: "8px 14px",
-              borderRadius: "8px",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-            }} 
-            onClick={exportCSV}>
-            📤 CSV
-          </button>
-
-          <button 
-            className="btn btn--ghost" 
-            style={{
-              background: "#16a34a", 
-              color: "white",
-              padding: "8px 14px",
-              borderRadius: "8px",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px" 
-            }} 
-            onClick={exportPDF}>
-            📄 PDF
-          </button>
+        <div>
+          <button onClick={exportCSV}>📤 CSV</button>
+          <button onClick={exportPDF}>📄 PDF</button>
         </div>
       </div>
-      
-      {creating && (
-        <div className="coa-modal__create">
-          <label>Código</label>
-          <input value={newCode} onChange={(e) => setNewCode(e.target.value)} />
-          <label>Nombre</label>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <div>
-            <button onClick={() => setCreating(false)}>Cancelar</button>
-            <button onClick={submitCreate} disabled={saving}>
-              Crear
-            </button>
-          </div>
-        </div>
-      )}
 
-      <table className="coa-modal__table">
+      <table>
         <thead>
           <tr>
             <th>Código</th>
@@ -498,27 +338,26 @@ const exportPDF = () => {
           </tr>
         </thead>
         <tbody>
-          {visibleRows.map((row) => {
-            const isCustom = custom.some((c) => c.code === row.code);
-            const rowData = custom.find((c) => c.code === row.code);
+          {visibleRows.map(row => {
+            const rowData = customMap.get(row.code);
+            const isCustom = !!rowData;
 
             return (
               <tr
                 key={row.code}
                 onClick={() => setSelectedCode(row.code)}
+                style={{
+                  backgroundColor:
+                    selectedCode === row.code ? "#eef2ff" : "transparent",
+                }}
               >
-                <td className="mono">{row.code}</td>
+                <td>{row.code}</td>
                 <td style={{ paddingLeft: `${(row.level - 1) * 18}px` }}>
                   {hasChildren(row.code) && (
                     <button
-                      onClick={(e) => {
+                      onClick={e => {
                         e.stopPropagation();
                         toggleCollapse(row.code);
-                      }}
-                      style={{
-                        marginRight: 6,
-                        fontSize: 12,
-                        cursor: "pointer",
                       }}
                     >
                       {collapsed.has(row.code) ? "▶" : "▼"}
@@ -526,29 +365,47 @@ const exportPDF = () => {
                   )}
                   {row.name}
                 </td>
+
                 <td>
-                  <input
-                    type="checkbox"
-                    checked={!!rowData?.isReceivable}
-                    disabled={!isCustom}
-                    onChange={(e) =>
-                      handleToggle(row, "isReceivable", e.target.checked)
-                    }
-                  />
+                  {isCustom && isLeaf(row.code) ? (
+                    <input
+                      type="checkbox"
+                      checked={!!rowData?.isReceivable}
+                      onChange={e => {
+                        e.stopPropagation();
+                        handleToggle(row, "isReceivable", e.target.checked);
+                      }}
+                    />
+                  ) : (
+                    <span>—</span>
+                  )}
                 </td>
+
                 <td>
-                  <input
-                    type="checkbox"
-                    checked={!!rowData?.isPayable}
-                    disabled={!isCustom}
-                    onChange={(e) =>
-                      handleToggle(row, "isPayable", e.target.checked)
-                    }
-                  />
+                  {isCustom && isLeaf(row.code) ? (
+                    <input
+                      type="checkbox"
+                      checked={!!rowData?.isPayable}
+                      onChange={e => {
+                        e.stopPropagation();
+                        handleToggle(row, "isPayable", e.target.checked);
+                      }}
+                    />
+                  ) : (
+                    <span>—</span>
+                  )}
                 </td>
+
                 <td>
                   {isCustom && (
-                    <button onClick={() => remove(row.code)}>Eliminar</button>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        remove(row.code);
+                      }}
+                    >
+                      Eliminar
+                    </button>
                   )}
                 </td>
               </tr>
@@ -557,9 +414,19 @@ const exportPDF = () => {
         </tbody>
       </table>
 
-      <footer>
-        <small>{merged.length} cuentas totales</small>
-      </footer>
+      {parent && (
+        <CreateSubaccountModal
+          entityId={entityId}
+          parentAccount={parent}
+          existingAccounts={effectiveAccounts}
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={async () => {
+            await reloadPlan();
+            onAccountsChanged?.();
+          }}
+        />
+      )}
     </MovableModal>
   );
 }

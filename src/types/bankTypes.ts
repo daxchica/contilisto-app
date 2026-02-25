@@ -9,7 +9,7 @@ export interface BankAccount {
   bankName: string;
   createdBy: string;
   createdAt: string;
-  userId: string;
+  userIdSafe: string;
 }
 
 export interface BankBookEntry {

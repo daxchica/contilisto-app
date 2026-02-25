@@ -2,9 +2,7 @@ import type { Handler } from "@netlify/functions";
 import Stripe from "stripe";
 import admin from "firebase-admin";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2022-11-15",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -38,12 +36,12 @@ export const handler: Handler = async (event) => {
     switch (stripeEvent.type) {
       case "checkout.session.completed": {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
-        const userId = (session.metadata?.userId as string) || "";
+        const userIdSafe = (session.metadata?.userIdSafe as string) || "";
         const planKey = (session.metadata?.planKey as string) || "";
         const subscriptionId = session.subscription as string;
 
-        if (userId) {
-          await db.collection("users").doc(userId).set(
+        if (userIdSafe) {
+          await db.collection("users").doc(userIdSafe).set(
             {
               planKey,
               planStatus: "active",

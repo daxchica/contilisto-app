@@ -24,7 +24,7 @@ import { repairReceivableAccountFromJournal } from "@/services/receivablesServic
 type Props = {
   isOpen: boolean;
   entityId: string;
-  userId: string;
+  userIdSafe: string;
   receivable: Receivable | null;
   bankAccounts: BankAccount[];
   onClose: () => void;
@@ -59,7 +59,7 @@ function resolveBankGLCode(bank: BankAccount): string {
 export default function RegisterReceivableCollectionModal({
   isOpen,
   entityId,
-  userId,
+  userIdSafe,
   receivable,
   bankAccounts,
   onClose,
@@ -113,7 +113,7 @@ export default function RegisterReceivableCollectionModal({
       setNeedsRepair(false);
 
       if (!entityId) throw new Error("Empresa no seleccionada");
-      if (!userId) throw new Error("Usuario no válido");
+      if (!userIdSafe) throw new Error("Usuario no válido");
       if (!r.id) throw new Error("Cuenta por cobrar inválida");
       if (!collectionDate) throw new Error("Fecha requerida");
       if (!selectedBank) throw new Error("Cuenta bancaria requerida");
@@ -149,7 +149,7 @@ export default function RegisterReceivableCollectionModal({
         amount: numericAmount,
         type: "in",
         description: `Cobro a cliente ${r.customerName ?? "Cliente"} — Factura ${r.invoiceNumber}`,
-        createdBy: userId,
+        createdBy: userIdSafe,
       };
 
       const bankMovementId = await createBankMovement(movement);
@@ -167,7 +167,7 @@ export default function RegisterReceivableCollectionModal({
           account_code: bankGLCode,
           name: selectedBank.name,
         },
-        userId,
+        userIdSafe,
         { bankMovementId }
       );
 

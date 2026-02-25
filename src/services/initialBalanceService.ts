@@ -1,10 +1,12 @@
 // src/services/initialBalanceService.ts
 
-import { getFirestore, doc, setDoc, getDocs, collection } from "firebase/firestore";
+import { getFirestore, doc, getDocs, collection, writeBatch } from "firebase/firestore";
+import { auth } from "@/firebase-config";
+import { update } from "@react-spring/web";
 
 const db = getFirestore();
 
-type InitialBalance = {
+export type InitialBalance = {
     account_code: string;
     account_name: string;
     initial_balance: number;
@@ -12,38 +14,50 @@ type InitialBalance = {
 };
 
 /**
- * Guarda los balances iniciales por cuenta para una entidad.
- * @param entityId - ID de la entidad
- * @param balances - Arreglo de balances iniciales: [{ account_code, account_name, initial_balance }]
+ * Save per entity initial balance.
+ * @param entityId - entity ID
+ * @param balances - initial balance: [{ account_code, account_name, initial_balance }]
  */
 export async function saveInitialBalances(
   entityId: string,
   balances: InitialBalance[]
 ): Promise<void> {
-  const batchPromises = balances.map((b) => {
-    const code = b.account_code.trim();
-    const name = (b.account_name || "").trim() || "(Sin Nombre)";
-    const raw = Number(b.initial_balance || 0);
-    const absValue = Math.abs(raw);
+  const userIdSafe = auth.currentUser?.uid;
 
-    if (!code || isNaN(absValue) || absValue === 0) return;
+  if (!userIdSafe) throw new Error("User not authenticated");
+
+  const batch = writeBatch(db);
+  const now = new Date();
+
+  balances.forEach((b) => {
+    const code = b.account_code.trim();
+    if (!code) return;
+
+    const raw = Number(b.initial_balance);
+    if (!Number.isFinite(raw) || raw === 0) return;
 
     const type: "debit" | "credit" = raw >= 0 ? "debit" : "credit";
+    const absValue = Math.abs(raw);
 
     const ref = doc(db, "entities", entityId, "initialBalances", code);
-    return setDoc(
-        ref, 
-        { 
-            account_code: code,
-            account_name: name,
-            initial_balance: absValue,
-            type, 
-        },
-        { merge: true }
+
+    batch.set(
+      ref,
+      {
+        account_code: code,
+        account_name: (b.account_name || "(Sin Nombre").trim(),
+        initial_balance: absValue,
+        type,
+        userIdSafe,          // ✅ REQUIRED FOR RULES
+        entityId,        // ✅ GOOD PRACTICE
+        updateAt: now,
+        createdAt: now,
+      },
+      { merge: true }
     );
   });
 
-  await Promise.all(batchPromises.filter(Boolean));
+  await batch.commit();
 }
 
 /**
@@ -62,19 +76,15 @@ export async function fetchInitialBalances(
 
   snapshot.forEach((docSnap) => {
     const data = docSnap.data();
-    if (data.account_code) return;
+    if (!data.account_code) return;
 
-        const raw = Number(data.initial_balance || 0);
-        const abs = Math.abs(raw);
-        const type: "debit" | "credit" = raw >= 0 ? "debit" : "credit";
-
-        result[data.account_code] = {
-            account_code: data.account_code,
-            account_name: data.account_name || "",
-            initial_balance: abs,
-            type: data.type || type,
-        };
-    });
+    result[data.account_code] = {
+        account_code: data.account_code,
+        account_name: data.account_name || "",
+        initial_balance: Number(data.initial_balance) || 0,
+        type: data.type === "credit" ? "credit" : "debit",
+    };
+  });
 
   return result;
 }

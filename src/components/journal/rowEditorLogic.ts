@@ -25,7 +25,7 @@ export const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export function createEmptyRow(
   entityId: string,
-  userId: string,
+  userIdSafe: string,
   defaults?: Partial<Row>
 ): Row {
   return {
@@ -36,7 +36,7 @@ export function createEmptyRow(
     credit: 0,
     description: "",
     entityId,
-    userId,
+    userIdSafe,
     date: todayISO(),
     source: "manual",
     isManual: true,
@@ -194,10 +194,10 @@ export function handleEnterFromCredit(
 
 export function addRowFactory(
   entityId: string,
-  userId: string,
+  userIdSafe: string,
   setRows: React.Dispatch<React.SetStateAction<Row[]>>
 ) {
-  return () => setRows((prev) => [...prev, createEmptyRow(entityId, userId)]);
+  return () => setRows((prev) => [...prev, createEmptyRow(entityId, userIdSafe)]);
 }
 
 export function removeRowFactory(

@@ -47,7 +47,7 @@ function assertPayableAccount(account_code?: string) {
   const c = normAcc(account_code);
   if (!c) throw new Error("Payable requiere cuenta contable");
 
-  if (!c.startsWith("20101") && !c.startsWith("211") && !c.startsWith("20103")) {
+  if (!c.startsWith("20103")) {
     throw new Error(`Cuenta inválida para CxP: ${account_code}`);
   }
 }
@@ -244,10 +244,7 @@ export async function repairPayableAccountFromJournal(
 
   const candidates = entries.filter((e) => {
     const c = normAcc(e.account_code);
-    return (
-      (c.startsWith("20103") || c.startsWith("20101") || c.startsWith("211")) &&
-      n2(e.credit) > 0
-    );
+    return c.startsWith("20103") && n2(e.credit) > 0;
   });
 
   if (candidates.length !== 1) {

@@ -12199,7 +12199,6 @@
 │   │   ├── useBankAccounts.ts
 │   │   ├── useClients.ts
 │   │   ├── useEntities.ts
-│   │   ├── useInitialBalances.ts
 │   │   ├── useInvoice.ts
 │   │   └── useSelectedEntity.ts
 │   ├── index.css

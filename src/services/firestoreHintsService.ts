@@ -1,175 +1,262 @@
-// =======================================================
-// Account Hint Service (Contextual, Learning-Based)
-// Supplier + Concept → Preferred Expense Account
-// =======================================================
+// =====================================================================
+// src/services/firestoreHintsService.ts
+// CONTILISTO — FINAL PRODUCTION VERSION (PERMISSION SAFE) (ENTITY-ONLY)
+// =====================================================================
 
-import { db } from "../firebase-config";
+import { db, auth } from "../firebase-config";
+
 import {
   doc,
-  setDoc,
   getDoc,
+  setDoc,
   updateDoc,
+  type UpdateData,
+  type DocumentData,
 } from "firebase/firestore";
-import { normalizeConcept } from "@/utils/normalizeConcept";
 
 // -------------------------------------------
-// 📘 Types
+// TYPES
 // -------------------------------------------
-
 export interface AccountHint {
+  entityId: string;
   uid: string;
   supplierRUC: string;
-  supplierName?: string;
-  concept: string;
+  supplierName: string;
   accountCode: string;
   accountName: string;
+  concept?: string;
   frequency: number;
   createdAt: number;
   updatedAt: number;
 }
 
 // -------------------------------------------
-// 🔑 LocalStorage key
+// LOCAL CACHE
 // -------------------------------------------
-
 const LOCAL_KEY = "contextualAccountHintsLocal";
+const MIN_HINT_FREQUENCY = 2;
+
+function updateLocalCache(cacheKey: string, hint: AccountHint) {
+  try {
+    const cache = JSON.parse( localStorage.getItem(LOCAL_KEY) || "{}" );
+    cache[cacheKey] = hint;
+    localStorage.setItem( LOCAL_KEY, JSON.stringify(cache));
+  }
+  catch {
+    localStorage.removeItem(LOCAL_KEY);
+  }
+}
+
+function buildConceptKey(concept?: string) {
+  return (concept ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, "_")
+    .slice(0, 60);
+}
+
+function buildDocId(supplierRUC: string, concept?: string) {
+  const conceptKey = buildConceptKey(concept);
+  return conceptKey ? `${supplierRUC}__${conceptKey}` : supplierRUC;
+}
+
+function buildCacheKey(entityId: string, supplierRUC: string, concept?: string) {
+  return `${entityId}__${buildDocId(supplierRUC, concept)}`;
+}
 
 // -------------------------------------------
-// 🧠 Save CONTEXTUAL hint (Supplier + Concept)
+// SAVE CONTEXTUAL HINT
 // -------------------------------------------
-
 export async function saveContextualAccountHint(
+  entityId: string,
   uid: string,
   supplierRUC: string,
   supplierName: string | undefined,
-  rawConcept: string | undefined,
   accountCode: string,
-  accountName: string
-): Promise<void> {
-  if (!uid || !supplierRUC || !rawConcept) return;
-  if (!accountCode || !accountName) return;
+  accountName: string,
+  concept?: string,
+): Promise<void>
+{
+  // -----------------------------
+  // HARD VALIDATION
+  // -----------------------------
+  if ( !entityId || !uid || !supplierRUC || !accountCode || !accountName) return;
 
-  // ❌ NEVER learn IVA / Proveedores / non-expense
+  // -----------------------------
+  // AUTH SAFETY
+  // -----------------------------
+  const authUid = auth.currentUser?.uid;
+  if (!authUid || authUid !== uid) {
+    console.warn( "Hint skipped: no auth session" );
+    return;
+  }
+
+  // -----------------------------
+  // ACCOUNT FILTERS
+  // -----------------------------
   if (
-    accountCode.startsWith("133") || // IVA crédito
-    accountCode.startsWith("213") || // IVA débito
-    accountCode.startsWith("201") || // Proveedores
-    accountCode.startsWith("211")    // CxP varias
+    accountCode.startsWith("133") ||
+    accountCode.startsWith("213") ||
+    accountCode.startsWith("201") ||
+    accountCode.startsWith("211")
   ) {
     return;
   }
 
-  // ❌ Only expense accounts (group 5)
   if (!accountCode.startsWith("5")) return;
 
-  const concept = normalizeConcept(rawConcept);
-  if (!concept || concept.length < 3) return;
+  const docId = buildDocId(supplierRUC, concept);
+  const cacheKey = buildCacheKey(entityId, supplierRUC, concept);
 
-  const docId = `${uid}__${supplierRUC}__${concept}`;
-  const ref = doc(db, "contextualAccountHints", docId);
-  const snap = await getDoc(ref);
+  const ref = doc(db, "entities", entityId, "contextualAccountHints", docId);
+  const now = Date.now();
 
-  // -------------------------------------------
-  // First time → create
-  // -------------------------------------------
-  if (!snap.exists()) {
-    await setDoc(ref, {
-      uid,
-      supplierRUC,
-      supplierName: supplierName || "",
-      concept,
-      accountCode,
-      accountName,
-      frequency: 1,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    return;
-  }
+  try {
+    const snap = await getDoc(ref);
+  
+    // -----------------------------
+    // CREATE NEW
+    // -----------------------------
+    if (!snap.exists()) {
+      const hint: AccountHint = {
+        entityId,
+        uid,
+        supplierRUC,
+        supplierName: supplierName ?? "",
+        accountCode,
+        accountName,
+        concept: concept ?? "",
+        frequency: 1,
+        createdAt: now,
+        updatedAt: now
+      };
 
-  const data = snap.data() as AccountHint;
+      await setDoc(ref, hint);
+      updateLocalCache(cacheKey, hint);
+      return;
+    }
 
-  // -------------------------------------------
-  // Same account → reinforce
-  // -------------------------------------------
-  if (data.accountCode === accountCode) {
-    await updateDoc(ref, {
-      frequency: (data.frequency || 1) + 1,
-      updatedAt: Date.now(),
-    });
-    return;
-  }
+    const data = snap.data() as AccountHint;
 
-  // -------------------------------------------
-  // Different account → conservative overwrite
-  // Only if confidence is still low
-  // -------------------------------------------
-  if ((data.frequency || 1) < 3) {
-    await updateDoc(ref, {
-      accountCode,
-      accountName,
-      frequency: (data.frequency || 1) + 1,
-      updatedAt: Date.now(),
-    });
+    // -----------------------------
+    // REINFORCE SAME ACCOUNT
+    // -----------------------------
+    if (data.accountCode === accountCode) {
+      const newFrequency = (data.frequency ?? 1) + 1;
+      await updateDoc(ref, { 
+        supplierName: supplierName ?? data.supplierName ?? "",
+        frequency: newFrequency,
+        updatedAt: now,
+      });
+
+      updateLocalCache(cacheKey, { 
+        ...data, 
+        frequency: newFrequency, 
+        updatedAt: now 
+      });
+
+      return;
+    }
+
+    // -----------------------------
+    // DIFFERENT ACCOUNT → conservative overwrite
+    // -----------------------------
+    if ((data.frequency ?? 1) < 3) {
+      const newFrequency = (data.frequency ?? 1) + 1;
+
+      await updateDoc(ref, {
+        accountCode,
+        accountName,
+        supplierName: supplierName ?? data.supplierName ?? "",
+        concept: concept ?? data.concept ?? "",
+        frequency: newFrequency,
+        updatedAt: now,
+      });
+
+      updateLocalCache(cacheKey, {
+        ...data,
+        accountCode,
+        accountName,
+        supplierName: supplierName ?? data.supplierName ?? "",
+        concept: concept ?? data.concept ?? "",
+        frequency: newFrequency,
+        updatedAt: now,
+      });
+    }
+
+  } catch (err: any) {
+    console.warn("Contextual learning skipped:", err?.message ?? err);
   }
 }
 
 // -------------------------------------------
-// 🔍 Get CONTEXTUAL hint (Local → Firestore)
+// GET CONTEXTUAL HINT
 // -------------------------------------------
 
 export async function getContextualAccountHint(
+  entityId: string,
+  uid: string,
   supplierRUC: string,
-  rawConcept?: string
-): Promise<{ accountCode: string; accountName: string } | null> {
-  if (!supplierRUC || !rawConcept) return null;
+  concept?: string
+): Promise<AccountHint | null> {
 
-  const concept = normalizeConcept(rawConcept);
-  if (!concept) return null;
+  if (!entityId || !uid || !supplierRUC)
+    return null;
 
-  const uid = localStorage.getItem("uid"); // already present in your app
-  if (!uid) return null;
+  const authUid = auth.currentUser?.uid;
+  if (!authUid || authUid !== uid)
+    return null;
 
-  const docId = `${uid}__${supplierRUC}__${concept}`;
+  const docId = buildDocId(supplierRUC, concept);
+  const cacheKey = buildCacheKey(entityId, supplierRUC, concept);
 
-  // 1️⃣ Local cache
+  // -----------------------------
+  // CHECK LOCAL CACHE FIRST
+  // -----------------------------
   try {
     const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
-    if (cache[docId]) {
-      return {
-        accountCode: cache[docId].accountCode,
-        accountName: cache[docId].accountName,
-      };
-    }
+    const cached = cache[cacheKey] as AccountHint | undefined;
+
+    if (cached && (cached.frequency ?? 0) >= MIN_HINT_FREQUENCY)
+      return cached;
   } catch {
     localStorage.removeItem(LOCAL_KEY);
   }
 
-  // 2️⃣ Firestore
-  const snap = await getDoc(doc(db, "contextualAccountHints", docId));
-  if (!snap.exists()) return null;
-
-  const hint = snap.data() as AccountHint;
-
-  // Cache it
+  // -----------------------------
+  // FETCH FROM FIRESTORE
+  // -----------------------------
   try {
-    const cache = JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}");
-    cache[docId] = hint;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(cache));
-  } catch {
-    /* noop */
-  }
+    const ref = doc(
+      db,
+      "entities",
+      entityId,
+      "contextualAccountHints",
+      docId
+    );
 
-  return {
-    accountCode: hint.accountCode,
-    accountName: hint.accountName,
-  };
+    const snap = await getDoc(ref);
+    if (!snap.exists())
+      return null;
+
+    const hint = snap.data() as AccountHint;
+
+    if ((hint.frequency ?? 0) < MIN_HINT_FREQUENCY)
+      return null;
+
+    updateLocalCache(cacheKey, hint);
+    return hint;
+
+  } catch (err: any) {
+    console.warn("Contextual hint read skipped:", err?.message ?? err);
+    return null;
+  }
 }
 
 // -------------------------------------------
-// 🧹 Clear local cache (debug / reset)
+// CLEAR CACHE
 // -------------------------------------------
-
-export function clearLocalHints(): void {
+export function clearLocalHints() {
   localStorage.removeItem(LOCAL_KEY);
 }

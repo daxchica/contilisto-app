@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase-config";
+import { auth } from "@/firebase-config";
 
 type PlanKey = "starter" | "pro" | "enterprise";
 

@@ -26,6 +26,7 @@ import { buildDailyCashFlowSeries } from "@/utils/buildDailyCashFlowSeries";
 import { JournalEntry } from "@/types/JournalEntry";
 import { CashFlowItem } from "@/types/CashFlow";
 import CashFlowChart from "@/components/dashboard/CashFlowChart";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 /* ============================================================================
  * HELPERS
@@ -206,7 +207,7 @@ const DashboardHome: React.FC = () => {
 
   const accountsPayable = useMemo(() => {
   return entries
-    .filter(e => startsWithSafe(e.account_code, "201"))
+    .filter(e => startsWithSafe(e.account_code, "20103"))
     .reduce(
       (sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)),
       0
@@ -297,11 +298,20 @@ const DashboardHome: React.FC = () => {
       </div>
 
       {/* CASH FLOW GRAPH (REAL vs PROJECTED) */}
-      <div className="mb-6">
-        <CashFlowChart 
-          data={cashFlowSeries} 
-          loading={cashFlowLoading} />
+      <div className="mb-6 min-h-[320px]">
+        <ErrorBoundary>
+          <CashFlowChart 
+            data={selectedEntity?.id ? cashFlowSeries : []} 
+            loading={cashFlowLoading || !selectedEntity?.id}
+            title={
+              selectedEntity?.id
+                ? "Flujo de Caja - Real vs Proyectado (ultimos 30 dias)"
+                : "Flujo de caja"
+            } 
+          />
+        </ErrorBoundary>
       </div>
+        
 
       {/* PROJECTED CASH FLOW TABLE (installments) */}
       {isCashFlowLoading ? (

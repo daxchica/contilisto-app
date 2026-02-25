@@ -33,7 +33,7 @@ export async function saveAccountHint(hint: {
   supplierRUC: string;
   accountCode: string;
   accountName: string;
-  userId: string;
+  userIdSafe: string;
 }) {
   if (!hint.supplierRUC || !hint.accountCode) return;
 

@@ -1,4 +1,3 @@
-import { getAuth } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -11,295 +10,157 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from "firebase/firestore";
 
-import { auth, db } from "../firebase-config";
+import { db } from "../firebase-config";
 import type { BankAccount } from "../types/bankTypes";
-import type { CustomAccount } from "../types/AccountTypes";
+import { assertEntityMember, getUidOrThrow } from "./firestoreSecurity";
 
-/* ----------------------------- Helpers ----------------------------- */
+/* =====================================================
+   BANK ACCOUNTS
+===================================================== */
 
-function uidOrThrow(): string {
-  const uid = getAuth().currentUser?.uid ?? "";
-  if (!uid) {
-    const err: any = new Error("User is not signed in");
-    err.code = "unauthenticated";
-    throw err;
-  }
-  return uid;
-}
+const bankRef = (entityId: string) =>
+  collection(db, "entities", entityId, "bankAccounts");
 
-function mapFirestoreError(e: any): never {
-  const code = e?.code || e?.message || "unknown";
-
-  const err: any = new Error(
-    code === "permission-denied"
-      ? "Missing or insufficient permissions"
-      : code === "not-found"
-      ? "Document not found"
-      : typeof e?.message === "string"
-      ? e.message
-      : "Unexpected Firestore error"
-  );
-
-  err.code =
-    code === "permission-denied" ||
-    code === "failed-precondition" ||
-    code === "unauthenticated" ||
-    code === "not-found"
-      ? code
-      : "unknown";
-
-  throw err;
-}
-
-/** Check entity ownership */
-async function assertEntityOwnership(entityId: string): Promise<void> {
-  const uid = uidOrThrow();
-  try {
-    const entityRef = doc(db, "entities", entityId);
-    const snap = await getDoc(entityRef);
-
-    if (!snap.exists()) {
-      const err: any = new Error("Entity not found");
-      err.code = "entity-not-found";
-      throw err;
-    }
-
-    const ownerUid = (snap.data() as any)?.uid;
-    if (ownerUid !== uid) {
-      const err: any = new Error("Entity belongs to a different user");
-      err.code = "permission-denied";
-      throw err;
-    }
-  } catch (e) {
-    mapFirestoreError(e);
-  }
-}
-
-/* ----------------------------- Custom Accounts ----------------------------- */
-
-const coaRef = (entityId: string) =>
-  collection(db, "entities", entityId, "chart_of_accounts");
-
-export async function fetchCustomAccounts(entityId: string): Promise<CustomAccount[]> {
-  const q = query(coaRef(entityId), orderBy("code"));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as CustomAccount);
-}
-
-export async function createSubaccount(
-  entityId: string,
-  row: Omit<CustomAccount, "entityId">
-) {
-  const uid = auth.currentUser?.uid ?? "";
-
-  const payload: CustomAccount = {
-    ...row,
-    entityId,
-    userId: uid || undefined,
-    createdAt: Date.now(),
-  };
-
-  await setDoc(doc(coaRef(entityId), payload.code), payload);
-}
-
-export async function deleteCustomAccount(entityId: string, code: string) {
-  await deleteDoc(doc(coaRef(entityId), code));
-}
-
-/* ----------------------------- Bank Accounts ----------------------------- */
+/* ---------------- FETCH ---------------- */
 
 export async function fetchBankAccounts(
-  _userId: string | null,
   entityId: string
 ): Promise<BankAccount[]> {
   if (!entityId) return [];
 
-  const uid = getAuth().currentUser?.uid ?? "";
-  if (!uid) throw new Error("Not signed in");
+  await assertEntityMember(entityId);
 
-  try {
-    const col = collection(db, "entities", entityId, "bankAccounts");
+  const snap = await getDocs(bankRef(entityId));
 
-    const q = query(col, where("userId", "==", uid));
-    const snap = await getDocs(q);
-
-    return snap.docs.map((d) => {
-      const data = d.data() as Omit<BankAccount, "id">;
-
-      return {
-        id: d.id,
-        ...data,
-        createdAt: data.createdAt ?? ""  // <- FIX TYPE SAFETY
-      };
-    });
-  } catch (e) {
-    mapFirestoreError(e);
-  }
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<BankAccount, "id">),
+  }));
 }
 
-/** Get one bank account */
+/* ---------------- GET ONE ---------------- */
+
 export async function getBankAccount(
   entityId: string,
   accountId: string
 ): Promise<BankAccount | null> {
-  try {
-    await assertEntityOwnership(entityId);
+  await assertEntityMember(entityId);
 
-    const ref = doc(db, "entities", entityId, "bankAccounts", accountId);
-    const snap = await getDoc(ref);
+  const ref = doc(db, "entities", entityId, "bankAccounts", accountId);
+  const snap = await getDoc(ref);
 
-    if (!snap.exists()) return null;
+  if (!snap.exists()) return null;
 
-    return {
-      id: snap.id,
-      ...(snap.data() as Omit<BankAccount, "id">),
-    };
-  } catch (e) {
-    mapFirestoreError(e);
-  }
+  return {
+    id: snap.id,
+    ...(snap.data() as Omit<BankAccount, "id">),
+  };
 }
 
-/** Create bank account (auto-ID) */
+/* ---------------- CREATE ---------------- */
+
 export async function createBankAccount(data: {
   entityId: string;
   name: string;
   number?: string;
   currency?: string;
   bankName?: string;
-  userId: string;
-  createdBy?: string;
 }): Promise<string> {
+  const uid = getUidOrThrow();
+
   const {
     entityId,
     name,
     number = "",
     currency = "USD",
     bankName = "",
-    userId,
-    createdBy = userId,
   } = data;
 
-  try {
-    await assertEntityOwnership(entityId);
+  await assertEntityMember(entityId);
 
-    const colRef = collection(db, "entities", entityId, "bankAccounts");
+  const ref = await addDoc(bankRef(entityId), {
+    name: name.trim(),
+    number: number.trim(),
+    currency,
+    bankName: bankName.trim(),
+    entityId,
+    uid,
+    createdAt: serverTimestamp(),
+  });
 
-    const ref = await addDoc(colRef, {
-      name: name.trim(),
-      number: number.trim(),
-      currency,
-      bankName: bankName.trim(),
-      entityId,
-      userId,
-      createdBy,
-      createdAt: serverTimestamp(),
-    });
-
-    return ref.id;
-  } catch (e) {
-    mapFirestoreError(e);
-  }
+  return ref.id;
 }
 
-/** Create using account number as document ID */
+/* ---------------- CREATE WITH NUMBER AS ID ---------------- */
+
 export async function createBankAccountByNumber(data: {
   entityId: string;
   number: string;
   name: string;
   currency?: string;
   bankName?: string;
-  userId: string;
-  createdBy?: string;
 }): Promise<void> {
+  const uid = getUidOrThrow();
+
   const {
     entityId,
     number,
     name,
     currency = "USD",
     bankName = "",
-    userId,
-    createdBy = userId,
   } = data;
 
   const docId = number.trim();
-  if (!docId) {
-    const err: any = new Error("Account number is required");
-    err.code = "invalid-argument";
-    throw err;
+  if (!docId) throw new Error("Account number is required");
+
+  await assertEntityMember(entityId);
+
+  const ref = doc(db, "entities", entityId, "bankAccounts", docId);
+  const exists = await getDoc(ref);
+
+  if (exists.exists()) {
+    throw new Error("A bank account with this number already exists");
   }
 
-  try {
-    await assertEntityOwnership(entityId);
-
-    const ref = doc(db, "entities", entityId, "bankAccounts", docId);
-
-    const exists = await getDoc(ref);
-    if (exists.exists()) {
-      const err: any = new Error("A bank account with this number already exists");
-      err.code = "account/exists";
-      throw err;
-    }
-
-    await setDoc(ref, {
-      id: docId,
-      name: name.trim(),
-      number: docId,
-      currency,
-      bankName: bankName.trim(),
-      entityId,
-      userId,
-      createdBy,
-      createdAt: serverTimestamp(),
-    });
-  } catch (e) {
-    mapFirestoreError(e);
-  }
+  await setDoc(ref, {
+    name: name.trim(),
+    number: docId,
+    currency,
+    bankName: bankName.trim(),
+    entityId,
+    uid,
+    createdAt: serverTimestamp(),
+  });
 }
 
-/** Update account */
+/* ---------------- UPDATE ---------------- */
+
 export async function updateBankAccount(
   entityId: string,
   accountId: string,
   patch: Partial<Pick<BankAccount, "name" | "number" | "currency" | "bankName">>
 ) {
+  await assertEntityMember(entityId);
+
   const safe: any = {};
   if (patch.name) safe.name = patch.name.trim();
   if (patch.number) safe.number = patch.number.trim();
   if (patch.currency) safe.currency = patch.currency;
   if (patch.bankName) safe.bankName = patch.bankName.trim();
 
-  try {
-    await assertEntityOwnership(entityId);
-
-    const ref = doc(db, "entities", entityId, "bankAccounts", accountId);
-    await updateDoc(ref, safe);
-  } catch (e) {
-    mapFirestoreError(e);
-  }
+  const ref = doc(db, "entities", entityId, "bankAccounts", accountId);
+  await updateDoc(ref, safe);
 }
 
-/** Delete bank account */
+/* ---------------- DELETE ---------------- */
+
 export async function deleteBankAccount(
   entityId: string,
   accountId: string
 ) {
-  try {
-    await assertEntityOwnership(entityId);
+  await assertEntityMember(entityId);
 
-    await deleteDoc(doc(db, "entities", entityId, "bankAccounts", accountId));
-  } catch (e) {
-    mapFirestoreError(e);
-  }
-}
-
-/** Backward compatible version */
-export function deleteBankAccountWithUserId(
-  _userId: string,
-  entityId: string,
-  accountId: string
-) {
-  return deleteBankAccount(entityId, accountId);
+  await deleteDoc(doc(db, "entities", entityId, "bankAccounts", accountId));
 }

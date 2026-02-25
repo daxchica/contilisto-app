@@ -1,244 +1,281 @@
 // src/components/TrialBalance.tsx
-import React, { useMemo } from "react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
-import { JournalEntry } from "../types/JournalEntry";
-import { useInitialBalances } from "../hooks/useInitialBalances";
+import React, { useMemo, useState } from "react";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
+import type { JournalEntry } from "@/types/JournalEntry";
+import { hasInitial, getInitialBalanceDate } from "@/utils/journalGuards";
+
+/* -------------------------------------------------------------------------- */
+/* TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
 
 type Props = {
+  entityId: string;
   entries: JournalEntry[];
   startDate?: string;
   endDate?: string;
 };
 
-const fmtUSD = (n: number) =>
-  new Intl.NumberFormat("es-EC", { 
-    style: "currency", 
+type Row = {
+  code: string;
+  name: string;
+  initial: number;
+  debit: number;
+  credit: number;
+  balance: number;
+  level: number;
+};
+
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const fmt = (n: number) =>
+  new Intl.NumberFormat("es-EC", {
+    style: "currency",
     currency: "USD",
-    minimumFractionDigits: 2,
-   }).format(n || 0);
+  }).format(n || 0);
 
-export default function TrialBalance({ entries, startDate, endDate }: Props) {
-  const initialBalances = useInitialBalances();
-  
-  // ---------------------------------------------------------
-  // DATE FILTERING
-  // ---------------------------------------------------------
-  const filteredEntries = useMemo(() => {
-    if (!startDate && !endDate) return entries;
+const detectLevel = (code: string) => {
+  if (code.length <= 1) return 1;
+  if (code.length <= 3) return 2;
+  if (code.length <= 5) return 3;
+  if (code.length <= 7) return 4;
+  return 5;
+};
 
-    const from = startDate ? new Date(startDate) : null;
-    const to = endDate ? new Date(endDate) : null;
+const iso = (s?: string) => (typeof s === "string" ? s.slice(0, 10) : "");
 
-    return entries.filter((e) => {
-      if (!e.date) return false;
-      const d = new Date(e.date);
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-      return true;
-    });
-  }, [entries, startDate, endDate]);
+/* -------------------------------------------------------------------------- */
+/* COMPONENT                                                                  */
+/* -------------------------------------------------------------------------- */
 
-   // ---------------------------------------------------------
-  // AGRUPAR POR CUENTA
-  // - Balance inicial viene de initialBalances (no se filtra por fecha)
-  // - Débito/Crédito de movimientos filtrados por rango
-  // ---------------------------------------------------------
-  const rows = useMemo(() => {
-    const map = new Map<
-      string,
-      { 
-        account_code: string; 
-        account_name: string; 
-        initial: number;
-        debit: number; 
-        credit: number; 
-        balance: number 
-      }
-    >();
+export default function TrialBalance({
+  entityId,
+  entries,
+  startDate,
+  endDate,
+}: Props) {
+  const [level, setLevel] = useState(5);
 
-    // 1. Iniciar con balances iniciales
-    for (const b of initialBalances) {
-      const code = b.account_code.trim();
-      const name = b.account_name.trim() || "(Sin nombre)";
-      const key = `${code}||${name}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          account_code: code,
-          account_name: name,
-          initial: 0,
-          debit: 0,
-          credit: 0,
-          balance: 0,
-        });
-      }
-      const r = map.get(key)!;
-      r.initial += Number(b.initial_balance || 0);
-    }
+  const coaMap = useMemo(() => new Map(ECUADOR_COA.map(a => [a.code, a.name])), []);
+  const coaCodes = useMemo(() => new Set(ECUADOR_COA.map(a => a.code)), []);
 
-    // 2. Sumar movimientos contables
-    for (const e of entries) {
-      const code = (e.account_code || "").trim();
-      const name = (e.account_name || "").trim() || "(Sin nombre)";
-      if (!code) continue;
-
-      const key = `${code}||${name}`;
-
-      if (!map.has(key)) {
-        map.set(key, {
-          account_code: code,
-          account_name: name,
-          initial: 0,
-          debit: 0,
-          credit: 0,
-          balance: 0,
-        });
-      }
-      const row = map.get(key)!;
-      row.debit += Number(e.debit || 0);
-      row.credit += Number(e.credit || 0);
-    }
-
-    // 3. Calcular saldos finales
-    for (const r of map.values()) {
-      r.balance = r.initial + r.debit - r.credit;
-    }
-
-    return Array.from(map.values()).sort((a, b) =>
-      a.account_code.localeCompare(b.account_code, "es")
-    );
-  }, [filteredEntries, initialBalances]);
-
-  // Totales
-  const totals = useMemo(
-    () =>
-      rows.reduce(
-        (acc, r) => {
-          acc.initial += r.initial;
-          acc.debit += r.debit;
-          acc.credit += r.credit;
-          acc.balance += r.balance;
-          return acc;
-        },
-        { initial: 0, debit: 0, credit: 0, balance: 0 }
-      ),
-    [rows]
+  const entityEntries = useMemo(
+    () => entries.filter(e => e.entityId === entityId),
+    [entries, entityId]
   );
 
-  // Exportar PDF
-  const exportToPDF = () => {
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const marginX = 40;
-    let y = 40;
+  const hasInitialBalance = useMemo(
+    () => hasInitial(entityEntries),
+    [entityEntries]
+  );
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("📘 Balance de Comprobación", marginX, y);
-    y += 20;
+  const initialBalanceDate = useMemo(
+    () => getInitialBalanceDate(entries, entityId),
+    [entries, entityId]
+  );
 
-    (doc as any).autoTable({
-      startY: y,
-      head: [
-        [
-          "Código", 
-          "Cuenta", 
-          "Balance Inicial", 
-          "Débito", 
-          "Crédito", 
-          "Saldo"
-        ]
-      ],
-      body: rows.map((r) => [
-        r.account_code,
-        r.account_name,
-        fmtUSD(r.initial),
-        fmtUSD(r.debit),
-        fmtUSD(r.credit),
-        fmtUSD(r.balance),
-      ]),
-      styles: { font: "helvetica", fontSize: 10, cellPadding: 6 },
-      headStyles: { fillColor: [30, 64, 175] },
-      columnStyles: {
-        2: { halign: "right" },
-        3: { halign: "right" },
-        4: { halign: "right" },
-        5: { halign: "right" },
-      },
-      theme: "striped",
-      margin: { left: marginX, right: marginX },
-      foot: [[
-          { content: "Totales", colSpan: 2 },
-          { content: fmtUSD(totals.initial), styles: { halign: "right" } },
-          { content: fmtUSD(totals.debit), styles: { halign: "right" } },
-          { content: fmtUSD(totals.credit), styles: { halign: "right" } },
-          { content: fmtUSD(totals.balance), styles: { halign: "right" } },
-        ],],
-      footStyles: { fillColor: [226, 232, 240], textColor: [0, 0, 0] },
+  const fromISO = startDate ? iso(startDate) : (initialBalanceDate ?? "");
+  const toISO = endDate ? iso(endDate) : "";
+
+  /* ------------------------------------------------------------------------ */
+  /* FILTER ENTRIES                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const filteredEntries = useMemo(() => {
+    return entries.filter(e => {
+      if (e.entityId !== entityId) return false;
+
+      if (e.source !== "initial") {
+        const d = iso(e.date);
+        if (!d) return false;
+        if (fromISO && d < fromISO) return false;
+        if (toISO && d > toISO) return false;
+      }
+
+      return true;
     });
+  }, [entries, entityId, fromISO, toISO]);
 
-    doc.save("Balance_de_Comprobacion.pdf");
-  };
+  /* ------------------------------------------------------------------------ */
+  /* RAW MAP (NOW ACCOUNTING-CORRECT)                                         */
+  /* ------------------------------------------------------------------------ */
 
-  // ---------------------------------------------------------
-  // RENDER
-  // ---------------------------------------------------------
-  return (
-    <div className="flex justify-center">
-      <div className="w-full bg-white shadow rounded p-6">
-        <h2 className="text-xl font-bold text-blue-800 mb-4 text-center">
-          📘 Balance de Comprobación
-        </h2>
+  const raw = useMemo(() => {
+    const map = new Map<
+      string,
+      { initialDebit: number; initialCredit: number; debit: number; credit: number }
+    >();
 
-        {rows.length === 0 ? (
-          <p className="text-gray-600 text-center">No hay movimientos registrados.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border px-3 py-2 text-left">Código</th>
-                  <th className="border px-3 py-2 text-left">Cuenta</th>
-                  <th className="border px-3 py-2 text-right">Balance Inicial</th>
-                  <th className="border px-3 py-2 text-right">Débito</th>
-                  <th className="border px-3 py-2 text-right">Crédito</th>
-                  <th className="border px-3 py-2 text-right">Saldo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.account_code + r.account_name}>
-                    <td className="border px-3 py-2 font-mono">{r.account_code}</td>
-                    <td className="border px-3 py-2">{r.account_name}</td>
-                    <td className="border px-3 py-2 text-right">{fmtUSD(r.initial)}</td>
-                    <td className="border px-3 py-2 text-right">{fmtUSD(r.debit)}</td>
-                    <td className="border px-3 py-2 text-right">{fmtUSD(r.credit)}</td>
-                    <td className="border px-3 py-2 text-right">{fmtUSD(r.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="border px-3 py-2" colSpan={2}>Totales</td>
-                  <td className="border px-3 py-2 text-right">{fmtUSD(totals.initial)}</td>
-                  <td className="border px-3 py-2 text-right">{fmtUSD(totals.debit)}</td>
-                  <td className="border px-3 py-2 text-right">{fmtUSD(totals.credit)}</td>
-                  <td className="border px-3 py-2 text-right">{fmtUSD(totals.balance)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
+    for (const e of filteredEntries) {
+      const code = e.account_code?.trim();
+      if (!code) continue;
 
-        {/* Botón Exportar */}
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={exportToPDF}
-            className="px-6 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
-          >
-            📄 Exportar PDF
-          </button>
-        </div>
+      if (!map.has(code)) {
+        map.set(code, {
+          initialDebit: 0,
+          initialCredit: 0,
+          debit: 0,
+          credit: 0,
+        });
+      }
+
+      const entry = map.get(code)!;
+
+      const debit = Number(e.debit ?? 0);
+      const credit = Number(e.credit ?? 0);
+
+      if (e.source === "initial") {
+        entry.initialDebit += debit;
+        entry.initialCredit += credit;
+      } else {
+        entry.debit += debit;
+        entry.credit += credit;
+      }
+    }
+
+    return map;
+  }, [filteredEntries]);
+
+  /* ------------------------------------------------------------------------ */
+  /* AGGREGATION (SIGN CORRECT)                                               */
+  /* ------------------------------------------------------------------------ */
+
+  const rows = useMemo<Row[]>(() => {
+    const prefixes = new Set<string>();
+    const VALID_LEVELS = [1, 3, 5, 7, 9];
+
+    for (const code of raw.keys()) {
+      for (const len of VALID_LEVELS) {
+        if (code.length >= len) {
+          const p = code.slice(0, len);
+          if (coaCodes.has(p)) prefixes.add(p);
+        }
+      }
+    }
+
+    return Array.from(prefixes)
+      .map(code => {
+        let initialDebit = 0;
+        let initialCredit = 0;
+        let debit = 0;
+        let credit = 0;
+
+        for (const [c, r] of raw.entries()) {
+          if (c.startsWith(code)) {
+            initialDebit += r.initialDebit;
+            initialCredit += r.initialCredit;
+            debit += r.debit;
+            credit += r.credit;
+          }
+        }
+
+        const group = code.charAt(0);
+
+        let initial = 0;
+        let balance = 0;
+
+        if (group === "1") {
+          // Activo (debit-normal)
+          initial = initialDebit - initialCredit;
+          balance = initial + debit - credit;
+        } else if (group === "2" || group === "3") {
+          // Pasivo & Patrimonio (credit-normal)
+          initial = initialCredit - initialDebit;
+          balance = initial + credit - debit;
+        } else if (group === "4") {
+          balance = credit - debit;
+        } else if (group === "5") {
+          balance = debit - credit;
+        }
+
+        if (
+          Math.abs(initial) < 0.0001 &&
+          Math.abs(debit) < 0.0001 &&
+          Math.abs(credit) < 0.0001
+        ) {
+          return null;
+        }
+
+        return {
+          code,
+          name: coaMap.get(code) || "CUENTA NO DEFINIDA",
+          initial,
+          debit,
+          credit,
+          balance,
+          level: detectLevel(code),
+        };
+      })
+      .filter(Boolean)
+      .filter(r => r!.level <= level)
+      .sort((a, b) => a!.code.localeCompare(b!.code)) as Row[];
+  }, [raw, level, coaMap, coaCodes]);
+
+  /* ------------------------------------------------------------------------ */
+  /* RENDER                                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  if (!hasInitialBalance) {
+    return (
+      <div className="bg-white shadow rounded p-6 text-center text-amber-600">
+        ⚠️ Debes registrar el <strong>Balance Inicial</strong> primero.
       </div>
+    );
+  }
+
+  return (
+    <div className="bg-white shadow rounded p-6">
+      <div className="flex justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-blue-800">
+            📘 Balance de Comprobación
+          </h2>
+          {initialBalanceDate && (
+            <div className="text-xs text-gray-600 mt-1">
+              Balance Inicial detectado:{" "}
+              <span className="font-mono">{initialBalanceDate}</span>
+            </div>
+          )}
+        </div>
+
+        <select
+          value={level}
+          onChange={e => setLevel(Number(e.target.value))}
+          className="border rounded px-2 py-1"
+        >
+          {[1, 2, 3, 4, 5].map(l => (
+            <option key={l} value={l}>
+              Nivel {l}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <table className="w-full text-sm border">
+        <thead className="bg-gray-100">
+          <tr>
+            <th>Código</th>
+            <th>Cuenta</th>
+            <th className="text-right">Inicial</th>
+            <th className="text-right">Débito</th>
+            <th className="text-right">Crédito</th>
+            <th className="text-right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.code}>
+              <td className="font-mono">{r.code}</td>
+              <td>{r.name}</td>
+              <td className="text-right">{fmt(r.initial)}</td>
+              <td className="text-right">{fmt(r.debit)}</td>
+              <td className="text-right">{fmt(r.credit)}</td>
+              <td className="text-right">{fmt(r.balance)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -111,7 +111,7 @@ type TabView = "libro" | "conciliacion";
 
 export default function BankBookPage() {
   const auth = getAuth();
-  const userId = auth.currentUser?.uid ?? "";
+  const userIdSafe = auth.currentUser?.uid ?? "";
   const { selectedEntity } = useSelectedEntity();
 
   const [selectedEntityId, setSelectedEntityId] = useState("");
@@ -136,7 +136,7 @@ export default function BankBookPage() {
 
   // Fetch cuentas bancarias
   useEffect(() => {
-    if (!selectedEntity?.id || !userId) {
+    if (!selectedEntity?.id || !userIdSafe) {
       setBankAccounts([]);
       setSelectedBankId("");
       return;
@@ -144,7 +144,7 @@ export default function BankBookPage() {
 
     (async () => {
       try {
-        const data = await fetchBankAccounts(userId, selectedEntityId);
+        const data = await fetchBankAccounts(userIdSafe, selectedEntityId);
         data.sort((a, b) => a.name.localeCompare(b.name, "es"));
         setBankAccounts(data);
         // Mantener selección si todavía existe
@@ -157,7 +157,7 @@ export default function BankBookPage() {
         setSelectedBankId("");
       }
     })();
-  }, [selectedEntityId, userId]);
+  }, [selectedEntityId, userIdSafe]);
 
   // Fetch movimientos del libro bancario para la cuenta seleccionada
   useEffect(() => {
@@ -368,7 +368,7 @@ export default function BankBookPage() {
           open={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onConfirm={async ({ name, number }) => {
-            if (!userId || !selectedEntity?.id) return;
+            if (!userIdSafe || !selectedEntity?.id) return;
 
             await createBankAccount({
               entityId: selectedEntityId,
@@ -376,10 +376,10 @@ export default function BankBookPage() {
               number,
               currency: "USD",
               bankName: "",
-              userId,
+              userIdSafe,
             });
 
-            const updated = await fetchBankAccounts(userId, selectedEntityId);
+            const updated = await fetchBankAccounts(userIdSafe, selectedEntityId);
             updated.sort((a, b) => a.name.localeCompare(b.name, "es"));
             setBankAccounts(updated);
             setShowCreateModal(false);

@@ -54,17 +54,33 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+
     if (disabled) return;
 
     setIsDragging(false);
 
     const valid = validateFiles(e.dataTransfer.files);
+    
     if (!valid) return;
+    
     setIsLoading(true);
     
-    await Promise.resolve(onFilesSelected(valid));
+    try {
+    
+      await onFilesSelected(valid);
 
-    setIsLoading(false);
+    } catch (err) {
+
+      console.error("PDFDropzone error:", err);
+
+      setErrorMessage("Error procesando el archivo.");
+
+    } finally {
+
+      setIsLoading(false);
+
+    }
+  
   };
 
   // -------------------------------------------------------------------------
@@ -98,11 +114,21 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
     if (!valid) return;
 
     setIsLoading(true);
+    try {
+      await onFilesSelected(valid);
+    
+    } catch (err) {
 
-    await Promise.resolve(onFilesSelected(valid));
+      console.error("PDFDropzone error:", err);
 
-    setIsLoading(false);
-  };
+      setErrorMessage("Error procesando el archivo.");
+
+    } finally {
+
+      setIsLoading(false);
+
+    }
+  }; // FIXED - closed function
 
   // -------------------------------------------------------------------------
   // RENDER

@@ -45,20 +45,28 @@ export default function CashFlowChart({
 }: Props) {
   return (
     <div className="bg-white border rounded-xl p-4">
+      {/* Header (auto height) */}
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">{title}</h3>
+        <h3 className="font-semibold text-sm">{title}</h3>
         {loading && (
           <span className="text-xs text-gray-500">Cargando…</span>
         )}
       </div>
 
-      {!loading && (!data || data.length === 0) ? (
-        <div className="p-4 bg-gray-50 text-gray-500 text-center rounded">
-          No hay datos de flujo de caja para mostrar.
-        </div>
-      ) : (
-        <div style={{ width: "100%", height: 320 }}>
-          <ResponsiveContainer>
+      {/* Chart container */}
+      <div 
+        className="h-[280px] w-full"
+      >
+        {loading ? (
+          <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+            Cargando datos de flujo de caja…
+          </div>
+        ) : !data.length ? (
+          <div className="h-full flex items-center justify-center text-gray-400 text-sm bg-gray-50 rounded">
+            Selecciona una empresa para ver el flujo de caja.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
 
@@ -70,25 +78,16 @@ export default function CashFlowChart({
 
               <YAxis 
                 tickFormatter={(v) => 
-                    typeof v === "number"
-                        ? v.toLocaleString("en-US", {
-                            maximumFractionDigits: 0,
-                           })
-                        : v
-                    } 
-                />
+                  typeof v === "number"
+                    ? v.toLocaleString("en-US", { maximumFractionDigits: 0 })
+                    : v
+                } 
+              />
 
               <Tooltip
-                formatter={(value) => {
-                  const v = Number(value ?? 0);
-                  return [money(v), "Monto"];
-                }}
-                labelFormatter={(label) =>
-                    typeof label === "string"
-                        ? `Fecha: ${label}`
-                        : "Fecha"
-                    }
-                />
+                formatter={(value) => [money(Number(value ?? 0)), "Monto"]}
+                labelFormatter={(label) => `Fecha: ${label}`}
+              />
 
               <Legend />
 
@@ -148,8 +147,8 @@ export default function CashFlowChart({
               />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

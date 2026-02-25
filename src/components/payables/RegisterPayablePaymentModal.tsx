@@ -24,7 +24,7 @@ import { repairPayableAccountFromJournal } from "@/services/payablesService";
 type Props = {
   isOpen: boolean;
   entityId: string;
-  userId: string;
+  userIdSafe: string;
   payable: Payable | null;
   bankAccounts: BankAccount[];
   onClose: () => void;
@@ -59,7 +59,7 @@ function resolveBankGLCode(bank: BankAccount): string {
 export default function RegisterPayablePaymentModal({
   isOpen,
   entityId,
-  userId,
+  userIdSafe,
   payable,
   bankAccounts,
   onClose,
@@ -112,7 +112,7 @@ export default function RegisterPayablePaymentModal({
       setNeedsRepair(false);
 
       if (!entityId) throw new Error("Empresa no seleccionada");
-      if (!userId) throw new Error("Usuario no válido");
+      if (!userIdSafe) throw new Error("Usuario no válido");
       if (!p.id) throw new Error("Cuenta por pagar inválida");
       if (!paymentDate) throw new Error("Fecha requerida");
       if (!selectedBank) throw new Error("Cuenta bancaria requerida");
@@ -151,7 +151,7 @@ export default function RegisterPayablePaymentModal({
         amount: numericAmount,
         type: "out",
         description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
-        createdBy: userId,
+        createdBy: userIdSafe,
       };
 
       const bankMovementId = await createBankMovement(movement);
@@ -169,7 +169,7 @@ export default function RegisterPayablePaymentModal({
           account_code: bankGLCode,
           name: selectedBank.name,
         },
-        userId,
+        userIdSafe,
         { bankMovementId }
       );
 

@@ -19,7 +19,7 @@ export type CreateInvoiceInput = Omit<
   Invoice,
   | "id"
   | "entityId"
-  | "userId"
+  | "userIdSafe"
   | "status"
   | "createdAt"
   | "updatedAt"
@@ -33,11 +33,11 @@ export type CreateInvoiceInput = Omit<
 ============================================================ */
 export async function createInvoice(
   entityId: string,
-  userId: string,
+  userIdSafe: string,
   data: CreateInvoiceInput
 ): Promise<Invoice> {
   if (!entityId) throw new Error("entityId requerido");
-  if (!userId) throw new Error("userId requerido");
+  if (!userIdSafe) throw new Error("userIdSafe requerido");
 
   const now = Date.now();
 
@@ -45,7 +45,7 @@ export async function createInvoice(
     ...data,
 
     entityId,
-    userId,
+    userIdSafe,
 
     status: "draft",
 

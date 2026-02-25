@@ -1,44 +1,75 @@
 // utils/groupJournalEntries.ts
 import { JournalEntry } from "../types/JournalEntry";
 
-export function groupEntriesByAccount(entries: JournalEntry[]) {
-  const grouped: Record<string, { debit: number; credit: number; initial: number }> = {};
+export type GroupedAccount = {
+  initialDebit: number;
+  initialCredit: number;
+  debit: number;
+  credit: number;
+};
 
-  for (const entry of entries) {
-    const code = entry.account_code;
+export function groupEntriesByAccount(
+  entries: JournalEntry[],
+) {
+  const grouped: Record<string, GroupedAccount> = {};
+
+  const ensure = (code: string) => {
     if (!grouped[code]) {
-      grouped[code] = { debit: 0, credit: 0, initial: 0 };
+      grouped[code] = { 
+        initialDebit: 0,
+        initialCredit: 0,
+        debit: 0, 
+        credit: 0 };
     }
+    return grouped[code];
+  };
 
-    if (entry.source === "initial") {
-      grouped[code].initial += (entry.debit ?? 0) - (entry.credit ?? 0);
+  for (const e of entries) {
+    const code = e.account_code?.trim();
+    if (!code) continue; 
+
+    const debit = Number(e.debit ?? 0);
+    const credit = Number(e.credit ?? 0);
+
+    if (Number.isNaN(debit) || Number.isNaN(credit)) continue;
+
+    const isInitial = e.source == "initial";
+
+    // 1️⃣ Apply to the account itself
+    const acc = ensure(code);
+
+    if (isInitial) {
+      acc.initialDebit += debit;
+      acc.initialCredit += credit;
     } else {
-      grouped[code].debit += entry.debit ?? 0;
-      grouped[code].credit += entry.credit ?? 0;
+      acc.debit += debit;
+      acc.credit += credit;
     }
 
-    // 🔹 Propagar a los padres jerárquicos
+    // 2️⃣ Propagate to all parents
     let parent = getParentCode(code);
     while (parent) {
-      if (!grouped[parent]) {
-        grouped[parent] = { debit: 0, credit: 0, initial: 0 };
-      }
+      const p = ensure(parent);
 
-      if (entry.source === "initial") {
-        grouped[parent].initial += (entry.debit ?? 0) - (entry.credit ?? 0);
+      if (isInitial) {
+        p.initialDebit += debit;
+        p.initialCredit += credit;
       } else {
-        grouped[parent].debit += entry.debit ?? 0;
-        grouped[parent].credit += entry.credit ?? 0;
+        p.debit += debit;
+        p.credit += credit;
       }
 
       parent = getParentCode(parent);
     }
   }
+
   return grouped;
 }
 
+
 function getParentCode(code: string): string | null {
     const len = code.length;
+
   if (len <= 1) return null;
   if (len <= 3) return code.slice(0, 1);
   if (len <= 5) return code.slice(0, 3);

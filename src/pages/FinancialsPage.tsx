@@ -4,16 +4,20 @@ import PnLSummary from "../components/PnLSummary";
 import BalanceSheet from "../components/BalanceSheet";
 
 import { fetchJournalEntries } from "../services/journalService";
-import type { JournalEntry } from "../types/JournalEntry";
+import { fetchInitialBalances } from "@/services/initialBalanceService";
+import { initialBalancesToJournalEntries } from "@/services/initialBalanceAdapter";
+
 import { useSelectedEntity } from "../context/SelectedEntityContext";
+import type { JournalEntry } from "../types/JournalEntry";
 
 export default function FinancialsPage() {
   const { selectedEntity } = useSelectedEntity(); // ← Empresa seleccionada globalmente
 
   const entityId = selectedEntity?.id ?? "";
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [initialEntries, setInitialEntries] = useState<JournalEntry[]>([]);
   const [resultadoDelEjercicio, setResultadoDelEjercicio] = useState(0);
-
+  
   /* ----------------------- Load Journal Entries ----------------------- */
   useEffect(() => {
     if (!entityId) {
@@ -31,6 +35,31 @@ export default function FinancialsPage() {
       }
     })();
   }, [entityId]);
+
+  /* --------------------- Load Initial Balances --------------------- */
+  useEffect(() => {
+    if (!entityId) {
+      setInitialEntries([]);
+      return;
+    }
+
+  (async () => {
+    try {
+      const balances = await fetchInitialBalances(entityId);
+      const adapted = initialBalancesToJournalEntries(balances, entityId);
+      setInitialEntries(adapted);
+    } catch (err) {
+      console.error("Error loading initial balances:", err);
+      setInitialEntries([]);
+    }
+  })();
+}, [entityId]);
+
+  /* --------------------- Merge for Balance Sheet --------------------- */
+  const allEntries = useMemo(
+    () => [...initialEntries, ...entries],
+    [initialEntries, entries]
+  );
 
   /* ----------------- Fallback: calculate base utility ----------------- */
   const utilidadBase = useMemo(() => {
@@ -85,7 +114,7 @@ export default function FinancialsPage() {
           Balance General
         </h2>
         <BalanceSheet
-          entries={entries}
+          entries={allEntries}
           resultadoDelEjercicio={resultadoDelEjercicio || utilidadBase}
           entityId={entityId}
         />

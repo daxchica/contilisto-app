@@ -1,3 +1,5 @@
+// src/types/InvoicePreviewMetadata.ts
+
 export interface InvoicePreviewMetadata {
   invoiceType: "sale" | "expense";
 

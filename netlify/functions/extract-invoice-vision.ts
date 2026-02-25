@@ -22,9 +22,10 @@
 
 import { Handler } from "@netlify/functions";
 import { randomUUID } from "crypto";
-import { getContextualHint } from "./_server/contextualHintsService";
+
 import { extractExpenseContextFromItems } from "./_server/extractExpenseContext";
 import { invoiceNumberFromAccessKey } from "@/utils/sriInvoice";
+import { getContextualAccountHintServer } from "./_server/getContextualAccountHintServer";
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -453,7 +454,6 @@ function extractBuyerFromOCR(text: string) {
 // INVOICE NUMBER & DATE (LAYOUT + OCR)
 // ---------------------------------------------------------------------------
 
-
 function extractInvoiceDate(text: string, items: TextItemLite[]): string {
   const dateRe =
     /\b\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2}:\d{2})?\b/;
@@ -697,33 +697,75 @@ function normalizeSriTotals(t: Totals, warnings: string[]) {
 }
 
 // ---------------------------------------------------------------------------
+// ACCOUNT MAP (CENTRALIZED)
+// ---------------------------------------------------------------------------
+
+type AccountMap = {
+  sale: {
+    ar: string;
+    revenue: string;
+    iva: string;
+  };
+  expense: {
+    expenseDefault: string;
+    iva: string;
+    ap: string;
+  };
+};
+
+const ACCOUNT_MAP: AccountMap = {
+  sale: {
+    ar: "101030101",
+    revenue: "401020101",
+    iva: "201020101",
+  },
+  expense: {
+    expenseDefault: "502010101",
+    iva: "133010102",
+    ap: "201030102",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // ACCOUNTING (NO CAMBIOS) — includes AP line for expenses always
 // ---------------------------------------------------------------------------
 
-async function buildAccounting(entry: ParsedInternal, uid: string, invoiceType: "sale" | "expense"
+async function buildAccounting(
+  
+  entry: ParsedInternal, 
+  uid: string, invoiceType: "sale" | "expense"
 ) {
+  console.log("VISION FUNCTION VERSION 2026-02-23");
+  console.log("INVOICE TYPE:", invoiceType);
   const lines: AccountingLine[] = [];
   const warnings: string[] = [];
 
+  // ================================
+  // SALE
+  // ================================
   if (invoiceType === "sale") {
+    // AR
     lines.push({
-      accountCode: "13010101",
-      accountName: "Clientes",
+      accountCode: ACCOUNT_MAP.sale.ar,
+      accountName: "Clientes nacionales",
       debit: safeNumber(entry.total),
       credit: 0,
     });
 
-    // Revenue base = taxableWithVat + taxable0 + nonTaxable
+    // Revenue (taxable + 0% + nonTaxable)
     lines.push({
-      accountCode: "401010101",
+      accountCode: ACCOUNT_MAP.sale.revenue,
       accountName: "Ingresos por servicios",
       debit: 0,
-      credit: safeNumber(entry.taxableBase + entry.subtotal0 + entry.nonTaxable),
+      credit: safeNumber(
+        entry.total - entry.iva - entry.ice
+      ),
     });
 
+    // IVA Débito
     if (entry.iva > 0) {
       lines.push({
-        accountCode: "213010101",
+        accountCode: ACCOUNT_MAP.sale.iva,
         accountName: "IVA débito en ventas",
         debit: 0,
         credit: safeNumber(entry.iva),
@@ -733,15 +775,27 @@ async function buildAccounting(entry: ParsedInternal, uid: string, invoiceType: 
     return { lines, warnings };
   }
 
+  // ================================
   // EXPENSE
-  let expenseCode = "502010101";
-  let expenseName = "Gastos en servicios generales";
+  // ================================
+
+  let expenseCode = ACCOUNT_MAP.expense.expenseDefault;
+  let expenseName = "Gastos operacionales";
 
   if (uid && entry.issuerRUC && entry.concepto) {
-    const hint = await getContextualHint(uid, entry.issuerRUC, entry.concepto);
-    if (hint?.accountCode) {
-      expenseCode = hint.accountCode;
-      expenseName = hint.accountName;
+    try {
+      const hint = await getContextualAccountHintServer(
+        uid,
+        entry.issuerRUC,
+        entry.concepto
+      );
+
+      if (hint?.accountCode) {
+        expenseCode = hint.accountCode;
+        expenseName = hint.accountName;
+      }
+    } catch (err) {
+      console.warn("Account hint lookup failed:", err);
     }
   }
 
@@ -756,7 +810,7 @@ async function buildAccounting(entry: ParsedInternal, uid: string, invoiceType: 
 
   if (entry.iva > 0) {
     lines.push({
-      accountCode: "133010102",
+      accountCode: ACCOUNT_MAP.expense.iva,
       accountName: "IVA crédito en compras",
       debit: safeNumber(entry.iva),
       credit: 0,
@@ -765,7 +819,7 @@ async function buildAccounting(entry: ParsedInternal, uid: string, invoiceType: 
 
   // Always AP line (proveedor) for expenses
   lines.push({
-    accountCode: "201030102",
+    accountCode: ACCOUNT_MAP.expense.ap,
     accountName: "Proveedores locales",
     debit: 0,
     credit: safeNumber(entry.total),
@@ -779,9 +833,12 @@ async function buildAccounting(entry: ParsedInternal, uid: string, invoiceType: 
 // ---------------------------------------------------------------------------
 
 export const handler: Handler = async (event) => {
+  
   try {
     const { base64, userRUC, uid } = JSON.parse(event.body || "{}");
+    
     if (!base64 || !userRUC) {
+      
       return { statusCode: 400, body: "Missing base64 or userRUC" };
     }
 
@@ -803,6 +860,7 @@ export const handler: Handler = async (event) => {
       parseWarnings.push(    
         "Access key (49 digits) not detected; invoice number cannot be derived from SRI key."
       );
+      
     }
     
     // ------------------------------------------------------------------
@@ -940,8 +998,17 @@ export const handler: Handler = async (event) => {
     // ------------------------------------------------------------------
     // ACCOUNTING
     // ------------------------------------------------------------------
+    const reqId = randomUUID();
+    console.log("REQ:", reqId, "START");
+
+    
     const { lines, warnings: accountingWarnings } = 
       await buildAccounting(parsed, uid, invoiceType);
+
+    console.log("REQ:", reqId, "LINES:", lines.length, lines.map(l => l.accountCode));  
+    console.log("BACKEND LINES COUNT:", lines.length);
+    console.log("BACKEND LINES:", lines.map(l => l.accountCode));
+  
 
     const transactionId = randomUUID();
     const balance = {

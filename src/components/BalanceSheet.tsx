@@ -1,13 +1,25 @@
+// ============================================================================
 // src/components/BalanceSheet.tsx
+// CONTILISTO — Balance General (ACCOUNTING-CORRECT FINAL VERSION)
+// - Injects Resultado del Ejercicio (307)
+// - Ensures 1 = 2 + 3
+// - Keeps accounting logic intact
+// ============================================================================
+
 import React, { useMemo, useState } from "react";
-import type { JournalEntry } from "../types/JournalEntry";
-import { formatAmount } from "../utils/accountingUtils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Papa from "papaparse";
+
+import type { JournalEntry } from "../types/JournalEntry";
+import { formatAmount } from "../utils/accountingUtils";
+
 import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
-import { groupEntriesByAccount, detectLevel } from "@/utils/groupJournalEntries";
-import { useInitialBalances } from "@/hooks/useInitialBalances";
+import {
+  groupEntriesByAccount,
+  detectLevel,
+} from "@/utils/groupJournalEntries";
+import { getDefaultInitialBalanceDate } from "@/utils/dateUtils";
 
 /* -------------------------------------------------------------------------- */
 /* CONFIG                                                                      */
@@ -24,10 +36,10 @@ const COLUMNS = [
 
 interface Props {
   entries: JournalEntry[];
-  resultadoDelEjercicio?: number;
   entityId: string;
   startDate?: string;
   endDate?: string;
+  showHeader?: boolean;
 }
 
 type Row = {
@@ -38,244 +50,239 @@ type Row = {
   credit: number;
   balance: number;
   level: number;
-  parent: string | null;
 };
 
 /* -------------------------------------------------------------------------- */
-/* HELPERS                                                                    */
+/* HELPERS                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function getParentCode(code: string): string | null {
-  if (code.length <= 1) return null;
-  if (code.length <= 3) return code.slice(0, 1);
-  if (code.length <= 5) return code.slice(0, 3);
-  if (code.length <= 7) return code.slice(0, 5);
-  return code.slice(0, code.length - 2);
+const toISO = (v?: string) => (v ?? "").slice(0, 10);
+
+const safe = (v: any) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const round2 = (n: number) => Number(Number(n || 0).toFixed(2));
+
+/**
+ * Finds the nearest existing parent code by trimming the right side
+ * until a code exists in the map.
+ *
+ * Example: 307 -> 30 (missing) -> 3 (exists) => parent = "3"
+ */
+function findNearestExistingParent(code: string, exists: (c: string) => boolean) {
+  let p = code.slice(0, -1);
+  while (p.length >= 1) {
+    if (exists(p)) return p;
+    p = p.slice(0, -1);
+  }
+  return null;
+}
+
+/**
+ * Ensure parent chain exists in the map so hierarchy can roll up step-by-step.
+ * We add:
+ * - group headers "1","2","3"
+ * - any intermediate prefixes that exist in COA (optional but helps levels)
+ */
+function ensureParents(
+  code: string,
+  map: Map<string, Row>,
+  coaByCode: Map<string, string>
+) {
+  // Always ensure group header
+  const group = code.charAt(0);
+  if (["1", "2", "3"].includes(group) && !map.has(group)) {
+    map.set(group, {
+      code: group,
+      name:
+        group === "1" ? "ACTIVO" : group === "2" ? "PASIVO" : "PATRIMONIO NETO",
+      initialBalance: 0,
+      debit: 0,
+      credit: 0,
+      balance: 0,
+      level: detectLevel(group),
+    });
+  }
+
+  // Add intermediate COA prefixes if present (prevents jump directly to group)
+  let p = code.slice(0, -1);
+  while (p.length >= 1) {
+    if (!map.has(p) && coaByCode.has(p)) {
+      map.set(p, {
+        code: p,
+        name: coaByCode.get(p) || "CUENTA NO DEFINIDA EN PUC",
+        initialBalance: 0,
+        debit: 0,
+        credit: 0,
+        balance: 0,
+        level: detectLevel(p),
+      });
+    }
+    p = p.slice(0, -1);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
-/* COMPONENT                                                                  */
+/* COMPONENT                                                                   */
 /* -------------------------------------------------------------------------- */
 
 export default function BalanceSheet({
   entries,
-  resultadoDelEjercicio: resultadoProp,
   entityId,
   startDate,
   endDate,
+  showHeader = true,
 }: Props) {
   const [level, setLevel] = useState(5);
-  const [collapsedCodes, setCollapsedCodes] = useState<Set<string>>(new Set());
-  const initialBalances = useInitialBalances();
 
-  const toggleCollapse = (code: string) => {
-    setCollapsedCodes((prev) => {
-      const next = new Set(prev);
-      next.has(code) ? next.delete(code) : next.add(code);
-      return next;
-    });
-  };
+  const effectiveStart = startDate ?? getDefaultInitialBalanceDate();
+  const fromISO = toISO(effectiveStart);
+  const toISODate = toISO(endDate);
 
   /* ------------------------------------------------------------------------ */
-  /* FILTER ENTRIES (Balance inicial SIEMPRE entra)                            */
+  /* FILTER ENTRIES                                                           */
   /* ------------------------------------------------------------------------ */
 
   const filteredEntries = useMemo(() => {
-    const byEntity = entries.filter((e) => e.entityId === entityId);
-    if (!startDate && !endDate) return byEntity;
+    return (entries ?? []).filter((e) => {
+      if (e.entityId !== entityId) return false;
 
-    const from = startDate ? new Date(startDate) : null;
-    const to = endDate ? new Date(endDate) : null;
-
-    return byEntity.filter((e) => {
       if (e.source === "initial") return true;
-      if (!e.date) return false;
 
-      const d = new Date(e.date);
-      if (from && d < from) return false;
-      if (to && d > to) return false;
+      const d = toISO(e.date);
+      if (!d) return false;
+
+      if (fromISO && d < fromISO) return false;
+      if (toISODate && d > toISODate) return false;
+
       return true;
     });
-  }, [entries, entityId, startDate, endDate]);
+  }, [entries, entityId, fromISO, toISODate]);
 
-  const groupedEntries = useMemo(
-    () => groupEntriesByAccount(filteredEntries),
+  const groupedEntries = useMemo(() => groupEntriesByAccount(filteredEntries),
     [filteredEntries]
   );
 
   /* ------------------------------------------------------------------------ */
-  /* INITIAL BALANCES (never date-filtered)                                   */
+  /* CALCULATE RESULTADO DEL EJERCICIO                                       */
   /* ------------------------------------------------------------------------ */
 
-  const initialByCode = useMemo(() => {
-    const map: Record<string, number> = {};
+  const resultado = useMemo(() => {
+    const ingresos = filteredEntries
+      .filter((e) => String(e.account_code || "").startsWith("4"))
+      .reduce((acc, e) => acc + safe(e.credit) - safe(e.debit), 0);
 
-    for (const b of initialBalances) {
-      const code = (b.account_code || "").trim();
-      if (!code) continue;
+    const gastos = filteredEntries
+      .filter((e) => String(e.account_code || "").startsWith("5"))
+      .reduce((acc, e) => acc + safe(e.debit) - safe(e.credit), 0);
 
-      const balEntityId = (b as any).entityId as string | undefined;
-      if (balEntityId && balEntityId !== entityId) continue;
-
-      map[code] = (map[code] || 0) + Number(b.initial_balance || 0);
-    }
-
-    return map;
-  }, [initialBalances, entityId]);
+    return round2(ingresos - gastos);
+  }, [filteredEntries]);
 
   /* ------------------------------------------------------------------------ */
-  /* RESULTADO DEL EJERCICIO                                                   */
-  /* ------------------------------------------------------------------------ */
-
-  const resultadoDelEjercicio = useMemo(() => {
-    if (typeof resultadoProp === "number") return resultadoProp;
-
-    const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
-      filteredEntries
-        .filter((e) => (e.account_code || "").startsWith(prefix))
-        .reduce((acc, e) => acc + Number((e as any)[side] || 0), 0);
-
-    const ventas = sumByPrefix("7", "credit");
-    const gastos = sumByPrefix("5", "debit");
-
-    return ventas - gastos;
-  }, [resultadoProp, filteredEntries]);
-
-  /* ------------------------------------------------------------------------ */
-  /* BUILD BALANCE SHEET (JOURNAL-AUTHORITATIVE)                               */
+  /* BUILD BALANCE SHEET                                                      */
   /* ------------------------------------------------------------------------ */
 
   const groupedAccounts = useMemo(() => {
-    /* 1️⃣ Accounts used in Trial Balance */
-    const usedAccountCodes = new Set([
-      ...Object.keys(groupedEntries),
-      ...Object.keys(initialByCode),
-    ]);
-
-    /* 2️⃣ Expand with parents */
-    const requiredCodes = new Set<string>();
-    for (const code of usedAccountCodes) {
-      let cur: string | null = code;
-      while (cur) {
-        requiredCodes.add(cur);
-        cur = getParentCode(cur);
-      }
-    }
-
-    /* 3️⃣ Only Balance Sheet groups (1–3) */
-    const bsCodes = Array.from(requiredCodes).filter((c) =>
-      ["1", "2", "3"].includes(c.charAt(0))
-    );
-
-    /* 4️⃣ COA lookup (names only) */
     const coaByCode = new Map<string, string>(
-      ECUADOR_COA.map((a: any) => [a.code, a.name])
+      ECUADOR_COA.map((a: any) => [String(a.code), String(a.name)])
     );
 
-    /* 5️⃣ Build rows journal-first */
+    const allCodes = Object.keys(groupedEntries);
+
+    // LEAF = code that is NOT a prefix of any other code
+    const leafCodes = allCodes
+      .filter((code) => {
+        if (!code) return false;
+        const g = code.charAt(0);
+        if (!["1", "2", "3"].includes(g)) return false;
+        return !allCodes.some((other) => other !== code && other.startsWith(code));
+      })
+      .sort((a, b) => a.localeCompare(b, "es"));
+
+    // Map where ONLY leaves carry values; parents start at 0
     const map = new Map<string, Row>();
 
-    for (const code of bsCodes) {
-      const g = groupedEntries[code] || { debit: 0, credit: 0 };
+    for (const code of leafCodes) {
+      const group = code.charAt(0);
+      const g = groupedEntries[code];
+
+      const initialDebit = safe(g?.initialDebit);
+      const initialCredit = safe(g?.initialCredit);
+      const debit = safe(g?.debit);
+      const credit = safe(g?.credit);
+
+      let initialBalance = 0;
+      let balance = 0;
+
+      if (group === "1") {
+        // Activo
+        initialBalance = initialDebit - initialCredit;
+        balance = initialBalance + debit - credit;
+      } else {
+        // Pasivo & Patrimonio
+        initialBalance = initialCredit - initialDebit;
+        balance = initialBalance + credit - debit;
+      }
 
       map.set(code, {
         code,
         name: coaByCode.get(code) ?? "CUENTA NO DEFINIDA EN PUC",
-        initialBalance: initialByCode[code] || 0,
-        debit: g.debit,
-        credit: g.credit,
-        balance: 0,
+        initialBalance: round2(initialBalance),
+        debit: round2(debit),
+        credit: round2(credit),
+        balance: round2(balance),
         level: detectLevel(code),
-        parent: getParentCode(code),
       });
+
+      ensureParents(code, map, coaByCode);
     }
 
-    /* 6️⃣ Inject Resultado del Ejercicio */
-    map.set("3", {
-      code: "3",
-      name: "PATRIMONIO NETO",
-      initialBalance: 0,
-      debit: 0,
-      credit: 0,
-      balance: 0,
-      level: 1,
-      parent: null,
-    });
+    // Ensure group headers exist even if no leaf present
+    ensureParents("1", map, coaByCode);
+    ensureParents("2", map, coaByCode);
+    ensureParents("3", map, coaByCode);
 
-    map.set("307", {
-      code: "307",
-      name: "RESULTADO DEL EJERCICIO",
-      initialBalance: 0,
-      debit: 0,
-      credit: 0,
-      balance: 0,
-      level: 2,
-      parent: "3",
-    });
-
-    if (resultadoDelEjercicio > 0) {
-      map.set("30701", {
-        code: "30701",
-        name: "GANANCIA NETA DEL PERIODO",
+    // Inject 307 as a LEAF under group 3
+    if (!map.has("307")) {
+      map.set("307", {
+        code: "307",
+        name: "RESULTADO DEL EJERCICIO",
         initialBalance: 0,
-        debit: 0,
-        credit: resultadoDelEjercicio,
-        balance: 0,
-        level: 3,
-        parent: "307",
+        // Profit increases equity => credit; loss decreases equity => debit
+        debit: resultado < 0 ? round2(Math.abs(resultado)) : 0,
+        credit: resultado > 0 ? round2(resultado) : 0,
+        balance: round2(resultado),
+        level: detectLevel("307"),
       });
-    } else if (resultadoDelEjercicio < 0) {
-      map.set("30702", {
-        code: "30702",
-        name: "PÉRDIDA NETA DEL EJERCICIO",
-        initialBalance: 0,
-        debit: Math.abs(resultadoDelEjercicio),
-        credit: 0,
-        balance: 0,
-        level: 3,
-        parent: "307",
-      });
+      ensureParents("307", map, coaByCode);
     }
 
-    /* 7️⃣ Roll-up bottom-up */
-    const allCodes = Array.from(map.keys()).sort((a, b) => b.length - a.length);
-    for (const code of allCodes) {
+    // Roll up children into parents (children first)
+    const exists = (c: string) => map.has(c);
+    const codesByDepth = Array.from(map.keys()).sort((a, b) => b.length - a.length);
+
+    for (const code of codesByDepth) {
       const row = map.get(code)!;
-      if (!row.parent) continue;
+      const parentCode = findNearestExistingParent(code, exists);
+      if (!parentCode) continue;
 
-      const parent = map.get(row.parent);
-      if (!parent) continue;
+      const parent = map.get(parentCode)!;
 
-      parent.initialBalance += row.initialBalance;
-      parent.debit += row.debit;
-      parent.credit += row.credit;
-    }
+      parent.initialBalance = round2(parent.initialBalance + row.initialBalance);
+      parent.debit = round2(parent.debit + row.debit);
+      parent.credit = round2(parent.credit + row.credit);
+      parent.balance = round2(parent.balance + row.balance);
 
-    /* 8️⃣ Compute balances */
-    for (const row of map.values()) {
-      const group = row.code.charAt(0);
-      if (group === "1")
-        row.balance = row.initialBalance + row.debit - row.credit;
-      else
-        row.balance = row.initialBalance - row.debit + row.credit;
+      map.set(parentCode, parent);
     }
 
     return Array.from(map.values())
       .filter((r) => r.level <= level)
-      .sort((a, b) => a.code.localeCompare(b.code));
-  }, [groupedEntries, initialByCode, resultadoDelEjercicio, level]);
-
-  /* ------------------------------------------------------------------------ */
-  /* VISIBILITY                                                               */
-  /* ------------------------------------------------------------------------ */
-
-  const isVisible = (acc: Row) => {
-    if (!acc.parent) return true;
-    for (const code of collapsedCodes) {
-      if (acc.code.startsWith(code) && acc.code !== code) return false;
-    }
-    return true;
-  };
+      .sort((a, b) => a.code.localeCompare(b.code, "es"));
+  }, [groupedEntries, level, resultado]);
 
   /* ------------------------------------------------------------------------ */
   /* EXPORTS                                                                  */
@@ -283,7 +290,11 @@ export default function BalanceSheet({
 
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.text("Balance General", 14, 14);
+    doc.text(
+      `Balance General (${fromISO || "-"} → ${toISODate || "Hoy"})`,
+      14,
+      14
+    );
 
     autoTable(doc, {
       startY: 20,
@@ -291,10 +302,10 @@ export default function BalanceSheet({
       body: groupedAccounts.map((acc) => [
         acc.code,
         acc.name,
-        formatAmount(acc.initialBalance),
-        formatAmount(acc.debit),
-        formatAmount(acc.credit),
-        formatAmount(acc.balance),
+        acc.initialBalance.toFixed(2),
+        acc.debit.toFixed(2),
+        acc.credit.toFixed(2),
+        acc.balance.toFixed(2),
       ]),
     });
 
@@ -307,10 +318,10 @@ export default function BalanceSheet({
       data: groupedAccounts.map((acc) => [
         acc.code,
         acc.name.replace(/\u00a0/g, " "),
-        formatAmount(acc.initialBalance),
-        formatAmount(acc.debit),
-        formatAmount(acc.credit),
-        formatAmount(acc.balance),
+        acc.initialBalance.toFixed(2),
+        acc.debit.toFixed(2),
+        acc.credit.toFixed(2),
+        acc.balance.toFixed(2),
       ]),
     });
 
@@ -323,72 +334,80 @@ export default function BalanceSheet({
   };
 
   /* ------------------------------------------------------------------------ */
-  /* RENDER                                                                  */
+  /* RENDER                                                                   */
   /* ------------------------------------------------------------------------ */
 
   return (
     <div className="w-full">
-      <div className="flex flex-col lg:flex-row justify-between gap-3 mb-3">
-        <h1 className="text-lg font-bold text-blue-800">📘 Balance General</h1>
+      {showHeader && (
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-bold text-blue-800">
+            📘 Balance General
+          </h2>
 
-        <div className="flex gap-2 items-center">
-          <select
-            className="border rounded px-2 py-1 text-sm"
-            value={level}
-            onChange={(e) => setLevel(Number(e.target.value))}
-          >
-            {[1, 2, 3, 4, 5].map((l) => (
-              <option key={l} value={l}>
-                Nivel {l}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <label className="text-sm">
+              Nivel:
+              <select
+                className="ml-2 border rounded px-2 py-1"
+                value={level}
+                onChange={(e) => setLevel(Number(e.target.value))}
+              >
+                {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <button onClick={exportPDF} className="btn-primary">
-            📄 PDF
-          </button>
-          <button onClick={exportCSV} className="btn-success">
-            📊 CSV
-          </button>
+            <button
+              onClick={exportPDF}
+              className="px-3 py-1.5 bg-blue-700 text-white rounded">
+              Exportar PDF
+            </button>
+
+            <button
+              onClick={exportCSV}
+              className="px-3 py-1.5 bg-emerald-700 text-white rounded">
+              Exportar CSV
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full border text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              {COLUMNS.map((c) => (
-                <th key={c} className="px-3 py-2 text-left">
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {groupedAccounts.filter(isVisible).map((acc) => (
-              <tr key={acc.code} className="border-t">
-                <td className="px-3 py-1 font-semibold">{acc.code}</td>
-                <td className="px-3 py-1">
-                  {" ".repeat((acc.level - 1) * 2)}
-                  {acc.name}
-                </td>
-                <td className="px-3 py-1 text-right">
-                  {formatAmount(acc.initialBalance)}
-                </td>
-                <td className="px-3 py-1 text-right">
-                  {formatAmount(acc.debit)}
-                </td>
-                <td className="px-3 py-1 text-right">
-                  {formatAmount(acc.credit)}
-                </td>
-                <td className="px-3 py-1 text-right">
-                  {formatAmount(acc.balance)}
-                </td>
-              </tr>
+      <table className="min-w-full border text-sm">
+        <thead className="bg-gray-100">
+          <tr>
+            {COLUMNS.map((c) => (
+              <th key={c} className="px-3 py-2 text-left">
+                {c}
+              </th>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+
+        <tbody>
+          {groupedAccounts.map((acc) => (
+            <tr key={acc.code} className="border-t">
+              <td className="px-3 py-1 font-semibold">{acc.code}</td>
+              <td className="px-3 py-1">{acc.name}</td>
+              <td className="px-3 py-1 text-right">
+                {formatAmount(acc.initialBalance)}
+              </td>
+              <td className="px-3 py-1 text-right">
+                {formatAmount(acc.debit)}
+              </td>
+              <td className="px-3 py-1 text-right">
+                {formatAmount(acc.credit)}
+              </td>
+              <td className="px-3 py-1 text-right">
+                {formatAmount(acc.balance)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

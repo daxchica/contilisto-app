@@ -1,12 +1,11 @@
-import { JournalEntry } from "@/types/JournalEntry";
-import { getContextualAccountHint } from "./firestoreHintsService";
-
 // ============================================================================
 // extractInvoiceVisionService.ts — CONTILISTO (STABLE)
 // Frontend service calling Vision OCR Netlify Function
 // Goal: ensure PreviewModal ALWAYS receives >=2 non-zero lines and balanced.
 // No UI changes, only payload reliability.
 // ============================================================================
+
+import { getContextualAccountHint } from "./firestoreHintsService";
 
 type VisionEntry = {
   account_code?: string;
@@ -97,10 +96,10 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
   // ----------------------------
   if (data.invoiceType === "sale") {
     // Always ensure Receivable line exists
-    if (total > 0 && !hasAccountPrefix(data.entries, "130")) {
+    if (total > 0 && !hasAccountPrefix(data.entries, "1010301")) {
       data.entries.push({
-        account_code: "13010101",
-        account_name: "Clientes",
+        account_code: "101030101",
+        account_name: "Clientes Nacionales",
         debit: total,
         credit: 0,
         source: "normalized-sale",
@@ -119,9 +118,9 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     }
 
     // Ensure sales VAT (IVA débito) line exists if iva>0
-    if (iva > 0 && !hasAccountPrefix(data.entries, "213")) {
+    if (iva > 0 && !hasAccountPrefix(data.entries, "201020101")) {
       data.entries.push({
-        account_code: "213010101",
+        account_code: "201020101",
         account_name: "IVA débito en ventas",
         debit: 0,
         credit: iva,
@@ -135,7 +134,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
   // ----------------------------
   if (data.invoiceType === "expense") {
     // Always ensure Payable line exists
-    if (total > 0 && !hasAccountPrefix(data.entries, "201")) {
+    if (total > 0 && !hasAccountPrefix(data.entries, "20103")) {
       data.entries.push({
         account_code: "201030102",
         account_name: "Proveedores locales",
@@ -234,7 +233,8 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
 export async function extractInvoiceVision(
   base64: string,
   userRUC: string,
-  uid: string
+  uid: string,
+  entityId: string,
 ): Promise<ExtractedInvoiceResponse> {
   try {
     const res = await fetch("/.netlify/functions/extract-invoice-vision", {
@@ -281,22 +281,28 @@ export async function extractInvoiceVision(
     if (
       data.invoiceType === "expense" &&
       data.issuerRUC &&
-      data.concepto &&
-      Array.isArray(data.entries)
+      Array.isArray(data.entries) &&
+      uid
     ) {
       try {
-        const hint = await getContextualAccountHint(data.issuerRUC, data.concepto);
+        const hint = await getContextualAccountHint(
+          entityId,
+          uid, 
+          data.issuerRUC,
+          data.concepto
+        );
 
         if (hint) {
           data.entries = data.entries.map((e: VisionEntry) => {
             const debit = n(e.debit);
+            const code = String(e.account_code ?? "");
 
             // Never override IVA or Proveedores
             if (
               debit > 0 &&
-              e.account_code &&
-              !String(e.account_code).startsWith("133") && // IVA
-              !String(e.account_code).startsWith("201")    // Proveedores
+              code &&
+              !code.startsWith("133") && // IVA
+              !code.startsWith("20103")    // Proveedores
             ) {
               return {
                 ...e,

@@ -92,14 +92,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   );
 
   const handleSelectEntity = (ent: Entity) => {
-    setEntity({
-      id: ent.id,
-      ruc: ent.ruc,
-      name: ent.name,
-      type: ent.type,
-      uid: ent.uid ?? "",
-      createdAt: ent.createdAt ?? Date.now(),
-    });
+    setEntity(ent);   // ← PASS FULL ENTITY
 
     setOpen(false);
     closeDrawer();
@@ -271,12 +264,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
         <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
         <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
 
-        <LinkRow
+        {/*<LinkRow
           to="/facturacion"
           icon="🧾"
           label="Facturación Electrónica (SRI)"
           requiresEntity
-        />
+        />*/}
 
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Impuestos

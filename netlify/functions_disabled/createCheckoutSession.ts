@@ -2,9 +2,7 @@ import type { Handler } from "@netlify/functions";
 import Stripe from "stripe";
 import admin from "firebase-admin";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2025-11-17.clover",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 // Init Firebase Admin (Netlify Functions)
 if (!admin.apps.length) {
@@ -32,17 +30,17 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const { planKey, userId, email, successUrl, cancelUrl } = JSON.parse(event.body || "{}");
+    const { planKey, uid, email, successUrl, cancelUrl } = JSON.parse(event.body || "{}");
 
     const priceId = PRICE_MAP[planKey];
-    if (!userId || !email || !planKey) {
+    if (!uid || !email || !planKey) {
       return { statusCode: 400, body: JSON.stringify({ error: "Missing required fields" }) };
     }
     if (!priceId) {
       return { statusCode: 400, body: JSON.stringify({ error: "Plan is not payable or not configured" }) };
     }
 
-    const userRef = db.collection("users").doc(userId);
+    const userRef = db.collection("users").doc(uid);
     const userSnap = await userRef.get();
     if (!userSnap.exists) {
       return { statusCode: 404, body: JSON.stringify({ error: "User not found" }) };
@@ -55,7 +53,7 @@ export const handler: Handler = async (event) => {
     if (!customerId) {
       const customer = await stripe.customers.create({
         email,
-        metadata: { userId },
+        metadata: { uid },
       });
       customerId = customer.id;
       await userRef.set({ stripeCustomerId: customerId }, { merge: true });
@@ -69,7 +67,7 @@ export const handler: Handler = async (event) => {
       line_items: [{ price: priceId, quantity: 1 }],
       // optional: allow promo codes
       allow_promotion_codes: true,
-      metadata: { userId, planKey },
+      metadata: { uid, planKey },
       success_url: successUrl || `${frontendUrl}/dashboard?checkout=success`,
       cancel_url: cancelUrl || `${frontendUrl}/planes?checkout=canceled`,
     });

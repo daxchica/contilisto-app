@@ -8,7 +8,7 @@ import { ProcessedLog } from "../../types/ProcessedLog";
 
 interface Props {
   entityId: string;
-  userId: string;
+  userIdSafe: string;
   userRUC?: string;
   accounts: any[];
   logs: ProcessedLog[];
@@ -19,7 +19,7 @@ interface Props {
 
 export default function UploadButtonsAndLogs({
   entityId,
-  userId,
+  userIdSafe,
   userRUC,
   accounts,
   logs,
@@ -41,7 +41,7 @@ export default function UploadButtonsAndLogs({
       <div className="flex gap-3">
         <PDFUploader
           entityId={entityId}
-          userId={userId}
+          userIdSafe={userIdSafe}
           userRUC={userRUC}
           accounts={accounts}
           onUploadComplete={onUploadComplete}
@@ -74,7 +74,7 @@ export default function UploadButtonsAndLogs({
           onClose={() => setShowManualModal(false)}
           onAddEntries={onAddManualEntry}
           entityId={entityId}
-          userId={userId}
+          userIdSafe={userIdSafe}
           accounts={accounts}
         />
       )}

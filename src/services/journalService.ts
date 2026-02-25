@@ -8,9 +8,13 @@ import {
   collection,
   doc,
   getDocs,
+  orderBy,
   query,
   where,
   writeBatch,
+  limit,
+  serverTimestamp,
+  type QueryConstraint,
 } from "firebase/firestore";
 
 import type { JournalEntry } from "@/types/JournalEntry";
@@ -22,10 +26,92 @@ import {
   createBankMovement,
   linkJournalTransaction,
 } from "./bankMovementService";
+import { isCustomerReceivableAccount, isSupplierPayableAccount } from "./controlAccounts";
 
 /* =============================================================================
    HELPERS
 ============================================================================= */
+
+async function fetchInitialBalanceDate(entityId: string): Promise<string | null> {
+  if (!entityId) return null;
+
+  const q = query(
+    collection(db, "entities", entityId, "journalEntries"),
+    where("source", "==", "initial"),
+    orderBy("date", "asc"),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+
+  const first = snap.docs[0].data();
+  return typeof first.date === "string" ? first.date.slice(0, 10) : null;
+  
+}
+
+function toISODateOrNull(raw: string): string | null {
+  const s = (raw ?? "").trim();
+  if (!s) return null;
+
+  // If it's already ISO or ISO datetime
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+  // DD/MM/YYYY (or MM/DD/YYYY)
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const y = Number(m[3]);
+
+    // Ecuador default: DD/MM/YYYY
+    let day = a;
+    let month = b;
+
+    // If clearly MM/DD/YYYY (e.g., 13/02 impossible as month)
+    if (a <= 12 && b > 12) {
+      // swap
+      day = b;
+      month = a;
+    }
+
+    const dd = String(day).padStart(2, "0");
+    const mm = String(month).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
+
+  return null;
+}
+
+function assertNotBeforeInitialBalanceDate(
+  entries: JournalEntry[],
+  initialDateRaw: string
+) {
+  const initialISO = toISODateOrNull(initialDateRaw);
+
+  if (!initialISO) {
+    throw new Error(`Balance Inicial con fecha inválida: "${initialDateRaw}"`);
+  }
+
+  for (const e of entries) {
+    if (e.source === "initial") continue;
+
+    const entryISO = toISODateOrNull(String(e.date ?? ""));
+
+    if (!entryISO) {
+      throw new Error(
+        `Entrada sin fecha válida (date="${String(e.date ?? "")}") no se puede guardar.`
+      );
+    }
+
+    // Safe lexicographic compare (both ISO)
+    if (entryISO < initialISO) {
+      throw new Error(
+        `No se puede registrar asientos con fecha ${entryISO} antes del Balance Inicial (${initialISO}).`
+      );
+    }
+  }
+}
 
 /**
  * Removes undefined recursively without destroying Firestore special values
@@ -62,31 +148,10 @@ const n2 = (x: any) =>
    CONTROL ACCOUNT HELPERS (ROBUST)
 ============================================================================= */
 
-/**
- * Ecuador COA typical:
- * - 113... = Cuentas por Cobrar (Clientes)
- * - 114... = CxC relacionadas (optional)
- *
- * Payables:
- * - 201..., 211... (proveedores / obligaciones)
- */
-const RECEIVABLE_PREFIXES = ["1020901", "113", "1301"];
-const PAYABLE_PREFIXES = ["201", "211"];
-
-function isCustomerReceivableAccount(code?: string) {
-  const c = norm(code);
-  return RECEIVABLE_PREFIXES.some((p) => c.startsWith(p));
-}
-
-function isSupplierPayableAccount(code?: string) {
-  const c = norm(code);
-  return PAYABLE_PREFIXES.some((p) => c.startsWith(p));
-}
-
 function duplicateKey(e: JournalEntry) {
   // Include date to reduce accidental collisions when invoice number repeats.
   const d = (e as any).date ?? "";
-  return `${e.entityId}::${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}::${d}`;
+  return `${e.entityId}::${e.transactionId}::${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}::${d}`;
 }
 
 /** 
@@ -100,7 +165,7 @@ function resolveInvoiceNumber(e: JournalEntry) {
 
 function resolveDescription(e: JournalEntry): string {
   if (e.description?.trim()) return e.description.trim();
-  if (e.invoice_number) return `Factura ${e.invoice_number}`;
+  if (e.source === "initial") return "Balance inicial";
   return "Asiento contable";
 }
 
@@ -120,16 +185,24 @@ function getCustomerName(e: JournalEntry): string {
    FETCH
 ============================================================================= */
 
-export async function fetchJournalEntries(entityId: string) {
+export async function fetchJournalEntries(
+  entityId: string
+): Promise<JournalEntry[]> {
   if (!entityId) return [];
 
   const col = collection(db, "entities", entityId, "journalEntries");
 
   try {
-    const snap = await getDocs(col);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as JournalEntry) }));
+    // ✅ SINGLE orderBy → NO composite index required
+    const q = query(col, orderBy("date", "asc"));
+    const snap = await getDocs(q);
+
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...(d.data() as JournalEntry),
+    }));
   } catch (err) {
-    console.warn("fetchJournalEntries blocked:", err);
+    console.error("fetchJournalEntries failed:", err);
     return [];
   }
 }
@@ -172,7 +245,10 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
     grouped.get(e.transactionId)!.push(e);
   }
 
+  
+
   for (const [tx, group] of grouped) {
+    if (group.some((e: JournalEntry) => e.source === "initial")) continue;
     const control = group.find((e) => isSupplierPayableAccount(e.account_code));
     if (!control) continue;
 
@@ -207,7 +283,7 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
     await upsertPayable(entityId, {
       transactionId: tx,
       invoiceNumber: control.invoice_number.trim(),
-      issueDate: (control as any).date,
+      issueDate: control.date ?? new Date().toISOString().slice(0,10),
 
       supplierName,
       supplierRUC,
@@ -241,6 +317,11 @@ async function syncReceivablesFromJournal(
   }
 
   for (const [tx, group] of grouped) {
+
+    if (group.some((e: JournalEntry) => e.source === "initial")) {
+      continue;
+    }
+
     const control = group.find((e) => isCustomerReceivableAccount(e.account_code));
     if (!control) continue;
 
@@ -288,15 +369,60 @@ async function syncReceivablesFromJournal(
 /* =============================================================================
    SAVE JOURNAL
 ============================================================================= */
+async function invoiceAlreadyExists(
+  entityId: string,
+  issuerRUC: string,
+  invoiceNumber: string
+): Promise<boolean> {
+
+  const colRef = collection(db, "entities", entityId, "journalEntries");
+
+  const constraints: QueryConstraint[] = [
+    where("invoice_number", "==", invoiceNumber),
+    limit(1),
+  ];
+
+  // Only filter by issuerRUC if stored
+  if (issuerRUC) {
+    constraints.unshift(where("issuerRUC", "==", issuerRUC));
+  }
+
+  const q = query(colRef, ...constraints);
+  const snap = await getDocs(q);
+
+  return !snap.empty;
+}
+
+function validateBalancedTransaction(entries: JournalEntry[]) {
+  const totalDebit = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
+  const totalCredit = entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
+
+  if (Number(totalDebit.toFixed(2)) !== Number(totalCredit.toFixed(2))) {
+    throw new Error(
+      `Unbalanced transaction. Debit=${totalDebit} Credit=${totalCredit}`
+    );
+  }
+}
+
+function validateTransactionIntegrity(entries: JournalEntry[]) {
+  if (entries.length < 2) {
+    throw new Error("Transaction must contain at least 2 journal lines.");
+  }
+
+  const transactionIds = new Set(entries.map(e => e.transactionId));
+  if (transactionIds.size !== 1) {
+    throw new Error("All journal lines must share the same transactionId.");
+  }
+}
 
 export async function saveJournalEntries(
   entityId: string,
+  userIdSafe: string,
   entries: JournalEntry[],
-  userId: string
 ): Promise<JournalEntry[]> {
   if (!entityId) throw new Error("saveJournalEntries: entityId is required");
-  if (!userId) throw new Error("saveJournalEntries: userId (uid) is required");
-
+  if (!userIdSafe) throw new Error("saveJournalEntries: userIdSafe (uid) is required");
+  
   const col = collection(db, "entities", entityId, "journalEntries");
 
   const existing: Record<string, boolean> = {};
@@ -307,6 +433,40 @@ export async function saveJournalEntries(
     (e) => n2(e.debit) > 0 || n2(e.credit) > 0
   );
 
+  validateTransactionIntegrity(validEntries);
+  validateBalancedTransaction(validEntries);
+
+  const txIds = new Set(entries.map((e: JournalEntry) => e.transactionId));
+  if (txIds.size !== 1) {
+    throw new Error("Asientos de múltiples transacciones en un mismo guardado no permitido");
+  }
+  
+  if (validEntries.length > 0) {
+      const first = validEntries[0];
+
+      const issuerRUC = 
+        (first as any).issuerRUC ??
+        (first as any).supplier_ruc ??
+        (first as any).customer_ruc ??
+        "";
+      
+        const invoiceNumber = first.invoice_number ?? "";
+
+      if (issuerRUC && invoiceNumber) {
+        const exists = await invoiceAlreadyExists(
+          entityId,
+          issuerRUC,
+          invoiceNumber
+        );
+
+        if (exists) {
+          throw new Error(
+            `La factura ${invoiceNumber} ya fue registrada.`
+          );
+        }
+      }
+    }
+
   for (const e of validEntries) {
     // If caller didn't provide id, we still want deterministic write id for this entry.
     const autoRef = doc(col);
@@ -315,48 +475,102 @@ export async function saveJournalEntries(
     // IMPORTANT:
     // If transactionId is not provided, defaulting it per-row causes "split transactions".
     // We keep your previous behavior, but we at least ensure it exists.
-    const transactionId = e.transactionId ?? autoRef.id;
+    if (!e.transactionId) {
+      throw new Error("saveJournalEntries: transactionId is required");
+    }
+    const transactionId = e.transactionId;
+
+    // ----------------------------------------------------------------------
+    // 🔒 DUPLICATE INVOICE PROTECTION (RUN ONCE)
+    // ----------------------------------------------------------------------
+
+    if (!e.date) {
+        throw new Error("JournalEntry sin fecha contable (date)");
+      }
 
     const entry: JournalEntry = {
       ...e,
       id,
       entityId,
-      uid: userId,
+      uid: userIdSafe,
       transactionId,
 
+      debit: n2(e.debit),
+      credit: n2(e.credit),
+
+      account_code: String(e.account_code ?? "").trim(),
+      account_name: String(e.account_name ?? "").trim(),
+
       invoice_number: e.invoice_number ?? `MANUAL-${transactionId}`,
+
+      date: e.date,
       
       description: resolveDescription(e),
-      createdAt:
-        typeof (e as any).createdAt === "number" 
-          ? (e as any).createdAt 
-          : Date.now(),
+
+      source: e.source ?? "vision",
+
+      createdAt: e.createdAt ?? serverTimestamp(), 
+      updatedAt: serverTimestamp(),
     };
 
     // 🔒 HARD VALIDATION (before Firestore)
     if (!entry.uid) throw new Error(`JournalEntry ${id} missing uid`);
     if (!entry.entityId) throw new Error(`JournalEntry ${id} missing entityId`);
     if (!entry.transactionId) throw new Error(`JournalEntry ${id} missing transactionId`);
+    if (entry.source === "initial" && !entry.date) {
+      throw new Error("Initial Balance entries must have a fixed date");
+    }
 
     const key = duplicateKey(entry);
     if (existing[key]) continue;
 
-    batch.set(doc(col, id), stripUndefined(entry) as any);
+    console.log("ENTRY BEING WRITTEN:", entry);
+
+    const cleanEntry = stripUndefined(entry);
+
+    console.log("🔥 FIRESTORE WRITE ATTEMPT:", {
+      authUid: userIdSafe,
+      entryUid: cleanEntry.uid,
+      entityId,
+      entryEntityId: cleanEntry.entityId,
+      transactionId: cleanEntry.transactionId,
+      invoice_number: cleanEntry.invoice_number,
+      debit: cleanEntry.debit,
+      credit: cleanEntry.credit,
+    });
+
+    batch.set(doc(col, id), cleanEntry as any);
     saved.push(entry);
     existing[key] = true;
   }
 
-  if (saved.length) {
-    await batch.commit();
+  // 🔒 HARD ACCOUNTING RULE — BEFORE WRITE
+const initialDate = await fetchInitialBalanceDate(entityId);
+if (initialDate) {
+  assertNotBeforeInitialBalanceDate(saved, initialDate);
+}
 
-    // 🔁 Infer invoice type from control accounts
-    const hasPayable = saved.some((e) => isSupplierPayableAccount(e.account_code));
-    const hasReceivable = saved.some((e) => isCustomerReceivableAccount(e.account_code));
+const totalDebit = saved.reduce(
+  (s: number, e: JournalEntry) => s + (e.debit ?? 0),0);
+const totalCredit = saved.reduce(
+  (s: number, e: JournalEntry) => s + (e.credit ?? 0),0);
 
+// ✅ SAFE TO COMMIT
+if (saved.length) {
+  
+  await batch.commit();
+
+  const hasPayable = saved.some(
+    (e: JournalEntry) => isSupplierPayableAccount(e.account_code));
+  const hasReceivable = saved.some(
+    (e: JournalEntry) => isCustomerReceivableAccount(e.account_code));
+  const isInitialBalance = saved.some((e: JournalEntry) => e.source === "initial");
+
+  if (!isInitialBalance) {
     if (hasPayable) await syncPayablesFromJournal(entityId, saved);
     if (hasReceivable) await syncReceivablesFromJournal(entityId, saved);
   }
-
+}
   return saved;
 }
 
@@ -374,11 +588,11 @@ export async function createPayablePaymentJournalEntry(
   amount: number,
   paymentDate: string,
   bankAccount: { id: string; account_code: string; name?: string },
-  userId: string,
+  userIdSafe: string,
   options?: { bankMovementId?: string }
 ) {
   if (!entityId) throw new Error("entityId requerido");
-  if (!userId) throw new Error("userId requerido");
+  if (!userIdSafe) throw new Error("userIdSafe requerido");
 
   if (!payable.account_code) {
     throw new Error("Payable sin cuenta contable. Debe repararse.");
@@ -429,7 +643,7 @@ export async function createPayablePaymentJournalEntry(
     },
   ];
 
-  await saveJournalEntries(entityId, entries, userId);
+  await saveJournalEntries(entityId, userIdSafe, entries);
 
   const bankMovementId = await createBankMovement({
     entityId,
@@ -438,7 +652,7 @@ export async function createPayablePaymentJournalEntry(
     amount,
     type: "out",
     description,
-    createdBy: userId as any,
+    createdBy: userIdSafe as any,
   });
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
@@ -458,7 +672,6 @@ export async function createPayablePaymentJournalEntry(
 
 import type { Receivable } from "@/types/Receivable";
 import { applyReceivableCollection } from "./receivablesService";
-import { Metadata } from "pdfjs-dist/types/src/display/metadata";
 
 export async function createReceivableCollectionJournalEntry(
   entityId: string,
@@ -466,11 +679,11 @@ export async function createReceivableCollectionJournalEntry(
   amount: number,
   collectionDate: string,
   bankAccount: { id: string; account_code: string; name?: string },
-  userId: string,
+  userIdSafe: string,
   options?: { bankMovementId?: string }
 ) {
   if (!entityId) throw new Error("entityId requerido");
-  if (!userId) throw new Error("userId requerido");
+  if (!userIdSafe) throw new Error("userIdSafe requerido");
 
   if (!receivable.account_code) {
     throw new Error("Receivable sin cuenta contable. Debe repararse.");
@@ -521,7 +734,7 @@ export async function createReceivableCollectionJournalEntry(
     },
   ];
 
-  await saveJournalEntries(entityId, entries, userId);
+  await saveJournalEntries(entityId, userIdSafe, entries);
 
   const bankMovementId = await createBankMovement({
     entityId,
@@ -530,7 +743,7 @@ export async function createReceivableCollectionJournalEntry(
     amount,
     type: "in",
     description,
-    createdBy: userId as any,
+    createdBy: userIdSafe as any,
   });
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
@@ -579,7 +792,7 @@ export async function annulInvoiceByTransaction(
   const arSnap = await getDocs(arQuery);
 
   // Before deleting AR
-  if (arSnap.docs.some(d => Number(d.data().paid) > 0)) {
+  if (arSnap.docs.some(d => Number(d.data().paid ?? 0) > 0)) {
     throw new Error("No se puede anular una factura con cobros registrados");
   }
 
@@ -596,7 +809,7 @@ export async function annulInvoiceByTransaction(
   const apSnap = await getDocs(apQuery);
 
   // Before deleting AP
-  if (apSnap.docs.some(d => Number(d.data().paid) > 0)) {
+  if (apSnap.docs.some(d => Number(d.data().paid ?? 0) > 0)) {
     throw new Error("No se puede anular una factura con pagos registrados");
   }
 

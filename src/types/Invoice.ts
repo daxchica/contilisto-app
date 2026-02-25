@@ -113,7 +113,7 @@ export interface Invoice {
   id?: string;
 
   entityId: string;
-  userId: string;
+  userIdSafe: string;
 
   type: InvoiceType;
   status: InvoiceStatus;

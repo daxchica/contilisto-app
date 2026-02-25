@@ -2,10 +2,14 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { Entity, EntityType } from "@/types/Entity"
+import type { Entity, EntityType } from "@/types/Entity";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
-import { fetchEntities, createEntity, deleteEntity } from "@/services/entityService";
+import {
+  fetchEntities,
+  createEntity,
+  deleteEntity,
+} from "@/services/entityService";
 
 import AddEntityModal from "@/components/modals/AddEntityModal";
 import EditEntityModal from "@/components/entity/EditEntityModal";
@@ -14,40 +18,88 @@ type CreateEntityPayload = {
   ruc: string;
   name: string;
   entityType: EntityType;
-}
+};
 
 export default function CompaniesPage() {
   const { user, loading } = useAuth();
   const { selectedEntity, setEntity } = useSelectedEntity();
 
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [loadingEntities, setLoadingEntities] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
+
   const navigate = useNavigate();
 
-  // Load entities
+  /* -------------------------------------------------------------------------- */
+  /* LOAD ENTITIES                                                              */
+  /* -------------------------------------------------------------------------- */
+
   useEffect(() => {
     if (loading) return;
-    if (!user?.uid) return;
+    if (!user) {
+      setLoadingEntities(false);
+      return;
+    }
 
     const load = async () => {
-    
       try {
-        const data = await fetchEntities(user.uid);
+        setLoadingEntities(true);
+        const data = await fetchEntities(); // 🔥 service handles uid internally
         setEntities(data);
       } catch (e) {
         console.error("FETCH ENTITIES ERROR", e);
         alert("No se pudo cargar empresas. Revisa permisos en consola.");
+      } finally {
+        setLoadingEntities(false);
       }
     };
+
     load();
-  }, [loading, user?.uid]);
+  }, [loading, user]);
 
-  console.log("AUTH LOADING:", loading);
-  console.log("AUTH USER UID:", user?.uid);
-  console.log("ENTITIES:", entities);
+  /* -------------------------------------------------------------------------- */
+  /* LOADING STATE                                                              */
+  /* -------------------------------------------------------------------------- */
 
-  if (loading) return null;
+  if (loading || loadingEntities) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <p className="text-gray-500">Cargando empresas...</p>
+      </div>
+    );
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* DELETE ENTITY                                                              */
+  /* -------------------------------------------------------------------------- */
+
+  const handleDelete = async (entity: Entity) => {
+    const confirmed = window.confirm(
+      `¿Eliminar la empresa "${entity.name}"?\n\n⚠️ Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteEntity(entity.id!);
+
+      const refreshed = await fetchEntities();
+      setEntities(refreshed);
+
+      if (selectedEntity?.id === entity.id) {
+        setEntity(null);
+      }
+
+      alert("✔ Empresa eliminada correctamente.");
+    } catch (err) {
+      console.error(err);
+      alert("❌ No se pudo eliminar la empresa.");
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* RENDER                                                                     */
+  /* -------------------------------------------------------------------------- */
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -62,7 +114,6 @@ export default function CompaniesPage() {
         ➕ Agregar Empresa
       </button>
 
-      {/* Table */}
       <table className="w-full border rounded shadow bg-white">
         <thead className="bg-gray-200 text-gray-700">
           <tr>
@@ -73,6 +124,7 @@ export default function CompaniesPage() {
             <th className="px-3 py-2 text-right">Acciones</th>
           </tr>
         </thead>
+
         <tbody>
           {entities.map((entity) => (
             <tr
@@ -88,6 +140,7 @@ export default function CompaniesPage() {
               <td className="px-4 py-2 text-sm text-gray-700">
                 {entity.email || "-"}
               </td>
+
               <td className="px-3 py-2 text-right space-x-3">
                 <button
                   onClick={(ev) => {
@@ -100,31 +153,9 @@ export default function CompaniesPage() {
                 </button>
 
                 <button
-                  onClick={async (ev) => {
+                  onClick={(ev) => {
                     ev.stopPropagation();
-
-                    const confirmed = window.confirm(
-                      `¿Eliminar la empresa "${entity.name}"?\n\n⚠️ Esta acción no se puede deshacer.`
-                    );
-                    if (!confirmed) return;
-
-                    try {
-                      await deleteEntity(entity.id!);
-
-                      // Refresh list
-                      const refreshed = await fetchEntities(user!.uid);
-                      setEntities(refreshed);
-
-                      // If deleted entity was selected → clear it
-                      if (selectedEntity?.id === entity.id) {
-                        setEntity(null);
-                      }
-
-                      alert("✔ Empresa eliminada correctamente.");
-                    } catch (err) {
-                      console.error(err);
-                      alert("❌ No se pudo eliminar la empresa.");
-                    }
+                    handleDelete(entity);
                   }}
                   className="text-red-600 hover:underline text-sm"
                 >
@@ -133,28 +164,36 @@ export default function CompaniesPage() {
               </td>
             </tr>
           ))}
+
+          {entities.length === 0 && (
+            <tr>
+              <td colSpan={5} className="text-center py-6 text-gray-500">
+                No tienes empresas registradas.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
 
       {showAddModal && (
         <AddEntityModal
-          isOpen={true}
+          isOpen
           onClose={() => setShowAddModal(false)}
-          onCreate={async ({ ruc, name, entityType }: CreateEntityPayload) => {
-            if (!user?.uid) return;
-
+          onCreate={async ({
+            ruc,
+            name,
+            entityType,
+          }: CreateEntityPayload) => {
             const newEntityId = await createEntity({
               ruc: ruc.trim(),
               name: name.trim(),
               type: entityType,
             });
 
-            // Refresh table
-            const data = await fetchEntities(user.uid);
+            const data = await fetchEntities();
             setEntities(data);
 
-            // Auto-select just created company
-            const created = data.find(e => e.id === newEntityId);
+            const created = data.find((e) => e.id === newEntityId);
             if (created) {
               setEntity(created);
               navigate("/dashboard");
@@ -166,12 +205,12 @@ export default function CompaniesPage() {
         />
       )}
 
-      {editingEntity && user?.uid && (
+      {editingEntity && (
         <EditEntityModal
           entity={editingEntity}
           onClose={() => setEditingEntity(null)}
           onSaved={async () => {
-            const refreshed = await fetchEntities(user.uid);
+            const refreshed = await fetchEntities();
             setEntities(refreshed);
             setEditingEntity(null);
           }}

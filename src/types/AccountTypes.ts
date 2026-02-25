@@ -1,33 +1,87 @@
 // src/types/AccountTypes.ts
 
-export interface Account {
+export type Nature = "DEBIT" | "CREDIT";
+export type TipoCuenta = "activo" | "pasivo" | "patrimonio";
+
+/* -------------------------------------------------------------------------- */
+/* RAW STRUCTURAL ACCOUNT (no intelligence yet)                               */
+/* -------------------------------------------------------------------------- */
+
+export interface RawAccount {
   code: string;
   name: string;
-  level: number;
+
+  parentCode?: string | null;
+
+  // optional authored metadata (safe to include in RAW_COA)
+  level?: number;
+  postable?: boolean;
+
+  nature?: Nature;
+  taxType?: string;
+  category?: string;
+
+  rate?: number;
+  percentage?: number;
+  isDeductible?: boolean;
+
   sign?: "positive" | "negative";
   isReceivable?: boolean;
   isPayable?: boolean;
   requiresThirdParty?: boolean;
+  isBank?: boolean;
 }
 
-/** Row stored in Firestore for user-defined accounts */
+/* -------------------------------------------------------------------------- */
+/* NORMALIZED ACCOUNT (Runtime usage)                                                        */
+/* -------------------------------------------------------------------------- */
+
+export interface Account {
+  code: string;
+  name: string;
+  level: number;
+
+  parentCode?: string | null;
+
+  // Accounting semantics
+  nature?: Nature;
+  taxType?: string;
+  category?: string;
+
+  rate?: number;
+  percentage?: number;
+  isDeductible?: boolean;
+
+  // Existing business flags
+  sign?: "positive" | "negative";
+  isReceivable?: boolean;
+  isPayable?: boolean;
+  requiresThirdParty?: boolean;
+  isBank?: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* CUSTOM ACCOUNT (Firestore)                                                 */
+/* -------------------------------------------------------------------------- */
+
 export interface CustomAccount extends Account {
-  /** The parent account code this subaccount belongs to */
   parentCode: string;
-  /** Redundant for rules/queries */
   entityId: string;
-  /** Optional: who created it */
-  userId?: string;
-  createdAt?: number;
+  uid: string;
+  createdAt: number;
+  
+  percentCode?: string;
 }
 
-export type TipoCuenta = "activo" | "pasivo" | "patrimonio";
+/* -------------------------------------------------------------------------- */
+/* ACCOUNT WITH BALANCE (Financial Reports)                                   */
+/* -------------------------------------------------------------------------- */
 
 export interface AccountWithBalance extends Account {
   debit: number;
   credit: number;
   balance: number;
+  
   initialBalance?: number;
-  parentCode?: string;
   children?: AccountWithBalance[];
 }

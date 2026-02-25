@@ -11,7 +11,7 @@ export interface TextBlock {
 export interface JournalEntry {
   id?: string;
   entityId?: string;
-  userId?: string;
+  uid: string;
   transactionId?: string;
 
   date: string;

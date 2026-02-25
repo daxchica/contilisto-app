@@ -11,8 +11,10 @@ import { canonicalPair, normalizeEntry } from "../../utils/accountPUCMap";
 
 interface Props {
   entityId: string;
-  userId: string;
+  userIdSafe: string;
   accounts: Account[];
+  leafAccounts: Account[];
+  leafCodeSet: Set<string>;
   onClose: () => void;
   onAddEntries: (entries: JournalEntry[]) => Promise<void>;
 }
@@ -28,7 +30,7 @@ type Row = Omit<JournalEntry, "thirdParty" | "documentRef"> & {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 /** Crea una fila vacía con defaults seguros (sin undefined para Firestore) */
-function createEmptyRow(entityId: string, userId: string): Row {
+function createEmptyRow(entityId: string, userIdSafe: string): Row {
   return {
     id: uuidv4(),
     account_code: "",
@@ -37,7 +39,7 @@ function createEmptyRow(entityId: string, userId: string): Row {
     credit: 0,
     description: "",
     entityId,
-    userId,
+    userIdSafe,
     date: todayISO(),
     source: "manual",
     isManual: true,
@@ -53,14 +55,16 @@ function createEmptyRow(entityId: string, userId: string): Row {
  */
 export default function ManualEntryModal({
   entityId,
-  userId,
+  userIdSafe,
   accounts,
+  leafAccounts,
+  leafCodeSet,
   onClose,
   onAddEntries,
 }: Props) {
   const [rows, setRows] = useState<Row[]>([
-    createEmptyRow(entityId, userId),
-    createEmptyRow(entityId, userId),
+    createEmptyRow(entityId, userIdSafe),
+    createEmptyRow(entityId, userIdSafe),
   ]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,9 +76,9 @@ export default function ManualEntryModal({
 
   const accountsByCode = useMemo(() => {
     const m = new Map<string, Account>();
-    accounts.forEach((a) => m.set(a.code, a));
+    leafAccounts.forEach((a) => m.set(a.code, a));
     return m;
-  }, [accounts]);
+  }, [leafAccounts]);
 
 
   // Totales
@@ -106,8 +110,20 @@ export default function ManualEntryModal({
   };
 
   // Account selection
-  const applyAccount = (idx: number, acc: { code: string; name: string } | null) => {
+  const applyAccount = (
+    idx: number, 
+    acc: { code: string; name: string } | null
+  ) => {
     if (!acc) return;
+
+    if (!leafCodeSet.has(acc.code)) {
+      alert(
+        "⚠️ Solo se permiten subcuentas finales.\n" +
+        "Crea primero la subcuenta en el Plan de Cuentas."
+      );
+      return;
+    }
+  
     const canon = canonicalPair(acc);
     patchRow(idx, {
       account_code: canon.code,
@@ -117,7 +133,7 @@ export default function ManualEntryModal({
 
   // Rows
   const addRow = () => 
-    setRows((prev) => [...prev, createEmptyRow(entityId, userId)]);
+    setRows((prev) => [...prev, createEmptyRow(entityId, userIdSafe)]);
   
   const duplicateRow = () => {
     if (selectedIdx == null) return;
@@ -138,18 +154,35 @@ export default function ManualEntryModal({
   const handleSave = async () => {
     if (!isBalanced || isSaving) return;
     setIsSaving(true);
+        const invalidRows = rows.filter(
+      r => !r.account_code || !leafCodeSet.has(r.account_code)
+    );
+
+    if (invalidRows.length > 0) {
+      alert(
+        "⚠️ El asiento contiene cuentas invalidas.\n\n" +
+        "- Todas las lineas deben tener una subcuenta final.\n" +
+        "- Las cuentas estructurales no son postables."
+      );
+      
+      setIsSaving(false);
+      return;
+    }
+
     try {
       // Propagar fecha/descrpción de la primera fila a todas
       const date = rows[0]?.date || todayISO();
       const description = rows[0]?.description || "";
+      const txId = crypto.randomUUID();
 
       const cleaned: JournalEntry[] = rows.map((r) => ({
         ...r,
+        transactionId: txId,
         thirdParty: r.thirdParty ?? undefined,
         documentRef: r.documentRef ?? undefined,
         id: r.id || uuidv4(),
         entityId,
-        userId,
+        uid: userIdSafe,
         date,
         description,
         source: "manual",
@@ -162,7 +195,6 @@ export default function ManualEntryModal({
       }));
 
       console.log("✍️ Guardando asientos manuales:", cleaned.length);
-      await saveJournalEntries(entityId, cleaned, userId);
       await onAddEntries(cleaned);
       onClose();
     } catch (err) {
@@ -318,7 +350,7 @@ export default function ManualEntryModal({
                 {rows.map((r, idx) => {
                   const selected = selectedIdx === idx;
                   const codeValue = r.account_code || "";
-                  const accData = accounts.find((a) => a.code === codeValue);
+                  const accountSelected = !!r.account_code;
 
                   return (
                     <tr
@@ -326,22 +358,21 @@ export default function ManualEntryModal({
                       className={`border-t ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`}
                       onClick={() => setSelectedIdx(idx)}
                     >
+
                       {/* Código */}
-                      <td className="border p-2">
+                      <td className="border p-2 w-[140px]">
                         <select
-                          className="w-full rounded border px-2 py-2"
+                          className="w-full rounded border px-2 py-2 font-mono"
                           value={codeValue}
-                          onChange={(e) =>
-                            applyAccount(idx, {
-                              code: e.target.value,
-                              name: accData?.name || "",
-                            })
-                          }
+                          onChange={(e) => {
+                            const acc = leafAccounts.find(a => a.code === e.target.value);
+                            if (acc) applyAccount(idx, acc);
+                          }}
                           disabled={isSaving}
                         >
-                          <option value="">-- Seleccionar --</option>
-                          {accounts.map((a) => (
-                            <option key={a.code} value={a.code} disabled={a.code.length < 7}>
+                          <option value="">— Seleccionar —</option>
+                          {leafAccounts.map((a) => (
+                            <option key={a.code} value={a.code}>
                               {a.code}
                             </option>
                           ))}
@@ -351,8 +382,12 @@ export default function ManualEntryModal({
                       {/* Cuenta (AccountPicker) */}
                       <td className="border p-2 w-[420px]">
                         <AccountPicker
-                          accounts={accounts.filter((a) => a.code.length >= 7)}
-                          value={codeValue ? { code: codeValue, name: r.account_name } : null}
+                          accounts={leafAccounts}
+                          value={
+                            r.account_code
+                              ? { code: r.account_code, name: r.account_name } 
+                              : null
+                          }
                           onChange={(acc) => applyAccount(idx, acc)}
                           placeholder="Buscar cuenta..."
                           displayMode="name"
@@ -408,7 +443,7 @@ export default function ManualEntryModal({
                           }
                         }}
                         data-debit={idx}
-                        disabled={isSaving}
+                        disabled={isSaving || !accountSelected || (r.credit ?? 0) > 0}
                         />
                       </td>
 
@@ -470,7 +505,7 @@ export default function ManualEntryModal({
                             }
                           }}
                           data-credit={idx}
-                          disabled={isSaving}
+                          disabled={isSaving || !accountSelected || (r.debit ?? 0) > 0}
                       />
                       </td>
                       {/* Eliminar */}

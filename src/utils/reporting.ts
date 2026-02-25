@@ -31,6 +31,16 @@ function isJournalEntry(entry: any): entry is JournalEntry {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Shared aggregate type                                                       */
+/* -------------------------------------------------------------------------- */
+
+type ARAPAggregate = {
+  initialBalance: number;
+  debit: number;
+  credit: number;
+  balance: number;
+};
 
 /* -------------------------------------------------------------------------- */
 /* Accounts Receivable                                                         */
@@ -50,8 +60,7 @@ export function getAccountsReceivable(journalEntries: any[]) {
         {
           customerName: string;
           customerRUC: string;
-          balance: number;
-        }
+        } & ARAPAggregate
       >
     >((acc, entry) => {
       const debit = n2(entry.debit);
@@ -73,11 +82,22 @@ export function getAccountsReceivable(journalEntries: any[]) {
         acc[key] = {
           customerName,
           customerRUC,
+          initialBalance: 0,
+          debit: 0,
+          credit: 0,
           balance: 0,
         };
       }
 
-      acc[key].balance += debit - credit;
+      if (entry.source === "initial") {
+        acc[key].initialBalance += debit - credit;
+      } else {
+        acc[key].debit += debit;
+        acc[key].credit += credit;
+      }
+
+      acc[key].balance =
+        acc[key].initialBalance + acc[key].debit - acc[key].credit;
 
       return acc;
     }, {});
@@ -99,8 +119,7 @@ export function getAccountsPayable(journalEntries: any[]) {
         {
           supplierName: string;
           supplierRUC: string;
-          balance: number;
-        }
+        } & ARAPAggregate
       >
     >((acc, entry) => {
       const debit = n2(entry.debit);
@@ -122,11 +141,25 @@ export function getAccountsPayable(journalEntries: any[]) {
         acc[key] = {
           supplierName,
           supplierRUC,
+          initialBalance: 0,
+          debit: 0,
+          credit: 0,
           balance: 0,
         };
       }
 
-      acc[supplierName].balance += credit - debit;
+      if (entry.source === "initial") {
+        acc[key].initialBalance += debit - credit;
+      } else {
+        acc[key].debit += debit;
+        acc[key].credit += credit;
+      }
+
+      // PASIVO formula
+      acc[key].balance =
+        acc[key].initialBalance -
+        acc[key].debit +
+        acc[key].credit;
 
       return acc;
     }, {});

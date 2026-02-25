@@ -34,6 +34,7 @@ import {
 } from "./journalService";
 
 import { deleteBankMovementsByJournalTransactionId } from "./bankMovementService";
+import { RECEIVABLE_PREFIXES, isCustomerReceivableAccount } from "./controlAccounts";
 
 /* ============================================================================
  * HELPERS
@@ -53,7 +54,6 @@ const CONSUMIDOR_FINAL_NAME = "CONSUMIDOR FINAL";
  * - 113... = Cuentas por Cobrar
  * - 114... = CxC relacionadas (optional)
  */
-const RECEIVABLE_PREFIXES = ["1020901", "113", "1301"];
 
 function extractCustomerNameFromDescription(desc?: string): string | null {
   if (!desc) return null;
@@ -77,18 +77,15 @@ function normalizeCustomerName(name: string) {
  * Rule: Receivable control lives on DEBIT side for customer receivable accounts.
  */
 function findReceivableControlLine(entries: JournalEntry[]) {
-  return entries.find(
-    (e) =>
-      RECEIVABLE_PREFIXES.some((p) => normAcc(e.account_code).startsWith(p)) &&
-      n2(e.debit) > 0
-  );
+  return entries.find((e) =>
+      isCustomerReceivableAccount(e.account_code) && n2(e.debit) > 0);
 }
 
 function assertReceivableAccount(account_code?: string) {
   const c = normAcc(account_code);
   if (!c) throw new Error("Receivable requiere cuenta contable");
 
-  if (!RECEIVABLE_PREFIXES.some((p) => c.startsWith(p))) {
+  if (!isCustomerReceivableAccount(c)) {
     throw new Error(`Cuenta inválida para CxC: ${account_code}`);
   }
 }
@@ -461,12 +458,12 @@ export async function updateReceivableTerms(
 export async function annulReceivableInvoice(
   entityId: string,
   receivableId: string,
-  userId: string,
+  userIdSafe: string,
   reason = "Anulación de factura"
 ) {
   if (!entityId) throw new Error("entityId requerido");
   if (!receivableId) throw new Error("receivableId requerido");
-  if (!userId) throw new Error("userId requerido");
+  if (!userIdSafe) throw new Error("userIdSafe requerido");
 
   const ref = doc(db, "entities", entityId, "receivables", receivableId);
   const snap = await getDoc(ref);
@@ -509,14 +506,14 @@ export async function annulReceivableInvoice(
     source: "manual_journal" as any,
   }));
 
-  await saveJournalEntries(entityId, reversal, userId);
+  await saveJournalEntries(entityId, userIdSafe, reversal);
 
   await updateDoc(ref, {
     status: "annulled" as any,
     balance: 0,
     updatedAt: serverTimestamp(),
     annulledAt: serverTimestamp() as any,
-    annulledBy: userId,
+    annulledBy: userIdSafe,
     annulmentTransactionId: reversalTx,
     annulmentReason: reason,
   });

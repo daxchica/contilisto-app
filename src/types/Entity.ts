@@ -10,8 +10,16 @@ export type EntityType =
   | "farmacia"
   | "otro";
 
+export interface EntityMember {
+  uid: string;
+  role: "owner" | "accountant";
+  invitedBy: string;
+  createdAt: number;
+}
+
 export interface Entity {
   id?: string;            // Firestore document ID
+
   uid: string;            // User ID (dueno de la entidad)
   
   ruc: string;            // RUC de la empresa
@@ -29,5 +37,9 @@ export interface Entity {
 
   createdAt: number;      // timestamp en milisegundos
   updatedAt?: number;
+
+  members: {
+    [uid: string]: EntityMember;
+  }
 }
 

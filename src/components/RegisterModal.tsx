@@ -1,9 +1,9 @@
 // src/components/RegisterModal.tsx
 import { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase-config";
+import { auth } from "@/firebase-config";
 import { useNavigate } from "react-router-dom";
-import Modal from "./Modal";
+import Modal from "@/components/ui/Modal";
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -32,8 +32,10 @@ export default function RegisterModal({ isOpen, onClose }: RegisterModalProps) {
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
+    <Modal title="Register" onClose={onClose}>
       <h2 className="text-xl font-semibold mb-4">Register</h2>
       {error && <p className="text-red-500 mb-2">{error}</p>}
       {success && <p className="text-green-600 mb-2">{success}</p>}

@@ -9,20 +9,20 @@ import {
 
 import type { BankAccount } from "../types/bankTypes";
 
-export function useBankAccounts(entityId: string, userId: string) {
+export function useBankAccounts(entityId: string, userIdSafe: string) {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   /* ===================== LOAD ACCOUNTS ===================== */
   useEffect(() => {
-    if (!entityId || !userId) return;
+    if (!entityId || !userIdSafe) return;
 
     const load = async () => {
       setLoading(true);
       try {
-        // ✔ Firma correcta: (userId, entityId)
-        const data = await fetchBankAccounts(userId, entityId);
+        // ✔ Firma correcta: (userIdSafe, entityId)
+        const data = await fetchBankAccounts(userIdSafe, entityId);
         setBankAccounts(data ?? []);
       } catch (err) {
         console.error("❌ Error al cargar cuentas bancarias:", err);
@@ -33,21 +33,21 @@ export function useBankAccounts(entityId: string, userId: string) {
     };
 
     load();
-  }, [entityId, userId]);
+  }, [entityId, userIdSafe]);
 
   /* ===================== CREATE ACCOUNT ===================== */
   const addBank = async (name: string) => {
-    if (!entityId || !userId) return;
+    if (!entityId || !userIdSafe) return;
 
     try {
       // ✔ Firma correcta: un solo objeto
       await createBankAccount({
         entityId,
         name,
-        userId,
+        userIdSafe,
       });
 
-      const updated = await fetchBankAccounts(userId, entityId);
+      const updated = await fetchBankAccounts(userIdSafe, entityId);
       setBankAccounts(updated ?? []);
     } catch (err) {
       console.error("❌ Error al crear cuenta bancaria:", err);

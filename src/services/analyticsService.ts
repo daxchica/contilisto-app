@@ -9,12 +9,12 @@ import type { JournalEntry } from "../types/JournalEntry";
  * Agrupa por account_code y devuelve los más frecuentes.
  */
 export async function getTopUsedAccounts(
-  userId: string,
+  userIdSafe: string,
   entityId: string,
   limit = 5
 ): Promise<string[]> {
   const entriesRef = collection(db, "journalEntries");
-  const q = query(entriesRef, where("userId", "==", userId), where("entityId", "==", entityId));
+  const q = query(entriesRef, where("userIdSafe", "==", userIdSafe), where("entityId", "==", entityId));
   const snapshot = await getDocs(q);
 
   const accountUsage: Record<string, number> = {};
