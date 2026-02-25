@@ -1,5 +1,5 @@
 // ============================================================================
-// src/services/cashFlowService.ts
+// src/services/cashFlowForecastServices.ts
 // CONTILISTO — CASH FLOW QUERY SERVICE
 // Supports AR + AP installments (historic + future)
 // ============================================================================
