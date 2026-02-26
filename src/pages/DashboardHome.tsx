@@ -170,25 +170,19 @@ const DashboardHome: React.FC = () => {
    * ACCOUNTING KPIs
    * ======================= */
 
-  const totalIncome = useMemo(
-    () =>
-      entries
-        .filter((e) => startsWithSafe(e.account_code, "4"))
-        .reduce((sum, e) => sum + (e.credit ?? 0), 0),
-    [entries]
-  );
+  const totalIncome = useMemo(() => {
+    return entries
+      .filter((e) => startsWithSafe(e.account_code, "4"))
+      .reduce((sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)), 0);
+  }, [entries]);
 
-  const totalExpenses = useMemo(
-    () =>
-      entries
-        .filter(
-          (e) =>
-            startsWithSafe(e.account_code, "5") ||
-            startsWithSafe(e.account_code, "6")
-        )
-        .reduce((sum, e) => sum + (e.debit ?? 0), 0),
-    [entries]
-  );
+  const totalExpenses = useMemo(() => {
+    return entries
+      .filter(
+        (e) => startsWithSafe(e.account_code, "5") || startsWithSafe(e.account_code, "6")
+      )
+      .reduce((sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)), 0);
+  }, [entries]);
 
   const profit = totalIncome - totalExpenses;
 
@@ -196,22 +190,19 @@ const DashboardHome: React.FC = () => {
    * AR / AP (PROJECTED)
    * ======================= */
 
+  const AR_CODE = "101030101"; // Clientes nacionales
+  const AP_CODE = "201030102"; // Proveedores locales (your expense AP control)
+
   const accountsReceivable = useMemo(() => {
   return entries
-    .filter(e => startsWithSafe(e.account_code, "130"))
-    .reduce(
-      (sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)),
-      0
-    );
+    .filter((e) => e.account_code === AR_CODE)
+    .reduce((sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)), 0);
 }, [entries]);
 
   const accountsPayable = useMemo(() => {
   return entries
-    .filter(e => startsWithSafe(e.account_code, "20103"))
-    .reduce(
-      (sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)),
-      0
-    );
+    .filter((e) => e.account_code === AP_CODE)
+    .reduce((sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)), 0);
 }, [entries]);
 
   /* =======================
@@ -302,7 +293,7 @@ const DashboardHome: React.FC = () => {
         <ErrorBoundary>
           <CashFlowChart 
             data={selectedEntity?.id ? cashFlowSeries : []} 
-            loading={cashFlowLoading || !selectedEntity?.id}
+            loading={isCashFlowLoading || !selectedEntity?.id}
             title={
               selectedEntity?.id
                 ? "Flujo de Caja - Real vs Proyectado (ultimos 30 dias)"
