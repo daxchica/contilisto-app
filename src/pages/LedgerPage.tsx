@@ -12,7 +12,9 @@ import { Link } from "react-router-dom";
 import { fetchJournalEntries } from "@/services/journalService";
 
 function formatDate(dateString: string): string {
+  if (!dateString) return "-";
   const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -228,16 +230,31 @@ export default function LedgerPage() {
           .sort(([codeA], [codeB]) => codeA.localeCompare(codeB))
           .map(([code, accountEntries]) => {
             const nombreCuenta = accountEntries[0]?.account_name || "";
-            const totalDebits = accountEntries.reduce((s, e) => s + (e.debit || 0), 0);
-            const totalCredits = accountEntries.reduce((s, e) => s + (e.credit || 0), 0);
+            const totalDebits = accountEntries.reduce((s, e) => s + Number(e.debit || 0), 0);
+            const totalCredits = accountEntries.reduce((s, e) => s + Number(e.credit || 0), 0);
             const saldoFinal = totalDebits - totalCredits;
 
             const exportRows = accountEntries.map((e) => ({
               date: e.date,
-              description: e.description ?? "",
+              description: buildLedgerDescription(e),
               debit: e.debit,
               credit: e.credit,
             }));
+
+            function buildLedgerDescription(e: JournalEntry): string {
+              const invoice = e.invoice_number?.trim();
+              const supplier = (e as any).supplier_name?.trim();
+              const customer = (e as any).customer_name?.trim();
+
+              if (invoice) {
+                const party = supplier || customer;
+                return party
+                  ? `Factura ${invoice} — ${party}`
+                  : `Factura ${invoice}`;
+              }
+
+              return e.description?.trim() || "Asiento contable";
+            }
 
             return (
               <div key={code} className="mb-6 border rounded-xl p-4 bg-white shadow-sm">
@@ -277,7 +294,7 @@ export default function LedgerPage() {
                       {accountEntries.map((e, i) => (
                         <tr key={i} className="border-t">
                           <td className="p-2 whitespace-nowrap">{formatDate(e.date)}</td>
-                          <td className="p-2">{e.description}</td>
+                          <td className="p-2">{buildLedgerDescription(e)}</td>
                           <td className="p-2 text-right whitespace-nowrap">
                             {e.debit !== undefined
                               ? e.debit.toLocaleString("es-EC", { minimumFractionDigits: 2 })

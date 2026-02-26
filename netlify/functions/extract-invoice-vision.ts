@@ -1061,27 +1061,40 @@ export const handler: Handler = async (event) => {
         warnings: allWarnings,
         balance,
 
-        entries: lines.map((l) => ({
-          id: randomUUID(),
-          transactionId,
+        entries: lines.map((l) => {
+          const base = {
+            id: randomUUID(),
+            transactionId,
 
-          account_code: l.accountCode,
-          account_name: l.accountName,
-          debit: Number(safeNumber(l.debit).toFixed(2)),
-          credit: Number(safeNumber(l.credit).toFixed(2)),
-          
-          supplier_name: parsed.issuerName,
-          supplier_ruc: parsed.issuerRUC,
-          
-          issuerRUC: parsed.issuerRUC,
-          issuerName: parsed.issuerName,
-          entityRUC: userRUC,
+            account_code: l.accountCode,
+            account_name: l.accountName,
+            debit: Number(safeNumber(l.debit).toFixed(2)),
+            credit: Number(safeNumber(l.credit).toFixed(2)),
 
-          invoice_number: parsed.invoice_number,
-          date: parsed.invoiceDate,
+            issuerRUC: parsed.issuerRUC,
+            issuerName: parsed.issuerName,
+            entityRUC: userRUC,
 
-          source: "vision",
-        })),
+            invoice_number: parsed.invoice_number,
+            date: parsed.invoiceDate,
+
+            source: "vision",
+          };
+
+          if (invoiceType === "sale") {
+            return {
+              ...base,
+              customer_name: parsed.buyerName,
+              customerRUC: parsed.buyerRUC,
+            };
+          }
+
+          return {
+            ...base,
+            supplier_name: parsed.issuerName,
+            supplier_ruc: parsed.issuerRUC,
+          }
+      }),
       } satisfies FunctionResponse),
     };
   } catch (err: any) {

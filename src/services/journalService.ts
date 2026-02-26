@@ -164,8 +164,21 @@ function resolveInvoiceNumber(e: JournalEntry) {
 } */
 
 function resolveDescription(e: JournalEntry): string {
-  if (e.description?.trim()) return e.description.trim();
   if (e.source === "initial") return "Balance inicial";
+
+  const invoice = e.invoice_number?.trim();
+  const supplier = (e as any).supplier_name?.trim();
+  const customer = (e as any).customer_name?.trim();
+
+  if (invoice) {
+    const party = supplier || customer || "";
+    return party
+      ? `Factura ${invoice} — ${party}`
+      : `Factura ${invoice}`;
+  }
+
+  if (e.description?.trim()) return e.description.trim();
+  
   return "Asiento contable";
 }
 
