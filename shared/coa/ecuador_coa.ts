@@ -1,7 +1,7 @@
 // shared/coa/ecuador_coa.ts
 
 import type { Account, RawAccount, Nature } from "@/types/AccountTypes";
-import raw_coa from "./raw_coa";
+import raw_coa from "./RAW_COA";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
