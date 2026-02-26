@@ -1,7 +1,7 @@
 // shared/coa/ecuador_coa.ts
 
 import type { Account, RawAccount, Nature } from "@/types/AccountTypes";
-import RAW_COA from "./raw_coa";
+import raw_coa from "./raw_coa";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -101,8 +101,8 @@ function decorateAccount(acc: Account): Account {
 /* BUILD ECUADOR COA                                                          */
 /* -------------------------------------------------------------------------- */
 
-// Ensure RAW_COA is treated as RawAccount[]
-const RAW: RawAccount[] = RAW_COA as unknown as RawAccount[];
+// Ensure raw_coa is treated as RawAccount[]
+const RAW: RawAccount[] = raw_coa as unknown as RawAccount[];
 
 let ECUADOR_COA: Account[] = RAW.map((acc) => {
   const code = String(acc.code ?? "").trim();

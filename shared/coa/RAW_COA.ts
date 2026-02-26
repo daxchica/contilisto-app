@@ -1,6 +1,6 @@
 import type { RawAccount } from "@/types/AccountTypes";
 
-const RAW_COA: RawAccount[] = [
+const raw_coa: RawAccount[] = [
   // ===============================
   // 1 - ACTIVO
   // ===============================
@@ -186,4 +186,4 @@ const RAW_COA: RawAccount[] = [
   { code: "502030101", name: "INTERESES POR PRÉSTAMOS", level: 5, parentCode: "5020301", postable: true },
 ];
 
-export default RAW_COA;
+export default raw_coa;
