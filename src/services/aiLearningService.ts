@@ -1,6 +1,8 @@
 // src/services/aiLearningService.ts
 import { doc, setDoc, serverTimestamp, increment } from "firebase/firestore";
 import { db } from "../firebase-config";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 function sanitizeKey(key: string): string {
   return key.replace(/[^\w.-]/g, "_").slice(0, 128);
@@ -24,8 +26,10 @@ export async function saveAccountHint(params: {
 }) {
   const { entityId, userIdSafe, hintKey, account_code, account_name, type } = params;
 
+  requireEntityId(entityId, "guardar AI hint");
   if (!entityId || !userIdSafe || !hintKey) return;
   if (!isValidAccountCode(account_code)) return;
+  requireNonEmpty(account_code, "account code");
 
   const id = sanitizeKey(hintKey);
   const ref = doc(db, "entities", entityId, "aiHints", id);

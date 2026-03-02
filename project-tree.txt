@@ -12196,7 +12196,6 @@
 │   ├── data
 │   ├── firebase-config.ts
 │   ├── hooks
-│   │   ├── useBankAccounts.ts
 │   │   ├── useClients.ts
 │   │   ├── useEntities.ts
 │   │   ├── useInvoice.ts
@@ -12235,7 +12234,6 @@
 │   │   ├── accountService.ts
 │   │   ├── aiLearningService.ts
 │   │   ├── analyticsService.ts
-│   │   ├── bankAccountService.ts
 │   │   ├── bankBookService.ts
 │   │   ├── bankMovementService.ts
 │   │   ├── bankService.ts

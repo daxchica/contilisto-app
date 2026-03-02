@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { Account } from "@/types/AccountTypes";
-import { createSubaccount } from "@/services/chartOfAccountsService";
 import MovableModal from "@/components/ui/MovableModal";
+import { createSubAccount } from "@/services/entityAccountsService";
 
 interface Props {
   entityId: string;
@@ -77,7 +77,7 @@ export default function CreateSubaccountModal({
     try {
       setSaving(true);
 
-      await createSubaccount(entityId, {
+      await createSubAccount(entityId, {
         code,
         name,
         parentCode: parentAccount.code,

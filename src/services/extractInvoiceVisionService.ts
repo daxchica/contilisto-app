@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { getContextualAccountHint } from "./firestoreHintsService";
+import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
 
 type VisionEntry = {
   account_code?: string;
@@ -306,7 +307,7 @@ export async function extractInvoiceVision(
             ) {
               return {
                 ...e,
-                account_code: hint.accountCode,
+                account_code: normalizeAccountCode(hint),
                 account_name: hint.accountName,
                 source: "learned",
               };

@@ -27,13 +27,15 @@ import {
   linkJournalTransaction,
 } from "./bankMovementService";
 import { isCustomerReceivableAccount, isSupplierPayableAccount } from "./controlAccounts";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 /* =============================================================================
    HELPERS
 ============================================================================= */
 
 async function fetchInitialBalanceDate(entityId: string): Promise<string | null> {
-  if (!entityId) return null;
+  requireEntityId(entityId, "cargar balance inicial");
 
   const q = query(
     collection(db, "entities", entityId, "journalEntries"),
@@ -201,7 +203,7 @@ function getCustomerName(e: JournalEntry): string {
 export async function fetchJournalEntries(
   entityId: string
 ): Promise<JournalEntry[]> {
-  if (!entityId) return [];
+  requireEntityId(entityId, "cargar diario");
 
   const col = collection(db, "entities", entityId, "journalEntries");
 
@@ -224,7 +226,8 @@ export async function fetchJournalEntriesByTransactionId(
   entityId: string,
   transactionId: string
 ): Promise<JournalEntry[]> {
-  if (!entityId || !transactionId) return [];
+  requireEntityId(entityId, "cargar transacción de diario");
+  if (!transactionId) return [];
 
   const col = collection(db, "entities", entityId, "journalEntries");
   const qTx = query(col, where("transactionId", "==", transactionId));
@@ -433,8 +436,8 @@ export async function saveJournalEntries(
   userIdSafe: string,
   entries: JournalEntry[],
 ): Promise<JournalEntry[]> {
-  if (!entityId) throw new Error("saveJournalEntries: entityId is required");
-  if (!userIdSafe) throw new Error("saveJournalEntries: userIdSafe (uid) is required");
+  requireEntityId(entityId, "guardar diario");
+  if (!userIdSafe?.trim()) throw new Error("saveJournalEntries: userIdSafe (uid) is required");
   
   const col = collection(db, "entities", entityId, "journalEntries");
 
@@ -533,6 +536,7 @@ export async function saveJournalEntries(
     if (!entry.uid) throw new Error(`JournalEntry ${id} missing uid`);
     if (!entry.entityId) throw new Error(`JournalEntry ${id} missing entityId`);
     if (!entry.transactionId) throw new Error(`JournalEntry ${id} missing transactionId`);
+    requireNonEmpty(entry.account_code, "account code");
     if (entry.source === "initial" && !entry.date) {
       throw new Error("Initial Balance entries must have a fixed date");
     }
@@ -607,8 +611,8 @@ export async function createPayablePaymentJournalEntry(
   userIdSafe: string,
   options?: { bankMovementId?: string }
 ) {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!userIdSafe) throw new Error("userIdSafe requerido");
+  requireEntityId(entityId, "registrar pago");
+  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
   if (!payable.account_code) {
     throw new Error("Payable sin cuenta contable. Debe repararse.");
@@ -698,8 +702,8 @@ export async function createReceivableCollectionJournalEntry(
   userIdSafe: string,
   options?: { bankMovementId?: string }
 ) {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!userIdSafe) throw new Error("userIdSafe requerido");
+  requireEntityId(entityId, "registrar cobro");
+  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
   if (!receivable.account_code) {
     throw new Error("Receivable sin cuenta contable. Debe repararse.");
@@ -782,7 +786,8 @@ export async function annulInvoiceByTransaction(
   transactionId: string,
   invoiceNumber?: string
 ) {
-  if (!entityId || !transactionId) {
+  requireEntityId(entityId, "anular factura");
+  if (!transactionId?.trim()) {
     throw new Error("annulInvoiceByTransaction: missing params");
   }
 
@@ -846,4 +851,50 @@ export async function annulInvoiceByTransaction(
   // 5️⃣ Commit atomically
   // ------------------------------------------------------------------
   await batch.commit();
+}
+
+export async function createTransferJournalEntry(
+  entityId: string,
+  fromAccountCode: string,
+  toAccountCode: string,
+  amount: number,
+  date: string,
+  userId: string,
+  fromAccountName?: string,
+  toAccountName?: string
+): Promise<string> {
+  requireEntityId(entityId, "transferencia");
+  if (!userId?.trim()) {
+    throw new Error("userId requerido para transferencia");
+  }
+  const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
+  const description = "Transferencia entre bancos";
+
+  const entries: JournalEntry[] = [
+    {
+      entityId,
+      transactionId: tx,
+      date,
+      account_code: toAccountCode,
+      account_name: toAccountName ?? toAccountCode,
+      debit: amount,
+      credit: 0,
+      description,
+      source: "manual",
+    },
+    {
+      entityId,
+      transactionId: tx,
+      date,
+      account_code: fromAccountCode,
+      account_name: fromAccountName ?? fromAccountCode,
+      debit: 0,
+      credit: amount,
+      description,
+      source: "manual",
+    },
+  ];
+
+  await saveJournalEntries(entityId, userId, entries);
+  return tx;
 }

@@ -3,6 +3,8 @@
 import { getFirestore, doc, getDocs, collection, writeBatch } from "firebase/firestore";
 import { auth } from "@/firebase-config";
 import { update } from "@react-spring/web";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 const db = getFirestore();
 
@@ -22,6 +24,7 @@ export async function saveInitialBalances(
   entityId: string,
   balances: InitialBalance[]
 ): Promise<void> {
+  requireEntityId(entityId, "guardar balances iniciales");
   const userIdSafe = auth.currentUser?.uid;
 
   if (!userIdSafe) throw new Error("User not authenticated");
@@ -32,6 +35,7 @@ export async function saveInitialBalances(
   balances.forEach((b) => {
     const code = b.account_code.trim();
     if (!code) return;
+    requireNonEmpty(code, "account code");
 
     const raw = Number(b.initial_balance);
     if (!Number.isFinite(raw) || raw === 0) return;
@@ -68,6 +72,7 @@ export async function saveInitialBalances(
 export async function fetchInitialBalances(
   entityId: string
 ): Promise<Record<string, InitialBalance>> {
+  requireEntityId(entityId, "cargar balances iniciales");
   const snapshot = await getDocs(
     collection(db, "entities", entityId, "initialBalances")
 );

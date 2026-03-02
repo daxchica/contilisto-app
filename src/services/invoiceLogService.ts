@@ -1,9 +1,11 @@
 // src/services/invoiceLogService.ts
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase-config";
+import { requireEntityId } from "./requireEntityId";
 
 // 🧾 Elimina facturas específicas del log Firestore
 export async function deleteInvoicesFromFirestore(entityId: string, invoiceNumbers: string[]) {
+  requireEntityId(entityId, "eliminar facturas del log");
   const docRef = doc(db, "invoice_logs", entityId);
   const docSnap = await getDoc(docRef);
 
@@ -30,6 +32,7 @@ export function deleteInvoicesFromLocal(ruc: string, invoiceNumbers: string[]) {
 
 // 📋 Obtiene el listado de facturas procesadas (ambos logs)
 export async function getInvoiceLogs(entityId: string, ruc: string): Promise<string[]> {
+  requireEntityId(entityId, "cargar logs de facturas");
   const idsSet = new Set<string>();
 
   // Firestore
@@ -69,8 +72,9 @@ export async function getInvoicesBySupplier(
   entityId: string,
   supplierRUC: string
 ): Promise<JournalEntry[]> {
-  if (!entityId || !supplierRUC) {
-    console.warn("⚠️ getInvoicesBySupplier called without entityId or supplierRUC");
+  requireEntityId(entityId, "cargar facturas por proveedor");
+  if (!supplierRUC) {
+    console.warn("⚠️ getInvoicesBySupplier called without supplierRUC");
     return [];
   }
 

@@ -19,6 +19,8 @@ import type { Entity, EntityType } from "../types/Entity";
 import { uidOrThrow } from "../utils/auth";
 import type { JournalEntry } from "@/types/JournalEntry";
 import { getUidOrThrow } from "./firestoreSecurity";
+import { requireEntityId } from "./requireEntityId";
+import { initializeEntityCOA } from "./coaService";
 
 /* =========================
    ENTITIES
@@ -48,15 +50,26 @@ export async function createEntity(data: {
   });
 
   // Create membership document
-  await setDoc(
-    doc(db, "entities", entityRef.id, "members", uid),
-    {
-      uid,
-      role: "owner",
-      invitedBy: uid,
-      createdAt: serverTimestamp(),
-    }
-  );
+  await setDoc(entityRef, {
+    ruc: data.ruc.trim(),
+    name: data.name.trim(),
+    type: data.type,
+    address: data.address?.trim() ?? null,
+    phone: data.phone?.trim() ?? null,
+    email: data.email?.trim() ?? null,
+    createdAt: serverTimestamp(),
+    createdBy: uid,
+  });
+
+  await setDoc(doc(db, "entities", entityRef.id, "members", uid), {
+    uid,
+    role: "owner",
+    invitedBy: uid,
+    createdAt: serverTimestamp(),
+  });
+
+  // ✅ HARD REQUIREMENT: every entity gets its own COA
+  await initializeEntityCOA(entityRef.id);
 
   return entityRef.id;
 }
@@ -71,6 +84,7 @@ export async function updateEntity(
     email?: string;
   }
 ): Promise<void> {
+  requireEntityId(entityId, "actualizar entidad");
   const uid = getUidOrThrow();
 
   // Check membership role
@@ -95,6 +109,7 @@ export async function updateEntity(
    DELETE ENTITY
 ========================= */
 export async function deleteEntity(entityId: string): Promise<void> {
+  requireEntityId(entityId, "eliminar entidad");
   const uid = getUidOrThrow();
 
   const memberRef = doc(db, "entities", entityId, "members", uid);

@@ -41,15 +41,7 @@ function toNumber(v: unknown): number {
 }
 
 function resolveBankGLCode(bank: BankAccount): string {
-  const b = bank as any;
-  return (
-    b.account_code ||
-    b.accountCode ||
-    b.glAccountCode ||
-    b.glAccount ||
-    b.code ||
-    ""
-  );
+  return bank.code;
 }
 
 /* -------------------------------------------------------------------------- */

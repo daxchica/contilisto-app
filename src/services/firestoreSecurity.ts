@@ -1,6 +1,7 @@
 import { doc, getDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { db } from "@/firebase-config";
+import { requireEntityId } from "./requireEntityId";
 
 /* ---------------- AUTH ---------------- */
 
@@ -17,6 +18,7 @@ export function getUidOrThrow(): string {
 /* ---------------- ENTITY ACCESS ---------------- */
 
 export async function assertEntityMember(entityId: string): Promise<void> {
+  requireEntityId(entityId, "verificar membresía");
   const uid = getUidOrThrow();
 
   const memberRef = doc(db, "entities", entityId, "members", uid);

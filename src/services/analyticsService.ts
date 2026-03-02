@@ -3,6 +3,8 @@
 import { db } from "../firebase-config";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import type { JournalEntry } from "../types/JournalEntry";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 /**
  * Retorna las cuentas más usadas por un usuario en una empresa.
@@ -13,6 +15,8 @@ export async function getTopUsedAccounts(
   entityId: string,
   limit = 5
 ): Promise<string[]> {
+  requireNonEmpty(userIdSafe, "userIdSafe");
+  requireEntityId(entityId, "cargar cuentas usadas");
   const entriesRef = collection(db, "journalEntries");
   const q = query(entriesRef, where("userIdSafe", "==", userIdSafe), where("entityId", "==", entityId));
   const snapshot = await getDocs(q);

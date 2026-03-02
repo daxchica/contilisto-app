@@ -5,6 +5,7 @@ import {
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { requireEntityId } from "./requireEntityId";
 
 export interface SriSettings {
     ambiente: "1" | "2";
@@ -23,7 +24,7 @@ export interface SriSettings {
  * FETCH SRI SETTINGS (from entity root)
  * ====================================================== */
 export async function fetchSriSettings(entityId: string): Promise<SriSettings | null> {
-  if (!entityId) throw new Error("entityId requerido");
+  requireEntityId(entityId, "cargar SRI settings");
 
   const ref = doc(db, "entities", entityId);
   const snap = await getDoc(ref);
@@ -42,7 +43,7 @@ export async function saveSriSettings(
   data: Partial<SriSettings>,
   updatedBy?: string
 ) {
-  if (!entityId) throw new Error("entityId requerido");
+  requireEntityId(entityId, "guardar SRI settings");
 
   const ref = doc(db, "entities", entityId);
 

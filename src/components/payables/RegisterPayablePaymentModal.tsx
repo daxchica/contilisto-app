@@ -20,6 +20,7 @@ import {
 
 import { createPayablePaymentJournalEntry } from "@/services/journalService";
 import { repairPayableAccountFromJournal } from "@/services/payablesService";
+import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
 
 type Props = {
   isOpen: boolean;
@@ -41,15 +42,7 @@ function toNumber(v: unknown): number {
 }
 
 function resolveBankGLCode(bank: BankAccount): string {
-  const b = bank as any;
-  return (
-    b.account_code ||
-    b.accountCode ||
-    b.glAccountCode ||
-    b.glAccount ||
-    b.code ||
-    ""
-  );
+  return normalizeAccountCode(bank as any);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -152,6 +145,7 @@ export default function RegisterPayablePaymentModal({
         type: "out",
         description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
         createdBy: userIdSafe,
+        reconciled: false,
       };
 
       const bankMovementId = await createBankMovement(movement);
@@ -304,7 +298,7 @@ export default function RegisterPayablePaymentModal({
                 <option value="">-- Seleccione una cuenta --</option>
                 {bankAccounts.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name} ({b.number})
+                    {b.name} ({b.code})
                   </option>
                 ))}
               </select>

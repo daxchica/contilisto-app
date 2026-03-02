@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { JournalEntry } from "../types/JournalEntry";
-import { BankMovement } from "../services/bankMovementService";
+import { BankMovement } from "@/types/bankTypes";
+import { reconcileBankMovement, unreconcileBankMovement } from "../services/bankMovementService";
+import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { getAuth } from "firebase/auth";
 import { fetchEntities } from "../services/entityService";
 import { fetchBankMovements } from "../services/bankMovementService";
@@ -14,13 +16,21 @@ interface Props {
 }
 
 export default function BankReconciliation({ journalEntries, bankMovements }: Props) {
-  const [reconciled, setReconciled] = useState<string[]>([]); // store reconciled pairs by ID or composite keys
+  const { selectedEntity } = useSelectedEntity();
 
-  const toggleReconcile = (id: string) => {
-    setReconciled(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
+const handleToggleReconcile = async (movement: BankMovement & { id: string }) => {
+  if (!selectedEntity?.id) return;
+
+  try {
+    if (movement.reconciled) {
+      await unreconcileBankMovement(selectedEntity.id, movement.id);
+    } else {
+      await reconcileBankMovement(selectedEntity.id, movement.id);
+    }
+  } catch (err) {
+    console.error("Error updating reconciliation:", err);
+  }
+};
 
   const formatAmount = (value?: number) =>
     value !== undefined
@@ -73,7 +83,7 @@ export default function BankReconciliation({ journalEntries, bankMovements }: Pr
             {bankMovements
               .filter((mvt): mvt is BankMovement & { id: string } => !!mvt.id)
               .map((mvt) => {
-                const isReconciled = reconciled.includes(mvt.id);
+                const isReconciled = !!mvt.reconciled;
                 
                 return (
                 <tr 
@@ -85,7 +95,7 @@ export default function BankReconciliation({ journalEntries, bankMovements }: Pr
                 <td>{formatAmount(mvt.amount)}</td>
                 <td>
                   <button
-                    onClick={() => toggleReconcile(mvt.id)}
+                    onClick={() => handleToggleReconcile(mvt)}
                     className={`px-2 py-1 text-xs rounded ${
                       isReconciled
                         ? "bg-green-500 text-white"

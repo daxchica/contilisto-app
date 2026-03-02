@@ -10,6 +10,7 @@ import {
 
 import type { Invoice } from "@/types/Invoice";
 import type { InvoiceStatus } from "@/types/InvoiceStatus";
+import { requireEntityId } from "./requireEntityId";
 
 
 /* ============================================================
@@ -36,8 +37,8 @@ export async function createInvoice(
   userIdSafe: string,
   data: CreateInvoiceInput
 ): Promise<Invoice> {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!userIdSafe) throw new Error("userIdSafe requerido");
+  requireEntityId(entityId, "crear factura");
+  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
   const now = Date.now();
 
@@ -121,7 +122,8 @@ export async function cancelInvoice(
   invoice: Invoice,
   reason: string
 ): Promise<void> {
-  if (!entityId || !invoice?.id) {
+  requireEntityId(entityId, "anular factura");
+  if (!invoice?.id) {
     throw new Error("entityId/invoiceId requeridos");
   }
 

@@ -4,14 +4,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchPayables } from "@/services/payablesService";
 import type { Payable } from "@/types/Payable";
-
-import { useBankAccounts } from "@/hooks/useBankAccounts";
+import { fetchBankAccountsFromCOA } from "@/services/coaService";
 
 import EditPayableTermsModal from "@/components/payables/EditPayableTermsModal";
 import RegisterPayablePaymentModal from "@/components/payables/RegisterPayablePaymentModal";
 import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsTable";
 import { resolvePayableDueDate } from "@/utils/payable";
 import { resolveSupplierName, resolveSupplierRUC } from "@/utils/supplier";
+import { BankAccount } from "@/types/bankTypes";
 
 
 export default function AccountsPayablePage() {
@@ -20,10 +20,9 @@ export default function AccountsPayablePage() {
   const entityId = selectedEntity?.id ?? null;
   const userIdSafe = selectedEntity?.uid ?? null;
 
-  const { 
-    bankAccounts: rawBankAccounts, 
-    loading: accountsLoading 
-  } = useBankAccounts(entityId ?? "", userIdSafe ?? "");
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+
 
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +30,29 @@ export default function AccountsPayablePage() {
   const [editingPayable, setEditingPayable] = useState<Payable | null>(null);
   const [payingPayable, setPayingPayable] = useState<Payable | null>(null);
   const [expandedPayableId, setExpandedPayableId] = useState<string | null>(null);
+
+  // ------------------------------------
+  // Use bank accounts
+  // ------------------------------------
+
+  useEffect(() => {
+    if (!entityId) return;
+    
+    const loadAccounts = async () => {
+    setAccountsLoading(true);
+    try {
+      const data = await fetchBankAccountsFromCOA(entityId);
+      setBankAccounts(data);
+    } catch (err) {
+      console.error("Error loading bank accounts", err);
+      setBankAccounts([]);
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  loadAccounts();
+}, [entityId]);
 
   // --------------------------------------------------
   // Reload payables (safe against race conditions)
@@ -62,6 +84,9 @@ export default function AccountsPayablePage() {
     const cleanup = reload();
     return cleanup;
   }, [reload]);
+
+
+
 
   // --------------------------------------------------
   // Derived data
@@ -256,7 +281,7 @@ export default function AccountsPayablePage() {
             entityId={entityId}
             userIdSafe={userIdSafe!}
             payable={payingPayable}
-            bankAccounts={rawBankAccounts}
+            bankAccounts={bankAccounts}
             onClose={() => setPayingPayable(null)}
             onSaved={reload}
             

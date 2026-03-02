@@ -46,6 +46,7 @@ import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
 import { extractInvoiceVision } from "@/services/extractInvoiceVisionService";
 import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
 import { getPdfPageCount } from "@/utils/pdfUtils";
+import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { getContextualAccountHint } from "@/services/firestoreHintsService";
 
@@ -105,7 +106,7 @@ export default function AccountingDashboard() {
   // --------------------------------------------------------------------------
 
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [leafAccounts, setLeafAccounts] = useState<Account[]>([]);
+  const [postableAccounts, setpostableAccounts] = useState<Account[]>([]);
   const [leafCodeSet, setLeafCodeSet] = useState<Set<string>>(new Set());
   const [accountsLoading, setAccountsLoading] = useState(false);
 
@@ -138,7 +139,7 @@ export default function AccountingDashboard() {
   const loadAccounts = useCallback(async () => {
     if (!entityId) {
       setAccounts([]);
-      setLeafAccounts([]);
+      setpostableAccounts([]);
       setLeafCodeSet(new Set());
       return;
     }
@@ -153,7 +154,7 @@ export default function AccountingDashboard() {
       const leafSet: Set<string> = plan.postableCodeSet ?? new Set();
 
       setAccounts(effectiveAccounts);
-      setLeafAccounts(leafFixed);
+      setpostableAccounts(leafFixed);
       setLeafCodeSet(leafSet);
 
       if (IS_DEV) {
@@ -287,8 +288,8 @@ export default function AccountingDashboard() {
           if (
             hint &&
             hint.frequency >= 2 &&
-            leafCodeSet.has(hint.accountCode) &&
-            accounts.some((a) => a.code === hint.accountCode)
+            leafCodeSet.has(normalizeAccountCode(hint)) &&
+            accounts.some((a) => a.code === normalizeAccountCode(hint))
           ) {
             normalized = normalized.map((row) => {
               const debit = Number(row.debit ?? 0);
@@ -301,7 +302,7 @@ export default function AccountingDashboard() {
 
               return {
                 ...row,
-                account_code: hint.accountCode,
+                account_code: normalizeAccountCode(hint),
                 account_name: hint.accountName,
               };
             });
@@ -400,7 +401,7 @@ export default function AccountingDashboard() {
           entityId={entityId}
           userIdSafe={userIdSafe}
           accounts={accounts}
-          leafAccounts={leafAccounts}
+          postableAccounts={postableAccounts}
           leafCodeSet={leafCodeSet}
           onClose={() => setShowPreviewModal(false)}
           onSave={async (entries) => {
@@ -445,7 +446,7 @@ export default function AccountingDashboard() {
           entityId={entityId}
           userIdSafe={userIdSafe}
           accounts={accounts}
-          leafAccounts={leafAccounts}
+          postableAccounts={postableAccounts}
           leafCodeSet={leafCodeSet}
           onClose={() => setShowManualModal(false)}
           onAddEntries={async () =>

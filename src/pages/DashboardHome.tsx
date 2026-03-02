@@ -20,7 +20,7 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
 import { getRealCashFlow } from "@/services/cashFlowRealService";
 
-import { getCashflowForecast } from "@/services/cashflowForecastServices";
+import { getCashflowForecast } from "@/services/cashFlowForecastServices";
 import { buildDailyCashFlowSeries } from "@/utils/buildDailyCashFlowSeries";
 
 import { JournalEntry } from "@/types/JournalEntry";
@@ -66,13 +66,16 @@ const DashboardHome: React.FC = () => {
     return todayStart - 29 * 24 * 60 * 60 * 1000;
   }, [todayStart]);
 
-  const todayISO = useMemo(() => {
-    return new Date(todayStart).toISOString().slice(0, 10);
-  }, [todayStart]);
+  function toLocalISODate(ms: number) {
+  const d = new Date(ms);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-  const last30ISO = useMemo(() => {
-    return new Date(last30Start).toISOString().slice(0, 10);
-  }, [last30Start]);
+  const todayISO = useMemo(() => toLocalISODate(todayStart), [todayStart]);
+  const last30ISO = useMemo(() => toLocalISODate(last30Start), [last30Start]);
 
   /* =======================
    * LOAD JOURNAL ENTRIES
@@ -215,7 +218,8 @@ const DashboardHome: React.FC = () => {
       .filter((e) => startsWithSafe(e.account_code, "4"))
       .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
-        out[month] = (out[month] || 0) + (e.credit ?? 0);
+        const net = (e.credit ?? 0) - (e.debit ?? 0);
+        out[month] = (out[month] || 0) + net;
       });
     return out;
   }, [entries]);
@@ -223,14 +227,11 @@ const DashboardHome: React.FC = () => {
   const monthlyExpenses = useMemo(() => {
     const out: Record<string, number> = {};
     entries
-      .filter(
-        (e) =>
-          startsWithSafe(e.account_code, "5") ||
-          startsWithSafe(e.account_code, "6")
-      )
+      .filter((e) => startsWithSafe(e.account_code, "5") || startsWithSafe(e.account_code, "6"))
       .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
-        out[month] = (out[month] || 0) + (e.debit ?? 0);
+        const net = (e.debit ?? 0) - (e.credit ?? 0);
+        out[month] = (out[month] || 0) + net;
       });
     return out;
   }, [entries]);

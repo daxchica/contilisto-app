@@ -1,120 +1,37 @@
 // src/pages/BankBookPage.tsx
 import React, { useState, useEffect } from "react";
-import { getAuth } from "firebase/auth";
 import { Link } from "react-router-dom";
 
 import { useSelectedEntity } from "../context/SelectedEntityContext";
 import type { BankAccount, BankBookEntry } from "../types/bankTypes";
-import type { BankMovement } from "../services/bankMovementService";
+import type { BankMovement } from "@/types/bankTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 
-import {
-  fetchBankAccounts,
-  createBankAccount,
-  deleteBankAccount,
-} from "../services/bankAccountService";
-
-import {
-  fetchBankBookEntries,
-} from "../services/bankBookService";
-
+import { fetchBankBookEntries } from "../services/bankBookService";
 import { fetchBankMovements } from "../services/bankMovementService";
 import { fetchJournalEntries } from "../services/journalService";
+import { fetchBankAccountsFromCOA, createSubAccountUnderParent, deleteCOAAccount } from "@/services/coaService";
 
 import BankReconciliationTab from "../components/BankReconciliationTab";
 
+
 // ---------------- Helpers ----------------
 const fmtUSD = (n: number) =>
-  new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(n);
+  new Intl.NumberFormat("es-EC", { 
+    style: "currency", 
+    currency: "USD" 
+  }).format(n);
 
-// ---------------- Modal Types ----------------
-interface CreateBankAccountModalProps {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: (data: { name: string; number: string }) => Promise<void> | void;
-}
-
-function CreateBankAccountModal({
-  open,
-  onClose,
-  onConfirm,
-}: CreateBankAccountModalProps) {
-  const [name, setName] = useState("");
-  const [number, setNumber] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setName("");
-      setNumber("");
-      setSaving(false);
-    }
-  }, [open]);
-
-  if (!open) return null;
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !number.trim()) return;
-    try {
-      setSaving(true);
-      await onConfirm({ name: name.trim(), number: number.trim() });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-xl shadow-lg w-full max-w-md p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold mb-2">Create account</h3>
-
-        <form onSubmit={submit} className="space-y-3">
-          <input
-            className="w-full border rounded px-3 py-2"
-            placeholder="Account name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-
-          <input
-            className="w-full border rounded px-3 py-2"
-            placeholder="Account number"
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            required
-          />
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded border">
-              Cancel
-            </button>
-            <button type="submit" className="px-4 py-2 rounded bg-blue-600 text-white">
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ---------------- Main Page ----------------
 type TabView = "libro" | "conciliacion";
 
 export default function BankBookPage() {
-  const auth = getAuth();
-  const userIdSafe = auth.currentUser?.uid ?? "";
   const { selectedEntity } = useSelectedEntity();
+  const [showTransfer, setShowTransfer] = useState(false);
+  
+  const entityId = selectedEntity?.id ?? "";
+  const entityName = selectedEntity?.name ?? "";
+  const entityRuc = selectedEntity?.ruc ?? "";
 
-  const [selectedEntityId, setSelectedEntityId] = useState("");
   const [tab, setTab] = useState<TabView>("libro");
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -124,94 +41,162 @@ export default function BankBookPage() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [bankMovements, setBankMovements] = useState<BankMovement[]>([]);
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [loadingEntries, setLoadingEntries] = useState(false);
 
-  const entityName = selectedEntity?.name ?? "";
-  const entityRuc = selectedEntity?.ruc ?? "";
+  
+  /* ---------------- FETCH BANK ACCOUNTS ---------------- */
 
-  // Sincronizar entidad seleccionada desde el contexto global
   useEffect(() => {
-    setSelectedEntityId(selectedEntity?.id ?? "");
-  }, [selectedEntity?.id]);
-
-  // Fetch cuentas bancarias
-  useEffect(() => {
-    if (!selectedEntity?.id || !userIdSafe) {
+    if (!entityId) {
       setBankAccounts([]);
       setSelectedBankId("");
       return;
     }
 
-    (async () => {
+    const load = async () => {
+      setLoadingAccounts(true);
       try {
-        const data = await fetchBankAccounts(userIdSafe, selectedEntityId);
-        data.sort((a, b) => a.name.localeCompare(b.name, "es"));
+        const data = await fetchBankAccountsFromCOA(entityId);
         setBankAccounts(data);
-        // Mantener selección si todavía existe
-        setSelectedBankId((prev) =>
-          data.some((b) => b.id === prev) ? prev : ""
-        );
+      // Optional UX: auto-select first account if none selected
+        if (!selectedBankId && data.length > 0 && data[0]?.id) {
+          setSelectedBankId(data[0].id);
+        }
       } catch (e) {
-        console.error("Error fetching bank accounts:", e);
+        console.error("Error loading bank accounts", e);
         setBankAccounts([]);
         setSelectedBankId("");
+      } finally {
+        setLoadingAccounts(false);
       }
-    })();
-  }, [selectedEntityId, userIdSafe]);
+    };
 
-  // Fetch movimientos del libro bancario para la cuenta seleccionada
+    load();
+  }, [entityId]);
+
+  /* ---------------- FETCH BOOK ENTRIES ---------------- */
+
   useEffect(() => {
-    if (!selectedEntity?.id || !selectedBankId) {
+    if (!entityId || !selectedBankId) {
       setEntries([]);
       return;
     }
 
-    (async () => {
+    const load = async () => {
+      setLoadingEntries(true);
       try {
-        const data = await fetchBankBookEntries(selectedEntityId, selectedBankId);
+        const data = await fetchBankBookEntries(
+          entityId,
+          selectedBankId
+        );
+        setEntries(data);
+      } finally {
+        setLoadingEntries(false);
+      }
+    };
+
+    load();
+  }, [entityId, selectedBankId]);
+
+  // ---------------------------------------------------------------------------
+  // If selectedBankId no longer exists, reset
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!selectedBankId) return;
+    const stillExists = bankAccounts.some((b) => b.id === selectedBankId);
+    if (!stillExists) setSelectedBankId("");
+  }, [bankAccounts, selectedBankId]);
+
+  // ---------------------------------------------------------------------------
+  // Fetch book entries (legacy book view)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!entityId || !selectedBankId) {
+      setEntries([]);
+      return;
+    }
+
+    const load = async () => {
+      setLoadingEntries(true);
+      try {
+        const data = await fetchBankBookEntries(entityId, selectedBankId);
         setEntries(data);
       } catch (e) {
-        console.error("Error fetching bank book entries:", e);
+        console.error("Error loading bank book entries", e);
         setEntries([]);
+      } finally {
+        setLoadingEntries(false);
       }
-    })();
-  }, [selectedEntityId, selectedBankId]);
+    };
 
-  // Fetch movimientos bancarios externos (para conciliación)
+    load();
+  }, [entityId, selectedBankId]);
+
+
+  /* ---------------- FETCH MOVEMENTS ---------------- */
+
   useEffect(() => {
-    if (!selectedEntityId) {
+    if (!entityId || !selectedBankId) {
       setBankMovements([]);
       return;
     }
 
-    fetchBankMovements(selectedEntityId)
+    fetchBankMovements(entityId, selectedBankId)
       .then(setBankMovements)
-      .catch((err) => {
-        console.error("Error fetching bank movements:", err);
+      .catch((e) => {
+        console.error("Error loading bank movements", e);
         setBankMovements([]);
       });
-  }, [selectedEntityId]);
+  }, [entityId, selectedBankId]);
 
-  // Fetch journal entries de la entidad (para conciliación)
+  /* ---------------- FETCH JOURNAL ---------------- */
+
   useEffect(() => {
-    if (!selectedEntity?.id) {
+    if (!entityId || tab !== "conciliacion") {
       setJournalEntries([]);
       return;
     }
 
-    (async () => {
-      try {
-        const data = await fetchJournalEntries(selectedEntityId);
-        setJournalEntries(data);
-      } catch (err) {
-        console.error("Error fetching journal entries for bank book:", err);
+    fetchJournalEntries(entityId)
+      .then(setJournalEntries)
+      .catch((e) => {
+        console.error("Error loading journal entries", e);
         setJournalEntries([]);
-      }
-    })();
-  }, [selectedEntityId]);
+      });
+  }, [entityId, tab]);
 
-  // El usuario aún no ha seleccionado entidad en el dashboard
-  if (!selectedEntity?.id) {
+
+  /* ================= CREATE ACCOUNT ================= */
+
+  const handleCreateAccount = async () => {
+  if (!entityId) return;
+
+  const name = prompt("Nombre del banco:");
+  if (!name || !name.trim()) return;
+
+  const accountCode = await createSubAccountUnderParent(
+    entityId,
+    "1010103",
+    name.trim()
+  );
+
+  const updated = await fetchBankAccountsFromCOA(entityId);
+  setBankAccounts(updated);
+
+  // Select by DOC ID (since select uses value={b.id})
+    const created = updated.find((b) => b.code === accountCode);
+    if (created?.id) setSelectedBankId(created.id);
+  };
+
+  useEffect(() => {
+  console.log("===== BANK BOOK DEBUG =====");
+  console.log("selectedEntity:", selectedEntity);
+  console.log("entityId:", entityId);
+}, [selectedEntity]);
+  /* ================= NO ENTITY ================= */
+
+  if (!entityId) {
     return (
       <div className="pt-20 p-6">
         <h1 className="text-2xl font-bold mb-4">Libro Bancos</h1>
@@ -220,18 +205,23 @@ export default function BankBookPage() {
           <Link to="/dashboard" className="text-blue-600 underline">
             Tablero de Entidades
           </Link>
-          .
         </p>
       </div>
     );
+    console.log("Entity ID in BankBookPage", entityId);
   }
+
+  /* ================= RENDER ================= */
 
   return (
     <div className="pt-20 flex justify-center">
       <div className="w-full max-w-4xl p-4">
+
         <h1 className="text-2xl font-bold text-center mb-4">
-          {tab === "libro" ? "Libro Bancos" : "Conciliación Bancaria"} —{" "}
-          {entityRuc} · {entityName}
+          {tab === "libro"
+            ? "Libro Bancos"
+            : "Conciliación Bancaria"}{" "}
+          — {entityRuc} · {entityName}
         </h1>
 
         {/* Tabs */}
@@ -266,125 +256,90 @@ export default function BankBookPage() {
           />
         ) : (
           <>
-            {/* Selector de cuenta bancaria + botón crear */}
-            <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
+            {/* Selector */}
+            <div className="mb-6 flex gap-3 justify-center">
               <select
                 className="border p-2 rounded min-w-[220px]"
                 value={selectedBankId}
                 onChange={(e) => setSelectedBankId(e.target.value)}
-                aria-label="Selecciona una cuenta bancaria"
               >
                 <option value="">
                   {bankAccounts.length
                     ? "-- Seleccione una cuenta --"
                     : "No hay cuentas registradas"}
                 </option>
+
                 {bankAccounts.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name} ({b.number})
+                    {b.code} ({b.name})
                   </option>
                 ))}
               </select>
 
               <button
-                type="button"
-                onClick={() => setShowCreateModal(true)}
-                className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                onClick={handleCreateAccount}
+                className="px-3 py-2 bg-blue-600 text-white rounded"
               >
                 ➕ Crear cuenta
               </button>
 
+              <button
+                onClick={() => setShowTransfer(true)}
+                className="px-3 py-2 bg-purple-600 text-white rounded"
+              >
+                🔁 Transferencia
+              </button>
+
               {selectedBankId && (
                 <button
-                  type="button"
                   onClick={async () => {
-                    if (!window.confirm("¿Eliminar esta cuenta bancaria?")) return;
-                    try {
-                      await deleteBankAccount(selectedEntityId, selectedBankId);
-                      setBankAccounts((prev) =>
-                        prev.filter((b) => b.id !== selectedBankId)
-                      );
-                      setSelectedBankId("");
-                      setEntries([]);
-                    } catch (err) {
-                      console.error("Error deleting bank account:", err);
-                      alert("No se pudo eliminar la cuenta.");
-                    }
-                  }}
-                  className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                  const selected = bankAccounts.find(b => b.id === selectedBankId);
+                  if (!selected) return;
+
+                  await deleteCOAAccount(entityId, selected.code);
+
+                  setSelectedBankId("");
+                  const updated = await fetchBankAccountsFromCOA(entityId);
+                  setBankAccounts(updated);
+                }}
+                  className="px-3 py-2 bg-red-600 text-white rounded"
                 >
-                  🗑 Eliminar cuenta
+                  🗑 Eliminar
                 </button>
               )}
             </div>
 
-            {/* Tabla de movimientos del libro */}
-            <h2 className="text-lg font-semibold mb-2 text-center">
-              Movimientos del Libro Bancario
-            </h2>
-
-            {!selectedBankId ? (
-              <p className="text-gray-600 text-center">
-                Selecciona una cuenta para ver sus movimientos.
-              </p>
-            ) : entries.length === 0 ? (
-              <p className="text-gray-600 text-center">
-                No hay movimientos registrados para esta cuenta.
+            {/* Table */}
+            {entries.length === 0 ? (
+              <p className="text-center text-gray-600">
+                No hay movimientos registrados.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border text-sm">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border px-2 py-1">Fecha</th>
-                      <th className="border px-2 py-1">Beneficiario</th>
-                      <th className="border px-2 py-1">Monto</th>
-                      <th className="border px-2 py-1">Tipo</th>
-                      <th className="border px-2 py-1">Estado</th>
-                      <th className="border px-2 py-1">Descripción</th>
+              <table className="w-full border text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border px-2 py-1">Fecha</th>
+                    <th className="border px-2 py-1">Beneficiario</th>
+                    <th className="border px-2 py-1">Monto</th>
+                    <th className="border px-2 py-1">Tipo</th>
+                    <th className="border px-2 py-1">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="border px-2 py-1">{entry.date}</td>
+                      <td className="border px-2 py-1">{entry.payee}</td>
+                      <td className="border px-2 py-1 text-right">{fmtUSD(entry.amount)}</td>
+                      <td className="border px-2 py-1">{entry.type}</td>
+                      <td className="border px-2 py-1">{entry.status}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => (
-                      <tr key={entry.id}>
-                        <td className="border px-2 py-1">{entry.date}</td>
-                        <td className="border px-2 py-1">{entry.payee}</td>
-                        <td className="border px-2 py-1 text-right">
-                          {fmtUSD(entry.amount)}
-                        </td>
-                        <td className="border px-2 py-1">{entry.type}</td>
-                        <td className="border px-2 py-1">{entry.status}</td>
-                        <td className="border px-2 py-1">{entry.description}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             )}
           </>
         )}
-
-        <CreateBankAccountModal
-          open={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onConfirm={async ({ name, number }) => {
-            if (!userIdSafe || !selectedEntity?.id) return;
-
-            await createBankAccount({
-              entityId: selectedEntityId,
-              name,
-              number,
-              currency: "USD",
-              bankName: "",
-              userIdSafe,
-            });
-
-            const updated = await fetchBankAccounts(userIdSafe, selectedEntityId);
-            updated.sort((a, b) => a.name.localeCompare(b.name, "es"));
-            setBankAccounts(updated);
-            setShowCreateModal(false);
-          }}
-        />
       </div>
     </div>
   );

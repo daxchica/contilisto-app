@@ -1,5 +1,5 @@
 // src/pages/CompaniesPage.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { Entity, EntityType } from "@/types/Entity";
@@ -13,11 +13,15 @@ import {
 
 import AddEntityModal from "@/components/modals/AddEntityModal";
 import EditEntityModal from "@/components/entity/EditEntityModal";
+import { initializeEntityCOA } from "@/services/coaService";
 
 type CreateEntityPayload = {
   ruc: string;
   name: string;
   entityType: EntityType;
+  address?: string;
+  phone?: string;
+  email: string;
 };
 
 export default function CompaniesPage() {
@@ -28,12 +32,25 @@ export default function CompaniesPage() {
   const [loadingEntities, setLoadingEntities] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const navigate = useNavigate();
 
   /* -------------------------------------------------------------------------- */
   /* LOAD ENTITIES                                                              */
   /* -------------------------------------------------------------------------- */
+
+  const loadEntities = useCallback(async () => {
+    try {
+      setLoadingEntities(true);
+      const data = await fetchEntities();
+      setEntities(data);
+    } catch (err) {
+      console.error("FETCH ENTITIES ERROR", err);
+    } finally {
+      setLoadingEntities(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -42,33 +59,25 @@ export default function CompaniesPage() {
       return;
     }
 
-    const load = async () => {
+    let active = true;
+
+    (async () => {
       try {
         setLoadingEntities(true);
-        const data = await fetchEntities(); // 🔥 service handles uid internally
+        const data = await fetchEntities();
+        if (!active) return;
         setEntities(data);
-      } catch (e) {
-        console.error("FETCH ENTITIES ERROR", e);
-        alert("No se pudo cargar empresas. Revisa permisos en consola.");
+      } catch (err) {
+        console.error("FETCH ENTITIES ERROR", err);
       } finally {
-        setLoadingEntities(false);
+        if (active) setLoadingEntities(false);
       }
+    })();
+
+    return () => {
+      active = false;
     };
-
-    load();
   }, [loading, user]);
-
-  /* -------------------------------------------------------------------------- */
-  /* LOADING STATE                                                              */
-  /* -------------------------------------------------------------------------- */
-
-  if (loading || loadingEntities) {
-    return (
-      <div className="flex items-center justify-center h-40">
-        <p className="text-gray-500">Cargando empresas...</p>
-      </div>
-    );
-  }
 
   /* -------------------------------------------------------------------------- */
   /* DELETE ENTITY                                                              */
@@ -89,13 +98,79 @@ export default function CompaniesPage() {
       if (selectedEntity?.id === entity.id) {
         setEntity(null);
       }
-
-      alert("✔ Empresa eliminada correctamente.");
     } catch (err) {
-      console.error(err);
+      console.error("DELETE ENTITY ERROR", err);
       alert("❌ No se pudo eliminar la empresa.");
     }
   };
+
+  /* -------------------------------------------------------------------------- */
+  /* CREATE ENTITY FLOW                                                         */
+  /* -------------------------------------------------------------------------- */
+
+  const handleCreateEntity = async ({
+    ruc,
+    name,
+    entityType,
+    address,
+    phone,
+    email,
+  }: CreateEntityPayload) => {
+    if (creating) return;
+    setCreating(true);
+
+    try {
+      // 1️⃣ Create entity
+      const newEntityId = await createEntity({
+        ruc: ruc.trim(),
+        name: name.trim(),
+        type: entityType,
+        address,
+        phone,
+        email,
+      });
+
+      // 2️⃣ Initialize COA
+      try {
+        await initializeEntityCOA(newEntityId);
+      } catch (err) {
+        console.error("COA INIT FAILED", err);
+        alert(
+          "Empresa creada pero el plan de cuentas no se pudo inicializar."
+        );
+      }
+
+      // 3️⃣ Refresh entities
+      const data = await fetchEntities();
+      setEntities(data);
+
+      const created = data.find((e) => e.id === newEntityId);
+
+      if (created) {
+        setEntity(created);
+        navigate("/dashboard");
+      }
+
+      setShowAddModal(false);
+    } catch (err) {
+      console.error("CREATE ENTITY ERROR", err);
+      alert("❌ No se pudo crear la empresa.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* LOADING UI                                                                 */
+  /* -------------------------------------------------------------------------- */
+
+  if (loading || loadingEntities) {
+    return (
+      <div className="flex items-center justify-center h-40">
+        <p className="text-gray-500">Cargando empresas...</p>
+      </div>
+    );
+  }
 
   /* -------------------------------------------------------------------------- */
   /* RENDER                                                                     */
@@ -179,29 +254,7 @@ export default function CompaniesPage() {
         <AddEntityModal
           isOpen
           onClose={() => setShowAddModal(false)}
-          onCreate={async ({
-            ruc,
-            name,
-            entityType,
-          }: CreateEntityPayload) => {
-            const newEntityId = await createEntity({
-              ruc: ruc.trim(),
-              name: name.trim(),
-              type: entityType,
-            });
-
-            const data = await fetchEntities();
-            setEntities(data);
-
-            const created = data.find((e) => e.id === newEntityId);
-            if (created) {
-              setEntity(created);
-              navigate("/dashboard");
-            }
-
-            alert("✔ Empresa agregada correctamente.");
-            setShowAddModal(false);
-          }}
+          onCreate={handleCreateEntity}
         />
       )}
 
@@ -210,8 +263,7 @@ export default function CompaniesPage() {
           entity={editingEntity}
           onClose={() => setEditingEntity(null)}
           onSaved={async () => {
-            const refreshed = await fetchEntities();
-            setEntities(refreshed);
+            await loadEntities();
             setEditingEntity(null);
           }}
         />

@@ -1,6 +1,7 @@
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/firebase-config";
 import type { JournalEntry } from "@/types/JournalEntry";
+import { requireEntityId } from "./requireEntityId";
 
 /**
  * CASH account detector
@@ -36,7 +37,7 @@ function entryNet(e: JournalEntry): number {
 export async function getOpeningCashBalance(
   entityId: string
 ): Promise<number> {
-  if (!entityId) return 0;
+  requireEntityId(entityId, "obtener saldo inicial de caja");
 
   const colRef = collection(db, "entities", entityId, "journalEntries");
 

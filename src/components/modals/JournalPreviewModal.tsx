@@ -27,7 +27,7 @@ interface Props {
   metadata: InvoicePreviewMetadata;
 
   accounts: Account[];
-  leafAccounts: Account[];
+  postableAccounts: Account[];
   leafCodeSet: Set<string>;
 
   entityId: string;
@@ -130,7 +130,7 @@ export default function JournalPreviewModal({
   entries,
   metadata,
   accounts,
-  leafAccounts,
+  postableAccounts,
   leafCodeSet,
   entityId,
   userIdSafe,
@@ -160,8 +160,8 @@ export default function JournalPreviewModal({
   });
 
   const pickerAccounts = useMemo(
-    () => (leafAccounts?.length ? leafAccounts : accounts ?? []),
-    [leafAccounts, accounts]
+    () => (postableAccounts?.length ? postableAccounts : accounts ?? []),
+    [postableAccounts, accounts]
   );
 
   // -------------------------------------------------------------------------

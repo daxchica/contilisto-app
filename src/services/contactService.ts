@@ -10,13 +10,14 @@ import {
 } from "firebase/firestore";
 import { db } from "@/firebase-config";
 import type { Contact } from "@/types/Contact";
+import { requireEntityId } from "./requireEntityId";
 
 function normalizeIdentification(value: string): string {
   return value.replace(/\s+/g, "").toUpperCase();
 }
 
 export async function fetchContacts(entityId: string): Promise<Contact[]> {
-  if (!entityId) return [];
+  requireEntityId(entityId, "cargar contactos");
   const colRef = collection(db, "entities", entityId, "contacts");
   const snap = await getDocs(colRef);
 
@@ -31,6 +32,7 @@ async function existsContactByIdentification(
   identification: string,
   excludeId?: string
 ): Promise<boolean> {
+  requireEntityId(entityId, "validar contacto");
   const colRef = collection(db, "entities", entityId, "contacts");
   const normalized = normalizeIdentification(identification);
 
@@ -49,7 +51,7 @@ export async function saveContact(
   data: Omit<Contact, "id" | "createdAt" | "updatedAt">,
   contactId?: string
 ): Promise<void> {
-  if (!entityId) throw new Error("entityId requerido para guardar el contacto");
+  requireEntityId(entityId, "guardar el contacto");
 
   const colRef = collection(db, "entities", entityId, "contacts");
   const now = Date.now();
@@ -89,7 +91,10 @@ export async function deleteContact(
   entityId: string,
   contactId: string
 ): Promise<void> {
-  if (!entityId || !contactId) return;
+  requireEntityId(entityId, "eliminar el contacto");
+  if (!contactId?.trim()) {
+    throw new Error("contactId requerido para eliminar el contacto");
+  }
 
   const ref = doc(db, "entities", entityId, "contacts", contactId);
   await updateDoc(ref, {

@@ -13,7 +13,7 @@ interface Props {
   entityId: string;
   userIdSafe: string;
   accounts: Account[];
-  leafAccounts: Account[];
+  postableAccounts: Account[];
   leafCodeSet: Set<string>;
   onClose: () => void;
   onAddEntries: (entries: JournalEntry[]) => Promise<void>;
@@ -57,7 +57,7 @@ export default function ManualEntryModal({
   entityId,
   userIdSafe,
   accounts,
-  leafAccounts,
+  postableAccounts,
   leafCodeSet,
   onClose,
   onAddEntries,
@@ -76,9 +76,9 @@ export default function ManualEntryModal({
 
   const accountsByCode = useMemo(() => {
     const m = new Map<string, Account>();
-    leafAccounts.forEach((a) => m.set(a.code, a));
+    postableAccounts.forEach((a) => m.set(a.code, a));
     return m;
-  }, [leafAccounts]);
+  }, [postableAccounts]);
 
 
   // Totales
@@ -365,13 +365,13 @@ export default function ManualEntryModal({
                           className="w-full rounded border px-2 py-2 font-mono"
                           value={codeValue}
                           onChange={(e) => {
-                            const acc = leafAccounts.find(a => a.code === e.target.value);
+                            const acc = postableAccounts.find(a => a.code === e.target.value);
                             if (acc) applyAccount(idx, acc);
                           }}
                           disabled={isSaving}
                         >
                           <option value="">— Seleccionar —</option>
-                          {leafAccounts.map((a) => (
+                          {postableAccounts.map((a) => (
                             <option key={a.code} value={a.code}>
                               {a.code}
                             </option>
@@ -382,7 +382,7 @@ export default function ManualEntryModal({
                       {/* Cuenta (AccountPicker) */}
                       <td className="border p-2 w-[420px]">
                         <AccountPicker
-                          accounts={leafAccounts}
+                          accounts={postableAccounts}
                           value={
                             r.account_code
                               ? { code: r.account_code, name: r.account_name } 

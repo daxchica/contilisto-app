@@ -35,6 +35,8 @@ import {
 
 import { deleteBankMovementsByJournalTransactionId } from "./bankMovementService";
 import { RECEIVABLE_PREFIXES, isCustomerReceivableAccount } from "./controlAccounts";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 /* ============================================================================
  * HELPERS
@@ -128,7 +130,8 @@ export async function fetchReceivableByTransactionId(
   entityId: string,
   transactionId: string
 ): Promise<Receivable | null> {
-  if (!entityId || !transactionId) return null;
+  requireEntityId(entityId, "cargar CxC");
+  if (!transactionId) return null;
 
   const ref = doc(db, "entities", entityId, "receivables", transactionId);
   const snap = await getDoc(ref);
@@ -143,7 +146,7 @@ export async function fetchReceivableByTransactionId(
  * ========================================================================== */
 
 export async function fetchReceivables(entityId: string): Promise<Receivable[]> {
-  if (!entityId) return [];
+  requireEntityId(entityId, "cargar CxC");
 
   const colRef = collection(db, "entities", entityId, "receivables");
   const qRef = query(colRef, orderBy("issueDate", "desc"));
@@ -167,9 +170,11 @@ export async function upsertReceivable(
     "id" | "entityId" | "status" | "balance" | "createdAt" | "updatedAt"
   >
 ) {
+  requireEntityId(entityId, "guardar CxC");
   assertTransactionId(receivable.transactionId);
   assertReceivableAccount(receivable.account_code);
   assertInvoiceInvariant(receivable);
+  requireNonEmpty(receivable.account_code, "account code");
 
   const tx = receivable.transactionId;
   const ref = doc(db, "entities", entityId, "receivables", tx);
@@ -300,6 +305,7 @@ export async function applyReceivableCollection(
   receivable: Receivable,
   amount: number
 ) {
+  requireEntityId(entityId, "registrar cobro");
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Monto de cobro inválido");
   }
@@ -351,6 +357,10 @@ export async function repairReceivableAccountFromJournal(
   entityId: string,
   receivableId: string
 ) {
+  requireEntityId(entityId, "reparar CxC");
+  if (!receivableId?.trim()) {
+    throw new Error("receivableId requerido para reparar CxC");
+  }
   const ref = doc(db, "entities", entityId, "receivables", receivableId);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Receivable no existe");
@@ -382,6 +392,7 @@ export async function repairReceivableAccountFromJournal(
 
   const picked = candidates[0];
   assertReceivableAccount(picked.account_code);
+  requireNonEmpty(picked.account_code, "account code");
 
   await updateDoc(ref, {
     account_code: picked.account_code,
@@ -402,8 +413,8 @@ export async function updateReceivableTerms(
   termsDays: number,
   installments: number
 ) {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!receivableId) throw new Error("receivableId requerido");
+  requireEntityId(entityId, "actualizar CxC");
+  if (!receivableId?.trim()) throw new Error("receivableId requerido");
 
   if (!Number.isInteger(termsDays) || termsDays < 0) {
     throw new Error("Plazo de días inválido");
@@ -461,9 +472,9 @@ export async function annulReceivableInvoice(
   userIdSafe: string,
   reason = "Anulación de factura"
 ) {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!receivableId) throw new Error("receivableId requerido");
-  if (!userIdSafe) throw new Error("userIdSafe requerido");
+  requireEntityId(entityId, "anular CxC");
+  if (!receivableId?.trim()) throw new Error("receivableId requerido");
+  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
   const ref = doc(db, "entities", entityId, "receivables", receivableId);
   const snap = await getDoc(ref);
@@ -527,6 +538,10 @@ export async function annulReceivableInvoice(
  * ========================================================================== */
 
 async function deleteReceivable(entityId: string, receivableId: string) {
+  requireEntityId(entityId, "eliminar CxC");
+  if (!receivableId?.trim()) {
+    throw new Error("receivableId requerido para eliminar CxC");
+  }
   await deleteDoc(doc(db, "entities", entityId, "receivables", receivableId));
 }
 
@@ -552,6 +567,10 @@ export async function deleteReceivableCascade(
   entityId: string,
   transactionId: string
 ) {
+  requireEntityId(entityId, "eliminar CxC");
+  if (!transactionId?.trim()) {
+    throw new Error("transactionId requerido para eliminar CxC");
+  }
   const receivable = await fetchReceivableByTransactionId(entityId, transactionId);
   if (!receivable) return;
 

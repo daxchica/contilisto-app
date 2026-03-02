@@ -10,7 +10,7 @@ export type CreateEntityPayload = {
   name: string;
   entityType: EntityType;
   email: string;
-  address: string;
+  address?: string;
   phone?: string;
 };
 

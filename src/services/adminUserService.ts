@@ -6,7 +6,9 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import type { UserRole } from "@/context/AuthContext";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 export interface AdminUser {
   uid: string;
@@ -24,6 +26,10 @@ function normalizeRole(value: any): UserRole {
 }
 
 export async function fetchUsers(): Promise<AdminUser[]> {
+  const uid = getAuth().currentUser?.uid;
+  if (!uid) {
+    throw new Error("admin requerido");
+  }
   const snap = await getDocs(collection(db, "users"));
   
   return snap.docs.map((d) => {
@@ -43,6 +49,7 @@ export async function fetchUsers(): Promise<AdminUser[]> {
     uid: string,
     role: UserRole
     ) {
+    requireNonEmpty(uid, "uid");
     await updateDoc(doc(db, "users", uid), { role });
     }
 
@@ -50,6 +57,7 @@ export async function fetchUsers(): Promise<AdminUser[]> {
     uid: string,
     status: "active" | "inactive"
     ) {
+    requireNonEmpty(uid, "uid");
     await updateDoc(doc(db, "users", uid), {
         planStatus: status,
     });
@@ -62,5 +70,6 @@ export async function fetchUsers(): Promise<AdminUser[]> {
         "role" | "planKey" | "planStatus" | "isTestAccount"
     >>
     ) {
+    requireNonEmpty(uid, "uid");
     await updateDoc(doc(db, "users", uid), data);
     }

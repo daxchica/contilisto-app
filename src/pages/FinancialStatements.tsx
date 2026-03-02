@@ -57,6 +57,7 @@ export default function FinancialStatements() {
   // ------------------------------------
   // Load entries (currently disabled)
   // ------------------------------------
+  
   useEffect(() => {
     if (!entityId) {
       setEntries([]);

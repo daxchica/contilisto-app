@@ -27,10 +27,14 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  type QueryConstraint
 } from "firebase/firestore";
 import type { BankMovement, BankMovementType } from "@/types/bankTypes";
+import { data } from "react-router-dom";
+import { requireEntityId } from "./requireEntityId";
 
+export type { BankMovement, BankMovementType } from "@/types/bankTypes";
 
 /* ============================================================================
  * Helpers
@@ -75,12 +79,11 @@ export function isBankMovementLocked(movement: BankMovement): boolean {
 export async function createBankMovement(
   movement: BankMovement
 ): Promise<string> {
-  if (!movement.entityId) throw new Error("entityId es requerido");
+  requireEntityId(movement.entityId, "crear movimiento");
   if (!movement.bankAccountId) throw new Error("Cuenta bancaria requerida");
   if (!movement.date) throw new Error("Fecha requerida");
-  if (!movement.amount) throw new Error("Monto requerido");
 
-  if (movement.type === "transfer" && movement.amount === 0) {
+  if (!Number.isFinite(movement.amount) || movement.amount === 0) {
     throw new Error("La transferencia debe tener un monto válido");
   }
 
@@ -96,7 +99,8 @@ export async function createBankMovement(
     "bankMovements"
   );
 
-  const docRef = await addDoc(colRef, {
+  const docRef = await addDoc(
+    colRef, {
     ...movement,
     amount: normalizedAmount,
     reconciled: false,
@@ -111,6 +115,10 @@ export async function updateBankMovement(
   movementId: string,
   data: Partial<BankMovement>
 ): Promise<void> {
+  requireEntityId(entityId, "actualizar movimiento");
+  if (!movementId?.trim()) {
+    throw new Error("movementId requerido para actualizar movimiento");
+  }
   const ref = doc(
     db,
     "entities",
@@ -133,10 +141,13 @@ export async function updateBankMovement(
     assertEditable(current);
   }
 
-  const normalized =
-    data.amount !== undefined && data.type
-      ? normalizeAmount(data.amount, data.type)
-      : data.amount;
+  
+  let normalized = data.amount;
+
+  if (data.amount !== undefined) {
+    const newType = data.type ?? current.type;
+    normalized = normalizeAmount(data.amount, newType);
+  }
 
   await updateDoc(ref, {
     ...data,
@@ -150,6 +161,10 @@ export async function linkJournalTransaction(
   movementId: string,
   transactionId: string
 ): Promise<void> {
+  requireEntityId(entityId, "vincular movimiento");
+  if (!movementId?.trim()) {
+    throw new Error("movementId requerido para vincular movimiento");
+  }
   if (!transactionId) {
     throw new Error("transactionId es requerido para el enlace contable");
   }
@@ -172,6 +187,10 @@ export async function deleteBankMovement(
   entityId: string,
   movementId: string
 ): Promise<void> {
+  requireEntityId(entityId, "eliminar movimiento");
+  if (!movementId?.trim()) {
+    throw new Error("movementId requerido para eliminar movimiento");
+  }
   const ref = doc(
     db,
     "entities",
@@ -181,30 +200,24 @@ export async function deleteBankMovement(
   );
 
   const snap = await getDoc(ref);
-  if (!snap.exists()) return;
+  if (!snap.exists()) throw new Error("Movimiento no encontrado");
 
   const movement = snap.data() as BankMovement;
-
   if (isBankMovementLocked(movement)) {
-    throw new Error(
-      "No se puede eliminar un movimiento conciliado o vinculado al diario"
-    );
+    throw new Error("Movimiento bloqueado no puede eliminarse");
   }
 
   await deleteDoc(ref);
 }
 
-// ============================================================================
-// ADD THIS FUNCTION (exported) to src/services/bankMovementService.ts
-// Deletes bank movements linked to a given journal transaction id.
-// ============================================================================
-
 export async function deleteBankMovementsByJournalTransactionId(
   entityId: string,
   journalTransactionId: string
 ): Promise<void> {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!journalTransactionId) throw new Error("journalTransactionId requerido");
+  requireEntityId(entityId, "eliminar movimientos");
+  if (!journalTransactionId?.trim()) {
+    throw new Error("journalTransactionId requerido");
+  }
 
   const colRef = collection(db, "entities", entityId, "bankMovements");
   const qRef = query(
@@ -227,10 +240,11 @@ export async function deleteBankMovementsByJournalTransactionId(
 
 export async function fetchBankMovements(
   entityId: string,
+  bankAccountId?: string,
   from?: string,
   to?: string
 ): Promise<BankMovement[]> {
-  if (!entityId) return [];
+  requireEntityId(entityId, "cargar movimientos");
 
   const colRef = collection(
     db,
@@ -239,29 +253,33 @@ export async function fetchBankMovements(
     "bankMovements"
   );
 
-  let qRef = query(colRef, orderBy("date", "asc"));
+  const constraints: QueryConstraint[] = [];
+  if (bankAccountId) constraints.push(where("bankAccountId", "==", bankAccountId));
+  if (from) constraints.push(where("date", ">=", from));
+  if (to) constraints.push(where("date", "<=", to));
+  constraints.push(orderBy("date", "asc"));
 
-  if (from && to) {
-    qRef = query(
-      colRef,
-      where("date", ">=", from),
-      where("date", "<=", to),
-      orderBy("date", "asc")
-    );
-  }
+  const qRef = query(colRef, ...constraints);
 
   const snap = await getDocs(qRef);
 
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as BankMovement),
-  }));
+  return snap.docs.map((d) => {
+    const data = d.data() as BankMovement;
+    return {
+      ...data,
+      id: d.id,
+    }
+  });
 }
 
 export async function reconcileBankMovement(
   entityId: string,
   movementId: string
 ): Promise<void> {
+  requireEntityId(entityId, "conciliar movimiento");
+  if (!movementId?.trim()) {
+    throw new Error("movementId requerido para conciliar movimiento");
+  }
   const ref = doc(
     db,
     "entities",
@@ -275,4 +293,125 @@ export async function reconcileBankMovement(
     reconciledAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function unreconcileBankMovement(
+  entityId: string,
+  movementId: string
+): Promise<void> {
+  requireEntityId(entityId, "desconciliar movimiento");
+  if (!movementId?.trim()) {
+    throw new Error("movementId requerido para desconciliar movimiento");
+  }
+  const ref = doc(
+    db,
+    "entities",
+    entityId,
+    "bankMovements",
+    movementId
+  );
+
+  await updateDoc(ref, {
+    reconciled: false,
+    reconciledAt: null,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+type CreateTransferArgs = {
+  entityId: string;
+  date: string;
+  amount: number; // positive input
+  fromBankAccountId: string;
+  toBankAccountId: string;
+  fromAccountCode: string;
+  toAccountCode: string;
+  description?: string;
+  reference?: string;
+  createdBy?: string;
+};
+
+export async function createInterBankTransfer(args: CreateTransferArgs): Promise<{
+  transferId: string;
+  outMovementId: string;
+  inMovementId: string;
+}> {
+  const {
+    entityId,
+    date,
+    amount,
+    fromBankAccountId,
+    toBankAccountId,
+    fromAccountCode,
+    toAccountCode,
+    description,
+    reference,
+    createdBy,
+  } = args;
+
+  requireEntityId(entityId, "transferencia bancaria");
+  if (!date) throw new Error("Fecha requerida");
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Monto inválido");
+  if (!fromBankAccountId) throw new Error("Cuenta origen requerida");
+  if (!toBankAccountId) throw new Error("Cuenta destino requerida");
+  if (fromBankAccountId === toBankAccountId) {
+    throw new Error("La cuenta origen y destino no pueden ser iguales");
+  }
+
+  const transferId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).toString();
+
+  // OUT movement (negative)
+  const outId = await createBankMovement({
+    entityId,
+    bankAccountId: fromBankAccountId,
+    date,
+    amount: -Math.abs(amount),
+    type: "out",
+    description: description ?? "Transferencia entre bancos (salida)",
+    reference,
+    createdBy,
+    reconciled: false,
+    transfer: { transferId, fromAccountCode, toAccountCode },
+  });
+
+  // IN movement (positive)
+  const inId = await createBankMovement({
+    entityId,
+    bankAccountId: toBankAccountId,
+    date,
+    amount: Math.abs(amount),
+    type: "in",
+    description: description ?? "Transferencia entre bancos (entrada)",
+    reference,
+    createdBy,
+    reconciled: false,
+    transfer: { transferId, fromAccountCode, toAccountCode },
+  });
+
+  return { transferId, outMovementId: outId, inMovementId: inId };
+}
+
+export async function linkJournalTransactionByTransferId(
+  entityId: string,
+  transferId: string,
+  transactionId: string
+): Promise<void> {
+  requireEntityId(entityId, "vincular transferencia");
+  if (!transferId?.trim()) throw new Error("transferId requerido");
+  if (!transactionId?.trim()) throw new Error("transactionId requerido");
+
+  const colRef = collection(db, "entities", entityId, "bankMovements");
+  const qRef = query(colRef, where("transfer.transferId", "==", transferId));
+  const snap = await getDocs(qRef);
+
+  if (snap.empty) return;
+
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => {
+    batch.update(d.ref, {
+      relatedJournalTransactionId: transactionId,
+      updatedAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
 }

@@ -33,6 +33,8 @@ import {
 import {
   deleteBankMovementsByJournalTransactionId,
 } from "./bankMovementService";
+import { requireEntityId } from "./requireEntityId";
+import { requireNonEmpty } from "./requireNonEmpty";
 
 /* ============================================================================
  * HELPERS
@@ -84,7 +86,8 @@ export async function fetchPayableByTransactionId(
   entityId: string,
   transactionId: string
 ): Promise<Payable | null> {
-  if (!entityId || !transactionId) return null;
+  requireEntityId(entityId, "cargar CxP");
+  if (!transactionId) return null;
 
   const ref = doc(db, "entities", entityId, "payables", transactionId);
   const snap = await getDoc(ref);
@@ -101,7 +104,7 @@ export async function fetchPayableByTransactionId(
 export async function fetchPayables(
   entityId: string
 ): Promise<Payable[]> {
-  if (!entityId) return [];
+  requireEntityId(entityId, "cargar CxP");
 
   const colRef = collection(db, "entities", entityId, "payables");
   const qRef = query(colRef, orderBy("issueDate", "desc"));
@@ -126,9 +129,11 @@ export async function upsertPayable(
     "id" | "entityId" | "status" | "balance" | "createdAt" | "updatedAt"
   >
 ) {
+  requireEntityId(entityId, "guardar CxP");
   assertTransactionId(payable.transactionId);
   assertPayableAccount(payable.account_code);
   assertInvoiceInvariant(payable);
+  requireNonEmpty(payable.account_code, "account code");
 
   const tx = payable.transactionId;
   const ref = doc(db, "entities", entityId, "payables", tx);
@@ -174,6 +179,7 @@ export async function applyPayablePayment(
   payable: Payable,
   amount: number
 ) {
+  requireEntityId(entityId, "registrar pago");
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Monto de pago inválido");
   }
@@ -224,6 +230,10 @@ export async function repairPayableAccountFromJournal(
   entityId: string,
   payableId: string
 ) {
+  requireEntityId(entityId, "reparar CxP");
+  if (!payableId?.trim()) {
+    throw new Error("payableId requerido para reparar CxP");
+  }
   const ref = doc(db, "entities", entityId, "payables", payableId);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Payable no existe");
@@ -253,6 +263,7 @@ export async function repairPayableAccountFromJournal(
 
   const picked = candidates[0];
   assertPayableAccount(picked.account_code);
+  requireNonEmpty(picked.account_code, "account code");
 
   await updateDoc(ref, {
     account_code: picked.account_code,
@@ -273,8 +284,8 @@ export async function updatePayableTerms(
   termsDays: number,
   installments: number
 ) {
-  if (!entityId) throw new Error("entityId requerido");
-  if (!payableId) throw new Error("payableId requerido");
+  requireEntityId(entityId, "actualizar CxP");
+  if (!payableId?.trim()) throw new Error("payableId requerido");
 
   if (!Number.isInteger(termsDays) || termsDays < 0) {
     throw new Error("Plazo de días inválido");
@@ -322,6 +333,10 @@ export async function updatePayableTerms(
  * ========================================================================== */
 
 async function deletePayable(entityId: string, payableId: string) {
+  requireEntityId(entityId, "eliminar CxP");
+  if (!payableId?.trim()) {
+    throw new Error("payableId requerido para eliminar CxP");
+  }
   await deleteDoc(doc(db, "entities", entityId, "payables", payableId));
 }
 
@@ -345,6 +360,10 @@ export async function deletePayableCascade(
   entityId: string,
   transactionId: string
 ) {
+  requireEntityId(entityId, "eliminar CxP");
+  if (!transactionId?.trim()) {
+    throw new Error("transactionId requerido para eliminar CxP");
+  }
   const payable = await fetchPayableByTransactionId(entityId, transactionId);
   if (!payable) return;
 

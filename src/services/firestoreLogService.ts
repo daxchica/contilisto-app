@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   DocumentReference
 } from "firebase/firestore";
+import { requireEntityId } from "./requireEntityId";
 
 /* ============================================================
  * INTERNAL HELPERS
@@ -34,9 +35,10 @@ export async function checkProcessedInvoice(
   entityId: string,
   invoiceNumber: string
 ): Promise<boolean> {
+  requireEntityId(entityId, "verificar invoice log");
   try{
     const uid = getAuth().currentUser?.uid;
-    if (!entityId || !invoiceNumber || !uid) return false;
+    if (!invoiceNumber || !uid) return false;
 
     const ref = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
     const snap = await getDoc(ref);
@@ -58,9 +60,10 @@ export async function logProcessedInvoice(
   entityId: string,
   invoiceNumber: string
 ): Promise<void> {
+  requireEntityId(entityId, "registrar invoice log");
   try {
     const uid = getAuth().currentUser?.uid;
-    if (!entityId || !invoiceNumber || !uid) return;
+    if (!invoiceNumber || !uid) return;
 
     const ref = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
 
@@ -86,7 +89,7 @@ export async function logProcessedInvoice(
  * DELETE ALL LOGS FOR ENTITY
  * ============================================================ */
 export async function clearFirestoreLogForEntity(entityId: string) {
-  if (!entityId) return;
+  requireEntityId(entityId, "limpiar invoice logs");
 
   try {
     const logRef = collection(db, "entities", entityId, "invoiceLogs");
@@ -107,7 +110,8 @@ export async function deleteInvoicesFromFirestoreLog(
   entityId: string,
   invoiceNumbers: string[]
 ) {
-  if (!entityId || invoiceNumbers.length === 0) return;
+  requireEntityId(entityId, "eliminar invoice logs");
+  if (invoiceNumbers.length === 0) return;
 
   try {
     const refs = invoiceNumbers.map((n) =>
@@ -127,8 +131,9 @@ export async function invoiceLogExists(
   entityId: string,
   invoiceNumber: string
 ): Promise<boolean> {
+  requireEntityId(entityId, "verificar invoice log");
   try {
-    if (!entityId || !invoiceNumber) return false;
+    if (!invoiceNumber) return false;
 
     const ref = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
     const snap = await getDoc(ref);

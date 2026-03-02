@@ -14,6 +14,7 @@ import {
 
 import { db } from "@/firebase-config";
 import type { CashFlowItem, CashFlowDirection } from "@/types/CashFlow";
+import { requireEntityId } from "./requireEntityId";
 
 // ---------------------------------------------------------------------------
 // INTERNAL HELPERS
@@ -72,6 +73,7 @@ export async function getCashflowForecast(
   fromDate: number,
   toDate: number
 ): Promise<CashFlowItem[]> {
+  requireEntityId(entityId, "cargar flujo de caja");
   const results: CashFlowItem[] = [];
 
   // ---------------------------
@@ -129,4 +131,3 @@ export async function getCashflowForecast(
 
   return results;
 }
-

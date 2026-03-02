@@ -9,6 +9,7 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "@/firebase-config";
+import { requireEntityId } from "./requireEntityId";
 
 import type { CashflowCategory, CashflowDirection } from "@/types/UnifiedCashflow";
 import type { JournalEntry } from "@/types/JournalEntry";
@@ -63,6 +64,7 @@ async function resolveCategorySmart(
   entityId: string,
   transactionId?: string
 ): Promise<CashflowCategory> {
+  requireEntityId(entityId, "resolver categoría de flujo");
   if (!transactionId) return "uncategorized";
   if (txCategoryCache.has(transactionId)) {
     return txCategoryCache.get(transactionId)!;
@@ -121,8 +123,10 @@ export async function getRealCashBeforeDate(
   entityId: string,
   beforeDate: string
 ): Promise<number> {
+  requireEntityId(entityId, "cargar flujo real");
   const movements = await fetchBankMovements(
     entityId,
+    undefined,
     undefined,
     beforeDate
   );
@@ -146,10 +150,11 @@ export async function getRealCashFlow(
   from?: string | number,
   to?: string | number
 ): Promise<RealCashflowResult> {
+  requireEntityId(entityId, "cargar flujo real");
   const fromDate = normalizeDate(from);
   const toDate = normalizeDate(to);
 
-  const movements = await fetchBankMovements(entityId, fromDate, toDate);
+  const movements = await fetchBankMovements(entityId, undefined, fromDate, toDate);
 
   const events: RealCashflowEvent[] = [];
 

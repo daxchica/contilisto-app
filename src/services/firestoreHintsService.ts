@@ -13,6 +13,7 @@ import {
   type UpdateData,
   type DocumentData,
 } from "firebase/firestore";
+import { requireEntityId } from "./requireEntityId";
 
 // -------------------------------------------
 // TYPES
@@ -78,6 +79,7 @@ export async function saveContextualAccountHint(
   concept?: string,
 ): Promise<void>
 {
+  requireEntityId(entityId, "guardar hint contextual");
   // -----------------------------
   // HARD VALIDATION
   // -----------------------------
@@ -201,8 +203,8 @@ export async function getContextualAccountHint(
   concept?: string
 ): Promise<AccountHint | null> {
 
-  if (!entityId || !uid || !supplierRUC)
-    return null;
+  requireEntityId(entityId, "cargar hint contextual");
+  if (!uid || !supplierRUC) return null;
 
   const authUid = auth.currentUser?.uid;
   if (!authUid || authUid !== uid)

@@ -43,6 +43,8 @@ export interface Account {
 
   parentCode?: string | null;
 
+  isSystem?: boolean;
+
   // Accounting semantics
   nature?: Nature;
   taxType?: string;
@@ -58,19 +60,9 @@ export interface Account {
   isPayable?: boolean;
   requiresThirdParty?: boolean;
   isBank?: boolean;
-}
 
-/* -------------------------------------------------------------------------- */
-/* CUSTOM ACCOUNT (Firestore)                                                 */
-/* -------------------------------------------------------------------------- */
-
-export interface CustomAccount extends Account {
-  parentCode: string;
-  entityId: string;
-  uid: string;
-  createdAt: number;
-  
-  percentCode?: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 /* -------------------------------------------------------------------------- */

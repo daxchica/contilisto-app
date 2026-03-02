@@ -1,19 +1,17 @@
+// ============================================================================
 // src/services/bankBookService.ts
+// ---------------------------------------------------------------------------
+// Bank Book Service — CONTILISTO v2.0
+//
+// Libro Bancos is derived from bankMovements.
+// No separate storage.
+// ============================================================================
 
-import { db } from "../firebase-config";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  query,
-  where,
-  Timestamp,
-} from "firebase/firestore";
-
+import { fetchBankMovements } from "./bankMovementService";
 import type { BankBookEntry } from "../types/bankTypes";
 
 /* ============================================================
- *  FETCH BANK BOOK ENTRIES
+ *  FETCH BANK BOOK ENTRIES (Derived from Bank Movements)
  * ============================================================ */
 export async function fetchBankBookEntries(
   entityId: string,
@@ -21,40 +19,25 @@ export async function fetchBankBookEntries(
 ): Promise<BankBookEntry[]> {
   if (!entityId || !bankAccountId) return [];
 
-  const ref = collection(db, "entities", entityId, "bankBookEntries");
-  const q = query(ref, where("bankAccountId", "==", bankAccountId));
-  const snap = await getDocs(q);
+  const movements = await fetchBankMovements(entityId, bankAccountId);
 
-  return snap.docs.map((d) => {
-    const data = d.data() as Omit<BankBookEntry, "id">;
+  let runningBalance = 0;
 
-    return {
-      id: d.id,
-      ...data,
-      date:
-        data.date ||
-        new Date().toISOString().split("T")[0], // normaliza fecha
-    };
-  });
-}
+  return movements
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((m) => {
+      runningBalance += m.amount;
 
-/* ============================================================
- *  CREATE BANK BOOK ENTRY
- * ============================================================ */
-export async function createBankBookEntry(
-  entityId: string,
-  entry: BankBookEntry,
-  userIdSafe: string
-): Promise<void> {
-  if (!entityId) throw new Error("entityId es requerido");
-  if (!entry) throw new Error("entry es requerido");
-
-  const ref = collection(db, "entities", entityId, "bankBookEntries");
-
-  await addDoc(ref, {
-    ...entry,
-    createdBy: userIdSafe,
-    userIdSafe,
-    createdAt: Timestamp.now(),
-  });
+      return {
+        id: m.id!,
+        bankAccountId: m.bankAccountId,
+        date: m.date,
+        payee: m.payee ?? "",
+        amount: m.amount,
+        type: m.type,
+        description: m.description ?? "",
+        status: m.reconciled ? "Conciliado" : "Pendiente",
+        balance: runningBalance,
+      };
+    });
 }

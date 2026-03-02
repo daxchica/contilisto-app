@@ -9,7 +9,7 @@
 // - Do NOT add Firestore queries here.
 // ============================================================================
 
-import type { BankMovement } from "./bankMovementService";
+import type { BankMovement } from "@/types/bankTypes";
 import { fetchBankMovements } from "./bankMovementService";
 
 /**
@@ -20,8 +20,12 @@ import { fetchBankMovements } from "./bankMovementService";
  */
 export async function fetchBankMovementsForEntity(
   entityId: string,
+  bankAccountId: string,
   from?: string,
   to?: string
 ): Promise<BankMovement[]> {
-  return fetchBankMovements(entityId, from, to);
+  if (!entityId) throw new Error("entityId es requerido");
+  if (!bankAccountId) throw new Error("bankAccountId es requerido");
+
+  return fetchBankMovements(entityId, bankAccountId, from, to);
 }
