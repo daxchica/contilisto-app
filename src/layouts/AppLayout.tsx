@@ -1,14 +1,13 @@
 // src/layouts/AppLayout.tsx
-import React, { ReactNode, useState } from "react";
+
+import { useState } from "react";
+import { Outlet } from "react-router-dom";
+
 import Sidebar from "@/components/sidebar/Sidebar";
 import NavBar from "@/components/navbar/NavBar";
 import Footer from "@/components/footer/Footer";
 
-interface Props {
-  children: ReactNode;
-}
-
-export default function AppLayout({ children }: Props) {
+export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -35,18 +34,22 @@ export default function AppLayout({ children }: Props) {
         </div>
       )}
 
-      {/* Main area */}
-      <div className="flex flex-col min-h-screen md:ml-64">
+      {/* Main content wrapper */}
+      <div className="flex flex-col flex-1 md:ml-64 min-h-screen">
 
-      {/* NAVBAR GENERAL */}
-      <NavBar onMenuClick={() => setSidebarOpen(true)} />
+        {/* NAVBAR */}
+        <header className="sticky top-0 z-20">
+          <NavBar onMenuClick={() => setSidebarOpen(true)} />
+        </header>
 
+        {/* PAGE CONTENT */}
         <main className="flex-1 pt-16 px-3 sm:px-4 md:px-6">
           <div className="mx-auto w-full max-w-6xl">
-            {children}
+            <Outlet />
           </div>
         </main>
 
+        {/* FOOTER */}
         <Footer />
       </div>
     </div>

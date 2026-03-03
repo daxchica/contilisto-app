@@ -7,113 +7,86 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "../firebase-config";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "@/firebase-config";
+import { ensureUserDocument, getUser, AppUser } from "@/services/userService";
 
 /* ============================================================
- * TYPES
+ * CONTEXT TYPES
  * ============================================================ */
-export type UserRole = "user" | "admin" | "master";
-
-export interface AppUser {
-  uid: string;
-  email: string | null;
-  role: UserRole;
-  emailVerified: boolean;
-  phoneVerified?: boolean;
-  planKey?: string;
-  planStatus?: string;
-  isTestAccount?: boolean;
-}
 
 interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
+  logout: () => Promise<void>;
 }
 
 /* ============================================================
  * CONTEXT
  * ============================================================ */
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  logout: async () => {}, // safe default
 });
-
-/* ============================================================
- * HELPERS
- * ============================================================ */
-function normalizeRole(value: any): UserRole {
-  return value === "master" || value === "admin" || value === "user"
-    ? value
-    : "user";
-}
 
 /* ============================================================
  * PROVIDER
  * ============================================================ */
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔐 Logout inside provider (extendable)
+  const logout = async () => {
+    await signOut(auth);
+    setUser(null);
+  };
+
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!isMounted) return;
+
       setLoading(true);
 
-      if (!firebaseUser) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       try {
-        const userRef = doc(db, "users", firebaseUser.uid);
-        const snap = await getDoc(userRef);
-
-        let resolvedUser: AppUser;
-
-        if (!snap.exists()) {
-          resolvedUser = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: "user",
-            emailVerified: firebaseUser.emailVerified,
-            phoneVerified: false,
-            planKey: "free",
-            planStatus: "active",
-            isTestAccount: false,  
-          };
-
-          await setDoc(userRef, resolvedUser);
-        } else {
-          const data = snap.data();
-
-          resolvedUser = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: normalizeRole(data.role),
-            emailVerified: firebaseUser.emailVerified,
-            phoneVerified: data.phoneVerified ?? false,
-            planKey: data.planKey ?? "free",
-            planStatus: data.planStatus ?? "active",
-            isTestAccount: data.isTestAccount ?? false,
-          };
+        if (!firebaseUser) {
+          setUser(null);
+          return;
         }
 
-        setUser(resolvedUser);
+        // Ensure Firestore user document exists
+        await ensureUserDocument(firebaseUser);
+
+        const dbUser = await getUser(firebaseUser.uid);
+
+        if (isMounted) {
+          setUser(dbUser);
+        }
       } catch (error) {
         console.error("AuthContext error:", error);
-        setUser(null);
+        if (isMounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     });
-      
-    return () => unsubscribe();
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -122,4 +95,5 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 /* ============================================================
  * HOOK
  * ============================================================ */
+
 export const useAuth = () => useContext(AuthContext);
