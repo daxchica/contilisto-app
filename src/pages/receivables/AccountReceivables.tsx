@@ -1,6 +1,8 @@
 // src/pages/AccountsReceivablePage.tsx
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { Account } from "@/types/AccountTypes";
+import { fetchAccounts } from "@/services/accountService";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 
 import type { Receivable } from "@/types/Receivable";
@@ -8,9 +10,13 @@ import { fetchReceivables } from "@/services/receivablesService";
 
 import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsTable";
 import { resolveReceivableDueDate } from "@/utils/payable";
+import ARPaymentModal from "@/components/modals/ARPaymentModal";
+import { useAuth } from "@/context/AuthContext";
+
 
 export default function AccountsReceivablePage() {
   const { selectedEntity } = useSelectedEntity();
+  const { user } = useAuth();
 
   const entityId = selectedEntity?.id ?? null;
 
@@ -18,6 +24,8 @@ export default function AccountsReceivablePage() {
   const [loading, setLoading] = useState(true);
 
   const [expandedReceivableId, setExpandedReceivableId] = useState<string | null>(null);
+  const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
 
   // --------------------------------------------------
   // Reload receivables (safe against race conditions)
@@ -49,6 +57,12 @@ export default function AccountsReceivablePage() {
     const cleanup = reload();
     return cleanup;
   }, [reload]);
+
+  useEffect(() => {
+  if (!entityId) return;
+
+  fetchAccounts(entityId).then(setAccounts);
+}, [entityId]);
 
   // --------------------------------------------------
   // Derived data
@@ -179,7 +193,7 @@ export default function AccountsReceivablePage() {
                     {/* v1 placeholder: collection modal will come next */}
                     <button
                       className="text-blue-600 hover:underline text-xs"
-                      disabled
+                      onClick={() => setSelectedReceivable(r)}
                       title="Se implementará en el siguiente paso"
                     >
                       Cobrar
@@ -207,6 +221,17 @@ export default function AccountsReceivablePage() {
           </tbody>
         </table>
       </div>
+
+      {selectedReceivable && entityId && user && (
+              <ARPaymentModal
+                entityId={entityId}
+                userId={user.uid}
+                receivable={selectedReceivable}
+                accounts={accounts}
+                onClose={() => setSelectedReceivable(null)}
+                onSuccess={reload}
+              />
+            )}
     </div>
   );
 }

@@ -37,6 +37,7 @@ import { deleteBankMovementsByJournalTransactionId } from "./bankMovementService
 import { RECEIVABLE_PREFIXES, isCustomerReceivableAccount } from "./controlAccounts";
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
+import { createBankMovement } from "./bankMovementService";
 
 /* ============================================================================
  * HELPERS
@@ -310,6 +311,8 @@ export async function applyReceivableCollection(
     throw new Error("Monto de cobro inválido");
   }
 
+  
+
   if (!receivable?.id) throw new Error("Receivable inválido (id faltante)");
 
   const ref = doc(db, "entities", entityId, "receivables", receivable.id);
@@ -345,6 +348,94 @@ export async function applyReceivableCollection(
     paid,
     balance: next.balance,
     status: next.status,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+
+
+/* ============================================================================
+ * APPLY RECEIVABLE PAYMENT (ERP SAFE)
+ * Wrapper used by UI components like ARPaymentModal
+ * Creates accounting trace + applies collection
+ * ========================================================================== */
+
+export async function applyReceivablePayment(
+  entityId: string,
+  receivable: Receivable,
+  amount: number,
+  userIdSafe: string,
+  paymentTransactionId: string
+) {
+  requireEntityId(entityId, "registrar pago CxC");
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Monto de pago inválido");
+  }
+
+  if (!receivable?.id) {
+    throw new Error("Receivable inválido (falta id)");
+  }
+
+  if (!paymentTransactionId?.trim()) {
+    throw new Error("transactionId requerido para pago");
+  }
+
+  const ref = doc(db, "entities", entityId, "receivables", receivable.id);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) {
+    throw new Error("Receivable no existe");
+  }
+
+  const current = snap.data() as Receivable;
+
+  assertNotAnnulled(current);
+  assertTransactionId(current.transactionId);
+
+  const balance = n2(current.balance);
+
+  if (amount > balance) {
+    throw new Error("El pago excede el saldo pendiente");
+  }
+
+  /* APPLY COLLECTION */
+
+  await applyReceivableCollection(entityId, current, amount);
+
+  /* CREATE BANK MOVEMENTS */
+
+  const journalEntries = await fetchJournalEntriesByTransactionId(
+    entityId,
+    paymentTransactionId
+  );
+
+  const bankLines = journalEntries.filter(
+    (e) => n2(e.debit) > 0 && e.account_code?.startsWith("11")
+  );
+
+  for (const line of bankLines) {
+    await createBankMovement({
+      entityId,
+      bankAccountId: line.account_code ?? "",
+      
+      date: line.date,
+      amount: n2(line.debit),
+      type: "deposit",
+      description: line.description ?? "Cobro de cliente",
+      relatedJournalTransactionId: paymentTransactionId,
+    });
+  }
+
+  /* REGISTER PAYMENT TRACE */
+
+  const collectionIds: string[] = Array.isArray(current.collectionTransactionIds)
+    ? current.collectionTransactionIds
+    : [];
+
+  await updateDoc(ref, {
+    collectionTransactionIds: [...collectionIds, paymentTransactionId],
+    lastPaymentAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }

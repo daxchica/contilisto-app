@@ -445,13 +445,37 @@ export default function AccountingDashboard() {
         <ManualEntryModal
           entityId={entityId}
           userIdSafe={userIdSafe}
-          accounts={accounts}
           postableAccounts={postableAccounts}
           leafCodeSet={leafCodeSet}
           onClose={() => setShowManualModal(false)}
-          onAddEntries={async () =>
-            setLogRefreshTrigger((v) => v + 1)
-          }
+          onAddEntries={async (entries) => {
+            const authUid = getAuth().currentUser?.uid;
+            if (!authUid) {
+              alert("Sesion no valida");
+              return;
+            }
+
+            if (!entityId) {
+              alert("Entidad inválida.");
+              return;
+            }
+
+            try {
+              // 1) Save to Firestore
+              await saveJournalEntries(entityId, authUid, entries);
+
+              // 2) Refresh journal table
+              setLogRefreshTrigger((v) => v + 1);
+
+              // Optional: optimistic UI (instant)
+              // setSessionJournal((prev) => [...entries, ...prev]);
+
+            } catch (err: any) {
+              console.error("MANUAL SAVE ERROR", err);
+              alert(err?.message || "Error al guardar asiento manual");
+              throw err; // keeps modal from closing if you handle it there
+            }
+          }}
         />
       )}
 

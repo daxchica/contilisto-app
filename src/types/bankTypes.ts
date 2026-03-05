@@ -10,6 +10,19 @@ export interface BankAccount {
   id?: string;
   entityId: string;
 
+  bankAccountId: string;
+
+  date: string;
+  amount: number;
+  type: BankMovementType;
+
+  payee?: string;
+  description?: string;
+  reference?: string;
+
+  relatedInvoiceId?: string;
+  relatedJournalTransactionId?: string;
+
   account_code?: string;
   accountCode?: string;
 
@@ -28,7 +41,13 @@ export interface BankAccount {
  * Bank Movement Types
  * ========================================================================== */
 
-export type BankMovementType = "in" | "out" | "transfer";
+export type BankMovementType = 
+  | "in" 
+  | "out" 
+  | "transfer"
+  | "deposit"
+  | "withdrawal"
+  | "adjustment";
 
 /* ============================================================================
  * Bank Movement (Source of Truth)

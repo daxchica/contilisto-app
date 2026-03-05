@@ -257,25 +257,28 @@ export default function AccountPicker({
 
     <div
       ref={listRef}
+      id="account-picker-listbox"
+      data-portal-dropdown="account-picker"
+      role="listbox"
       style={dropdownStyle}
       className="bg-white border rounded shadow-lg max-h-60 overflow-auto"
+      onMouseDown={(e) => e.stopPropagation()}
     >
 
       {filtered.map((acc, i) => (
 
         <div
-
           key={acc.code}
-
+          id={`account-option-${acc.code}`}
+          role="option"
+          aria-selected={i === activeIndex}
           className={`
             px-3 py-2 cursor-pointer
             ${i === activeIndex
               ? "bg-emerald-100"
               : "hover:bg-emerald-50"}
           `}
-
           onMouseDown={() => pick(acc)}
-
         >
 
           <div className="font-mono text-sm">
@@ -307,33 +310,29 @@ export default function AccountPicker({
     <div ref={containerRef}>
 
       <input
-
         ref={inputRef}
-
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="account-picker-listbox"
+        aria-autocomplete="list"
+        aria-activedescendant={
+          open && filtered[activeIndex]
+            ? `account-option-${filtered[activeIndex].code}`
+            : undefined
+        }
+        aria-label="Seleccionar cuenta contable"
         value={open ? query : displayValue}
-
         placeholder={placeholder}
-
         className={inputClassName}
-
         onFocus={() => {
-
           setQuery("");
-
           setOpen(true);
-
         }}
-
-        onChange={e => {
-
+        onChange={(e) => {
           setQuery(e.target.value);
-
           setOpen(true);
-
         }}
-
         onKeyDown={onKeyDown}
-
       />
 
       {open &&

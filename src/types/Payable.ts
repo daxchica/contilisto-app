@@ -39,7 +39,7 @@ export interface Payable {
 
   installmentSchedule?: Installment[];
 
-  createdFrom: "ai_journal" | "manual_journal" | "sri_invoice";
+  createdFrom: "ai_journal" | "manual_journal" | "sri_invoice" | "journal_rebuild";
 
   createdAt?: any; // serverTimestamp
   updatedAt?: any;

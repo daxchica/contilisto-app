@@ -400,6 +400,29 @@ function extractIssuerRUCFromText(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// ISSUER NAME OCR FALLBACK
+// Used if layout detection fails
+// ---------------------------------------------------------------------------
+
+function extractIssuerNameFromOCR(text: string): string {
+
+  const clean = (text || "").replace(/\s+/g, " ").trim();
+
+  const m =
+    clean.match(
+      /\b([A-ZÁÉÍÓÚÑ0-9\s\.\-&]{5,80})\s+RUC\s*[:\-]?\s*\d{13}\b/i
+    );
+
+  if (m?.[1]) {
+    return m[1]
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return "";
+}
+
+// ---------------------------------------------------------------------------
 // BUYER (kept, but not used to determine invoice type)
 // ---------------------------------------------------------------------------
 
@@ -866,11 +889,22 @@ export const handler: Handler = async (event) => {
     // ------------------------------------------------------------------
     // ISSUER
     // ------------------------------------------------------------------
-    // Issuer name: LEFT margin, Cuadro 1
-    const issuerName = extractIssuerNameFromLayout(page1Items);
+    
+    // 1️⃣ Try layout detection first
+    let issuerName = extractIssuerNameFromLayout(page1Items);
+
+    // 2️⃣ Fallback to OCR detection
+    if (!issuerName) {
+      issuerName = extractIssuerNameFromOCR(text);
+    }
 
     // Issuer RUC: from OCR text
     const issuerRUC = extractIssuerRUCFromText(text);
+
+    // 3️⃣ Final fallback
+    if (!issuerName && issuerRUC) {
+      issuerName = `PROVEEDOR ${issuerRUC}`;
+    }
 
     if (!issuerRUC) {
       return {

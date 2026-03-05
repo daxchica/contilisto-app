@@ -114,8 +114,8 @@ export default function JournalTable({
           bVal = Date.parse(eb.date) || 0;
           break;
         case "invoice":
-          aVal = ea.invoice_number ?? "";
-          bVal = eb.invoice_number ?? "";
+          aVal = ea.invoice_number ?? ea.documentRef ?? ea.invoice_number ?? "";
+          bVal = eb.invoice_number ?? eb.documentRef ?? eb.invoice_number ?? "";
           break;
         case "account_code":
           aVal = ea.account_code ?? "";
@@ -150,9 +150,9 @@ export default function JournalTable({
     useState<Record<string, boolean>>({});
 
   const selectedCount = useMemo(
-    () => Object.values(selectedMap).filter(Boolean).length,
-    [selectedMap]
-  );
+  () => Object.keys(selectedMap).length,
+  [selectedMap]
+);
 
   const selectedEntries = useMemo(
     () => sortedRows.filter((r) => selectedMap[r.rowId]).map((r) => r.e),
@@ -213,7 +213,7 @@ export default function JournalTable({
       head: [["Fecha", "Factura", "Código", "Cuenta", "Débito", "Crédito"]],
       body: data.map((e) => [
         e.date,
-        e.invoice_number || "-",
+        e.invoice_number || e.documentRef || e.description || "-",
         e.account_code,
         e.account_name,
         fmtMoney(e.debit),
@@ -330,7 +330,7 @@ export default function JournalTable({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{e.date}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    {e.invoice_number || "-"}
+                    {e.invoice_number || e.documentRef || e.description || "-"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {e.account_code}

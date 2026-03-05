@@ -35,6 +35,7 @@ import {
 } from "./bankMovementService";
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
+import { isSupplierPayableAccount } from "./controlAccounts";
 
 /* ============================================================================
  * HELPERS
@@ -46,10 +47,12 @@ const n2 = (x: any) =>
 const normAcc = (c?: string) => (c || "").replace(/\./g, "").trim();
 
 function assertPayableAccount(account_code?: string) {
+  
   const c = normAcc(account_code);
+
   if (!c) throw new Error("Payable requiere cuenta contable");
 
-  if (!c.startsWith("20103")) {
+  if (!isSupplierPayableAccount(c)) {
     throw new Error(`Cuenta inválida para CxP: ${account_code}`);
   }
 }

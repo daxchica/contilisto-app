@@ -30,6 +30,7 @@ import { isCustomerReceivableAccount, isSupplierPayableAccount } from "./control
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
 
+
 /* =============================================================================
    HELPERS
 ============================================================================= */
@@ -255,17 +256,18 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
   const lines = saved.filter((e) => n2(e.credit) > 0);
 
   const grouped = new Map<string, JournalEntry[]>();
+
   for (const e of lines) {
     if (!e.transactionId) continue;
     if (!grouped.has(e.transactionId)) grouped.set(e.transactionId, []);
     grouped.get(e.transactionId)!.push(e);
   }
 
-  
-
   for (const [tx, group] of grouped) {
     if (group.some((e: JournalEntry) => e.source === "initial")) continue;
+    
     const control = group.find((e) => isSupplierPayableAccount(e.account_code));
+    
     if (!control) continue;
 
     const total = n2(control.credit);
@@ -280,6 +282,8 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
       String(
         (control as any).supplier_name ??
         (control as any).issuerName ??
+        control.description?.split("-")[1]?.trim() ??
+        control.description ??
         ""
       ).trim() || "PROVEEDOR";
 
@@ -291,15 +295,12 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
         ""
       ).trim();
 
-    if (!control.account_code?.trim()) {
-      console.warn(`[AP SYNC] tx=${tx} missing payable account_code`);
-      continue;
-    }
-
     await upsertPayable(entityId, {
       transactionId: tx,
+
       invoiceNumber: control.invoice_number.trim(),
-      issueDate: control.date ?? new Date().toISOString().slice(0,10),
+      
+      issueDate: control.date || new Date().toISOString().slice(0,10),
 
       supplierName,
       supplierRUC,
@@ -565,32 +566,32 @@ export async function saveJournalEntries(
   }
 
   // 🔒 HARD ACCOUNTING RULE — BEFORE WRITE
-const initialDate = await fetchInitialBalanceDate(entityId);
-if (initialDate) {
-  assertNotBeforeInitialBalanceDate(saved, initialDate);
-}
+  const initialDate = await fetchInitialBalanceDate(entityId);
+    if (initialDate) {
+      assertNotBeforeInitialBalanceDate(saved, initialDate);
+    }
 
-const totalDebit = saved.reduce(
-  (s: number, e: JournalEntry) => s + (e.debit ?? 0),0);
-const totalCredit = saved.reduce(
-  (s: number, e: JournalEntry) => s + (e.credit ?? 0),0);
+  const totalDebit = saved.reduce(
+    (s: number, e: JournalEntry) => s + (e.debit ?? 0),0);
+  const totalCredit = saved.reduce(
+    (s: number, e: JournalEntry) => s + (e.credit ?? 0),0);
 
-// ✅ SAFE TO COMMIT
-if (saved.length) {
+  // ✅ SAFE TO COMMIT
+  if (saved.length) {
   
-  await batch.commit();
+    await batch.commit();
 
-  const hasPayable = saved.some(
-    (e: JournalEntry) => isSupplierPayableAccount(e.account_code));
-  const hasReceivable = saved.some(
-    (e: JournalEntry) => isCustomerReceivableAccount(e.account_code));
-  const isInitialBalance = saved.some((e: JournalEntry) => e.source === "initial");
+    const hasPayable = saved.some(
+      (e: JournalEntry) => isSupplierPayableAccount(e.account_code));
+    const hasReceivable = saved.some(
+      (e: JournalEntry) => isCustomerReceivableAccount(e.account_code));
+    const isInitialBalance = saved.some((e: JournalEntry) => e.source === "initial");
 
-  if (!isInitialBalance) {
-    if (hasPayable) await syncPayablesFromJournal(entityId, saved);
-    if (hasReceivable) await syncReceivablesFromJournal(entityId, saved);
+    if (!isInitialBalance) {
+      if (hasPayable) await syncPayablesFromJournal(entityId, saved);
+      if (hasReceivable) await syncReceivablesFromJournal(entityId, saved);
+    }
   }
-}
   return saved;
 }
 

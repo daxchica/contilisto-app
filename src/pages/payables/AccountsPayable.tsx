@@ -1,6 +1,7 @@
 // src/pages/AccountsPayablePage.tsx
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchPayables } from "@/services/payablesService";
 import type { Payable } from "@/types/Payable";
@@ -12,17 +13,17 @@ import PayableInstallmentsTable from "@/components/payables/PayableInstallmentsT
 import { resolvePayableDueDate } from "@/utils/payable";
 import { resolveSupplierName, resolveSupplierRUC } from "@/utils/supplier";
 import { BankAccount } from "@/types/bankTypes";
-
+import { rebuildPayablesFromJournal } from "@/services/rebuildPayablesFromJournal";
 
 export default function AccountsPayablePage() {
+  const { user } = useAuth();
   const { selectedEntity } = useSelectedEntity();
 
   const entityId = selectedEntity?.id ?? null;
-  const userIdSafe = selectedEntity?.uid ?? null;
+  const userIdSafe = user?.uid ?? "";
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
-
 
   const [payables, setPayables] = useState<Payable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,9 +86,6 @@ export default function AccountsPayablePage() {
     return cleanup;
   }, [reload]);
 
-
-
-
   // --------------------------------------------------
   // Derived data
   // --------------------------------------------------
@@ -128,6 +126,10 @@ export default function AccountsPayablePage() {
     return <p className="p-6">Cargando cuentas por pagar…</p>;
   }
 
+  if (!entityId || !userIdSafe) {
+    return <p className="p-6">Inicializando usuario..</p>
+  }
+
   // --------------------------------------------------
   // UI
   // --------------------------------------------------
@@ -140,6 +142,16 @@ export default function AccountsPayablePage() {
           Facturas pendientes de pago a proveedores
         </p>
       </div>
+
+      <button
+        className="bg-blue-600 text-white px-3 py-2 rounded"
+        onClick={async () => {
+          await rebuildPayablesFromJournal(entityId);
+          reload();
+        }}
+      >
+        Rebuild AP
+      </button>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -277,9 +289,9 @@ export default function AccountsPayablePage() {
       
         {payingPayable && (
           <RegisterPayablePaymentModal
-            isOpen={true}
+            isOpen={!!payingPayable}
             entityId={entityId}
-            userIdSafe={userIdSafe!}
+            userIdSafe={userIdSafe ?? ""}
             payable={payingPayable}
             bankAccounts={bankAccounts}
             onClose={() => setPayingPayable(null)}

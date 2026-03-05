@@ -26,6 +26,7 @@ import CompaniesPage from "@/pages/CompaniesPage";
 import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";
 import AccountsReceivablePage from "@/pages/receivables/AccountReceivables";
+import AccountsReceivableAgingPage from "@/pages/receivables/AccountsReceivableAgingPage";
 import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 import AccountingDashboard from "@/pages/AccountingDashboard";
 import ProfilePage from "@/pages/ProfilePage";
@@ -60,6 +61,7 @@ export default function AppRoutes() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/configuracion" element={<SettingsPage />} />
           <Route path="/accountsreceivable" element={<AccountsReceivablePage />} />
+          <Route path="/accountsreceivables/aging" element={<AccountsReceivableAgingPage />} />
           <Route path="/accountspayable" element={<AccountsPayablePage />} />
           <Route path="/impuestos" element={<Declaraciones />} />
           <Route path="/flujo-caja" element={<FlujoCaja />} />

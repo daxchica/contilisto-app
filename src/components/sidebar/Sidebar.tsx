@@ -13,7 +13,7 @@ interface SidebarProps {
 
 export default function Sidebar({ onClose }: SidebarProps) {
   const { user } = useAuth();
-  const isMaster = user?.role === "master";
+  const isMaster = (user as any)?.role === "master";
 
   const { selectedEntity, setEntity } = useSelectedEntity();
   const { entities } = useEntities();
@@ -253,13 +253,20 @@ export default function Sidebar({ onClose }: SidebarProps) {
         
 
         <LinkRow to="/accountsreceivable" icon="💼" label="Documentos x Cobrar" requiresEntity />
+        <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging de Cartera" requiresEntity />
+        
         <LinkRow to="/accountspayable" icon="💼" label="Documentos x Pagar" requiresEntity />
+        
+        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
+          Impuestos
+        </div>
 
+        <LinkRow to="/impuestos" icon="📝" label="Retenciones SRI" requiresEntity />
+        
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Contabilidad
         </div>
 
-       
         <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
         <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
         <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
@@ -271,11 +278,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           requiresEntity
         />*/}
 
-        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Impuestos
-        </div>
-
-        <LinkRow to="/impuestos" icon="📝" label="Declaraciones SRI" requiresEntity />
+       
 
         <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
           Configuración

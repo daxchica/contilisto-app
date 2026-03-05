@@ -3,7 +3,7 @@ const normAcc = (c?: string) => (c || "").replace(/\./g, "").trim();
 
 // ✅ Put here the real prefixes you use in your COA
 export const RECEIVABLE_PREFIXES = ["10103"];
-export const PAYABLE_PREFIXES = ["20101", "21101"];
+export const PAYABLE_PREFIXES = ["201", "211"];
 
 export function isCustomerReceivableAccount(code?: string) {
   const c = normAcc(code);

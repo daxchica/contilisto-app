@@ -7,8 +7,18 @@ export interface Receivable {
   id?: string;
   entityId: string;
 
-  transactionId?: string;
   invoiceNumber: string;
+  issueDate: string;      // YYYY-MM-DD
+
+  total: number;
+  paid: number;
+  balance: number;
+
+  status: ReceivableStatus;
+
+  transactionId?: string;
+  
+  collectionTransactionIds?: string[];
 
   // Customer (mirror of supplier)
   customerName?: string;
@@ -18,17 +28,10 @@ export interface Receivable {
   account_code: string;   // 10102050101
   account_name: string;
 
-  issueDate: string;      // YYYY-MM-DD
   dueDate?: string;
 
   termsDays: number;
   installments: number;
-
-  total: number;
-  paid: number;
-  balance: number;
-
-  status: ReceivableStatus;
 
   installmentSchedule?: Installment[];
 
