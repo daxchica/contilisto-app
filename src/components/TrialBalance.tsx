@@ -15,14 +15,24 @@ type Props = {
   endDate?: string;
 };
 
-type Row = {
-  code: string;
-  name: string;
+type Amounts = {
   initial: number;
   debit: number;
   credit: number;
-  balance: number;
+};
+
+type Row = {
+  code: string;
+  name: string;
   level: number;
+  parentCode: string | null;
+  initial: number;
+  debit: number;
+  credit: number;
+  saldoDeudor: number;
+  saldoAcreedor: number;
+  hasChildren: boolean;
+  hasOwnOrDescendantValues: boolean;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -33,17 +43,59 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("es-EC", {
     style: "currency",
     currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(n || 0);
 
-const detectLevel = (code: string) => {
-  if (code.length <= 1) return 1;
-  if (code.length <= 3) return 2;
-  if (code.length <= 5) return 3;
-  if (code.length <= 7) return 4;
-  return 5;
+const iso = (s?: string) => (typeof s === "string" ? s.slice(0, 10) : "");
+
+const toNumber = (v: unknown) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
 };
 
-const iso = (s?: string) => (typeof s === "string" ? s.slice(0, 10) : "");
+const isZero = (n: number) => Math.abs(n) < 0.000001;
+
+const hasAmounts = (a: Amounts) =>
+  !isZero(a.initial) || !isZero(a.debit) || !isZero(a.credit);
+
+const compareCodes = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+const getCOALevelLengths = (): number[] => {
+  const lengths = Array.from(
+    new Set(
+      ECUADOR_COA.map((a) => String(a.code ?? "").trim().length).filter(
+        (len) => len > 0
+      )
+    )
+  ).sort((a, b) => a - b);
+
+  return lengths.length ? lengths : [1, 2, 4, 6, 8];
+};
+
+const getDirectParentCode = (
+  code: string,
+  allCodes: Set<string>,
+  levelLengths: number[]
+): string | null => {
+  const shorterLengths = levelLengths.filter((len) => len < code.length).sort((a, b) => b - a);
+
+  for (const len of shorterLengths) {
+    const candidate = code.slice(0, len);
+    if (allCodes.has(candidate)) return candidate;
+  }
+
+  for (let len = code.length - 1; len >= 1; len--) {
+    const candidate = code.slice(0, len);
+    if (allCodes.has(candidate)) return candidate;
+  }
+
+  return null;
+};
+
+const computeSaldo = (initial: number, debit: number, credit: number) =>
+  initial + debit - credit;
 
 /* -------------------------------------------------------------------------- */
 /* COMPONENT                                                                  */
@@ -56,12 +108,21 @@ export default function TrialBalance({
   endDate,
 }: Props) {
   const [level, setLevel] = useState(5);
+  const [expanded, setExpanded] = useState<Set<string>>(
+    new Set(["1", "2", "3", "4", "5"])
+  );
 
-  const coaMap = useMemo(() => new Map(ECUADOR_COA.map(a => [a.code, a.name])), []);
-  const coaCodes = useMemo(() => new Set(ECUADOR_COA.map(a => a.code)), []);
+  const levelLengths = useMemo(() => getCOALevelLengths(), []);
+  const coaNameByCode = useMemo(
+    () =>
+      new Map(
+        ECUADOR_COA.map((a) => [String(a.code ?? "").trim(), String(a.name ?? "").trim()])
+      ),
+    []
+  );
 
   const entityEntries = useMemo(
-    () => entries.filter(e => e.entityId === entityId),
+    () => entries.filter((e) => e.entityId === entityId),
     [entries, entityId]
   );
 
@@ -75,15 +136,24 @@ export default function TrialBalance({
     [entries, entityId]
   );
 
-  const fromISO = startDate ? iso(startDate) : (initialBalanceDate ?? "");
+  const fromISO = startDate ? iso(startDate) : initialBalanceDate ?? "";
   const toISO = endDate ? iso(endDate) : "";
+
+  const toggleExpand = (code: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
 
   /* ------------------------------------------------------------------------ */
   /* FILTER ENTRIES                                                           */
   /* ------------------------------------------------------------------------ */
 
   const filteredEntries = useMemo(() => {
-    return entries.filter(e => {
+    return entries.filter((e) => {
       if (e.entityId !== entityId) return false;
 
       if (e.source !== "initial") {
@@ -98,119 +168,263 @@ export default function TrialBalance({
   }, [entries, entityId, fromISO, toISO]);
 
   /* ------------------------------------------------------------------------ */
-  /* RAW MAP (NOW ACCOUNTING-CORRECT)                                         */
+  /* EXACT AMOUNTS BY POSTED ACCOUNT                                          */
   /* ------------------------------------------------------------------------ */
 
-  const raw = useMemo(() => {
-    const map = new Map<
-      string,
-      { initialDebit: number; initialCredit: number; debit: number; credit: number }
-    >();
+  const exactAmountsByCode = useMemo(() => {
+    const map = new Map<string, Amounts>();
 
     for (const e of filteredEntries) {
-      const code = e.account_code?.trim();
+      const code = String(e.account_code ?? "").trim();
       if (!code) continue;
 
-      if (!map.has(code)) {
-        map.set(code, {
-          initialDebit: 0,
-          initialCredit: 0,
-          debit: 0,
-          credit: 0,
-        });
-      }
-
-      const entry = map.get(code)!;
-
-      const debit = Number(e.debit ?? 0);
-      const credit = Number(e.credit ?? 0);
+      const existing = map.get(code) ?? { initial: 0, debit: 0, credit: 0 };
+      const debit = toNumber(e.debit);
+      const credit = toNumber(e.credit);
 
       if (e.source === "initial") {
-        entry.initialDebit += debit;
-        entry.initialCredit += credit;
+        existing.initial += debit - credit;
       } else {
-        entry.debit += debit;
-        entry.credit += credit;
+        existing.debit += debit;
+        existing.credit += credit;
       }
+
+      map.set(code, existing);
     }
 
     return map;
   }, [filteredEntries]);
 
   /* ------------------------------------------------------------------------ */
-  /* AGGREGATION (SIGN CORRECT)                                               */
+  /* ACCOUNT UNIVERSE + TREE                                                  */
   /* ------------------------------------------------------------------------ */
 
-  const rows = useMemo<Row[]>(() => {
-    const prefixes = new Set<string>();
-    const VALID_LEVELS = [1, 3, 5, 7, 9];
+  const allCodes = useMemo(() => {
+    const set = new Set<string>();
 
-    for (const code of raw.keys()) {
-      for (const len of VALID_LEVELS) {
-        if (code.length >= len) {
-          const p = code.slice(0, len);
-          if (coaCodes.has(p)) prefixes.add(p);
-        }
+    for (const a of ECUADOR_COA) {
+      const code = String(a.code ?? "").trim();
+      if (code) set.add(code);
+    }
+
+    for (const code of exactAmountsByCode.keys()) {
+      if (code) set.add(code);
+    }
+
+    return set;
+  }, [exactAmountsByCode]);
+
+  const tree = useMemo(() => {
+    const parentByCode = new Map<string, string | null>();
+    const childrenByCode = new Map<string, string[]>();
+
+    const sortedCodes = Array.from(allCodes).sort(compareCodes);
+
+    for (const code of sortedCodes) {
+      const parent = getDirectParentCode(code, allCodes, levelLengths);
+      parentByCode.set(code, parent);
+
+      if (!childrenByCode.has(code)) childrenByCode.set(code, []);
+      if (parent) {
+        const siblings = childrenByCode.get(parent) ?? [];
+        siblings.push(code);
+        siblings.sort(compareCodes);
+        childrenByCode.set(parent, siblings);
       }
     }
 
-    return Array.from(prefixes)
-      .map(code => {
-        let initialDebit = 0;
-        let initialCredit = 0;
-        let debit = 0;
-        let credit = 0;
+    return { parentByCode, childrenByCode, sortedCodes };
+  }, [allCodes, levelLengths]);
 
-        for (const [c, r] of raw.entries()) {
-          if (c.startsWith(code)) {
-            initialDebit += r.initialDebit;
-            initialCredit += r.initialCredit;
-            debit += r.debit;
-            credit += r.credit;
-          }
+  /* ------------------------------------------------------------------------ */
+  /* ROLL-UP TOTALS TO ALL PARENTS                                            */
+  /* ------------------------------------------------------------------------ */
+
+  const rolledUpAmountsByCode = useMemo(() => {
+    const map = new Map<string, Amounts>();
+
+    for (const code of tree.sortedCodes) {
+      map.set(code, { initial: 0, debit: 0, credit: 0 });
+    }
+
+    for (const [postedCode, amounts] of exactAmountsByCode.entries()) {
+      let current: string | null = postedCode;
+
+      while (current) {
+        const bucket = map.get(current) ?? { initial: 0, debit: 0, credit: 0 };
+        bucket.initial += amounts.initial;
+        bucket.debit += amounts.debit;
+        bucket.credit += amounts.credit;
+        map.set(current, bucket);
+
+        current = tree.parentByCode.get(current) ?? null;
+      }
+    }
+
+    return map;
+  }, [exactAmountsByCode, tree]);
+
+  /* ------------------------------------------------------------------------ */
+  /* ROWS                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  const rows = useMemo<Row[]>(() => {
+    const memoHasValues = new Map<string, boolean>();
+
+    const subtreeHasValues = (code: string): boolean => {
+      if (memoHasValues.has(code)) return memoHasValues.get(code)!;
+
+      const selfAmounts = rolledUpAmountsByCode.get(code) ?? {
+        initial: 0,
+        debit: 0,
+        credit: 0,
+      };
+
+      if (hasAmounts(selfAmounts)) {
+        memoHasValues.set(code, true);
+        return true;
+      }
+
+      const children = tree.childrenByCode.get(code) ?? [];
+      const result = children.some((child) => subtreeHasValues(child));
+      memoHasValues.set(code, result);
+      return result;
+    };
+
+    return tree.sortedCodes
+      .map((code) => {
+        const amounts = rolledUpAmountsByCode.get(code) ?? {
+          initial: 0,
+          debit: 0,
+          credit: 0,
+        };
+
+        const parentCode = tree.parentByCode.get(code) ?? null;
+        const parentLevel = parentCode
+          ? tree.sortedCodes.includes(parentCode)
+            ? undefined
+            : undefined
+          : undefined;
+
+        let rowLevel = 1;
+        if (parentCode) {
+          const parentRow = tree.parentByCode.has(parentCode)
+            ? undefined
+            : undefined;
+          void parentRow;
         }
 
-        const group = code.charAt(0);
-
-        let initial = 0;
-        let balance = 0;
-
-        if (group === "1") {
-          // Activo (debit-normal)
-          initial = initialDebit - initialCredit;
-          balance = initial + debit - credit;
-        } else if (group === "2" || group === "3") {
-          // Pasivo & Patrimonio (credit-normal)
-          initial = initialCredit - initialDebit;
-          balance = initial + credit - debit;
-        } else if (group === "4") {
-          balance = credit - debit;
-        } else if (group === "5") {
-          balance = debit - credit;
+        // Robust level based on tree depth, not raw code length.
+        let depth = 1;
+        let p = parentCode;
+        while (p) {
+          depth += 1;
+          p = tree.parentByCode.get(p) ?? null;
         }
 
-        if (
-          Math.abs(initial) < 0.0001 &&
-          Math.abs(debit) < 0.0001 &&
-          Math.abs(credit) < 0.0001
-        ) {
-          return null;
-        }
+        const saldo = computeSaldo(amounts.initial, amounts.debit, amounts.credit);
 
         return {
           code,
-          name: coaMap.get(code) || "CUENTA NO DEFINIDA",
-          initial,
-          debit,
-          credit,
-          balance,
-          level: detectLevel(code),
+          name: coaNameByCode.get(code) || `Cuenta ${code}`,
+          level: depth,
+          parentCode,
+          initial: amounts.initial,
+          debit: amounts.debit,
+          credit: amounts.credit,
+          saldoDeudor: saldo > 0 ? saldo : 0,
+          saldoAcreedor: saldo < 0 ? Math.abs(saldo) : 0,
+          hasChildren: (tree.childrenByCode.get(code) ?? []).length > 0,
+          hasOwnOrDescendantValues: subtreeHasValues(code),
         };
       })
-      .filter(Boolean)
-      .filter(r => r!.level <= level)
-      .sort((a, b) => a!.code.localeCompare(b!.code)) as Row[];
-  }, [raw, level, coaMap, coaCodes]);
+      .sort((a, b) => compareCodes(a.code, b.code));
+  }, [rolledUpAmountsByCode, tree, coaNameByCode]);
+
+  const rowByCode = useMemo(
+    () => new Map(rows.map((r) => [r.code, r])),
+    [rows]
+  );
+
+  const selectedMaxDepth = Math.min(
+    Math.max(level, 1),
+    Math.max(...rows.map((r) => r.level), 1)
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* PROFESSIONAL ERP DISPLAY ORDER (DFS TREE)                                */
+  /* ------------------------------------------------------------------------ */
+
+  const visibleRows = useMemo(() => {
+    const result: Row[] = [];
+    const roots = rows
+      .filter((r) => r.parentCode === null)
+      .sort((a, b) => compareCodes(a.code, b.code));
+
+    const visit = (row: Row) => {
+      if (row.level > selectedMaxDepth) return;
+
+      // Show top level always. For deeper rows, parent must be expanded.
+      if (row.parentCode) {
+        const parentExpanded = expanded.has(row.parentCode);
+        if (!parentExpanded) return;
+      }
+
+      // Professional ERP behavior: keep top-level rows always visible,
+      // and for deeper levels show rows with values (or descendants with values).
+      if (row.level === 1 || row.hasOwnOrDescendantValues) {
+        result.push(row);
+      }
+
+      if (!expanded.has(row.code)) return;
+
+      const children = (tree.childrenByCode.get(row.code) ?? [])
+        .map((code) => rowByCode.get(code))
+        .filter((r): r is Row => Boolean(r))
+        .sort((a, b) => compareCodes(a.code, b.code));
+
+      for (const child of children) visit(child);
+    };
+
+    for (const root of roots) visit(root);
+
+    return result;
+  }, [rows, rowByCode, tree.childrenByCode, expanded, selectedMaxDepth]);
+
+  /* ------------------------------------------------------------------------ */
+  /* TOTALS (ALWAYS FROM LEVEL 1 TO AVOID DOUBLE COUNTING)                    */
+  /* ------------------------------------------------------------------------ */
+
+  const topLevelRows = useMemo(
+    () => rows.filter((r) => r.level === 1).sort((a, b) => compareCodes(a.code, b.code)),
+    [rows]
+  );
+
+  const totals = useMemo(
+    () =>
+      topLevelRows.reduce(
+        (acc, r) => {
+          acc.initial += r.initial;
+          acc.debit += r.debit;
+          acc.credit += r.credit;
+          acc.deudor += r.saldoDeudor;
+          acc.acreedor += r.saldoAcreedor;
+          return acc;
+        },
+        {
+          initial: 0,
+          debit: 0,
+          credit: 0,
+          deudor: 0,
+          acreedor: 0,
+        }
+      ),
+    [topLevelRows]
+  );
+
+  const balanced =
+    Math.abs(totals.debit - totals.credit) < 0.01 &&
+    Math.abs(totals.deudor - totals.acreedor) < 0.01;
 
   /* ------------------------------------------------------------------------ */
   /* RENDER                                                                   */
@@ -226,7 +440,7 @@ export default function TrialBalance({
 
   return (
     <div className="bg-white shadow rounded p-6">
-      <div className="flex justify-between mb-4">
+      <div className="flex items-start justify-between mb-4 gap-4">
         <div>
           <h2 className="text-xl font-bold text-blue-800">
             📘 Balance de Comprobación
@@ -239,43 +453,123 @@ export default function TrialBalance({
           )}
         </div>
 
-        <select
-          value={level}
-          onChange={e => setLevel(Number(e.target.value))}
-          className="border rounded px-2 py-1"
-        >
-          {[1, 2, 3, 4, 5].map(l => (
-            <option key={l} value={l}>
-              Nivel {l}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">Nivel máximo</label>
+          <select
+            value={level}
+            onChange={(e) => setLevel(Number(e.target.value))}
+            className="border rounded px-3 py-2 bg-white"
+          >
+            {[1, 2, 3, 4, 5].map((l) => (
+              <option key={l} value={l}>
+                Nivel {l}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <table className="w-full text-sm border">
-        <thead className="bg-gray-100">
-          <tr>
-            <th>Código</th>
-            <th>Cuenta</th>
-            <th className="text-right">Inicial</th>
-            <th className="text-right">Débito</th>
-            <th className="text-right">Crédito</th>
-            <th className="text-right">Saldo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.code}>
-              <td className="font-mono">{r.code}</td>
-              <td>{r.name}</td>
-              <td className="text-right">{fmt(r.initial)}</td>
-              <td className="text-right">{fmt(r.debit)}</td>
-              <td className="text-right">{fmt(r.credit)}</td>
-              <td className="text-right">{fmt(r.balance)}</td>
+      {!balanced && (
+        <div className="mb-3 p-3 text-sm bg-red-50 border border-red-200 text-red-700 rounded">
+          ⚠️ El Balance de Comprobación no cuadra.
+        </div>
+      )}
+
+      <div className="overflow-x-auto border rounded">
+        <table className="w-full text-sm border-collapse">
+          <thead className="bg-gray-100">
+            <tr className="text-left">
+              <th className="p-2 border-b">Código</th>
+              <th className="p-2 border-b">Cuenta</th>
+              <th className="p-2 border-b text-right">Inicial</th>
+              <th className="p-2 border-b text-right">Débito</th>
+              <th className="p-2 border-b text-right">Crédito</th>
+              <th className="p-2 border-b text-right">Saldo Deudor</th>
+              <th className="p-2 border-b text-right">Saldo Acreedor</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+
+          <tbody>
+            {visibleRows.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-6 text-center text-gray-500">
+                  No hay movimientos contables para el rango seleccionado.
+                </td>
+              </tr>
+            ) : (
+              visibleRows.map((row) => {
+                const isOpen = expanded.has(row.code);
+
+                return (
+                  <tr key={row.code} className="border-t hover:bg-gray-50">
+                    <td className="p-2 align-top whitespace-nowrap">
+                      {row.hasChildren ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(row.code)}
+                          className="mr-2 text-blue-600 font-semibold"
+                          aria-label={
+                            isOpen
+                              ? `Contraer cuenta ${row.code}`
+                              : `Expandir cuenta ${row.code}`
+                          }
+                          title={isOpen ? "Contraer" : "Expandir"}
+                        >
+                          {isOpen ? "▼" : "▶"}
+                        </button>
+                      ) : (
+                        <span className="inline-block w-5 mr-2" />
+                      )}
+                      {row.code}
+                    </td>
+
+                    <td
+                      className="p-2"
+                      style={{ paddingLeft: `${(row.level - 1) * 18}px` }}
+                    >
+                      <span
+                        className={
+                          row.level <= 2 ? "font-semibold text-gray-800" : "text-gray-700"
+                        }
+                      >
+                        {row.name}
+                      </span>
+                    </td>
+
+                    <td className="p-2 text-right tabular-nums">
+                      {fmt(row.initial)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {fmt(row.debit)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {fmt(row.credit)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {fmt(row.saldoDeudor)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {fmt(row.saldoAcreedor)}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+
+          <tfoot className="bg-gray-100 font-semibold border-t">
+            <tr>
+              <td className="p-2" />
+              <td className="p-2">TOTAL</td>
+              <td className="p-2 text-right tabular-nums">{fmt(totals.initial)}</td>
+              <td className="p-2 text-right tabular-nums">{fmt(totals.debit)}</td>
+              <td className="p-2 text-right tabular-nums">{fmt(totals.credit)}</td>
+              <td className="p-2 text-right tabular-nums">{fmt(totals.deudor)}</td>
+              <td className="p-2 text-right tabular-nums">{fmt(totals.acreedor)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }

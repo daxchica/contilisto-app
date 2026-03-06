@@ -21,6 +21,7 @@ import {
 import { createPayablePaymentJournalEntry } from "@/services/journalService";
 import { repairPayableAccountFromJournal } from "@/services/payablesService";
 import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
+import { fetchJournalEntries } from "@/services/journalService";
 
 type Props = {
   isOpen: boolean;
@@ -95,220 +96,239 @@ export default function RegisterPayablePaymentModal({
   if (!isOpen || !localPayable) return null;
   const p = localPayable;
 
-  // --------------------------------------------------
-  // Save handler
-  // --------------------------------------------------
-  async function handleSave() {
-    try {
-      setSaving(true);
-      setError("");
-      setNeedsRepair(false);
+      // --------------------------------------------------
+      // Save handler
+      // --------------------------------------------------
+      async function handleSave() {
+        try {
+          setSaving(true);
+          setError("");
+          setNeedsRepair(false);
 
-      if (!entityId) throw new Error("Empresa no seleccionada");
-      if (!userIdSafe) throw new Error("Usuario no válido");
-      if (!p.id) throw new Error("Cuenta por pagar inválida");
-      if (!paymentDate) throw new Error("Fecha requerida");
-      if (!selectedBank) throw new Error("Cuenta bancaria requerida");
+          if (!entityId) throw new Error("Empresa no seleccionada");
+          if (!userIdSafe) throw new Error("Usuario no válido");
+          if (!p.id) throw new Error("Cuenta por pagar inválida");
+          if (!paymentDate) throw new Error("Fecha requerida");
+          if (!selectedBank) throw new Error("Cuenta bancaria requerida");
 
-      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        throw new Error("Monto inválido");
+          if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+            throw new Error("Monto inválido");
+          }
+
+          if (numericAmount > p.balance) {
+            throw new Error("El monto excede el saldo pendiente");
+          }
+
+          // ✅ CRITICAL FIX:
+          // Prevent orphan bank movements by validating payable BEFORE creating movement.
+          // If payable lacks supplier account_code, we must repair first.
+          if (!p.account_code || !String(p.account_code).trim()) {
+            setNeedsRepair(true);
+            throw new Error(
+              "El payable no tiene cuenta contable de proveedores. Debe repararse antes de pagar."
+            );
+          }
+
+          // ✅ The Journal must credit the BANK GL ACCOUNT CODE, not necessarily the bankAccountId.
+          const bankGLCode = resolveBankGLCode(selectedBank);
+          if (!bankGLCode) {
+            throw new Error("La cuenta bancaria no tiene código contable (GL).");
+          }
+
+          // =====================================================
+          // SAFETY CHECK — ensure original journal exists
+          // =====================================================
+
+          const journalEntries = await fetchJournalEntries(entityId);
+
+          const hasOriginalInvoice = journalEntries.some(
+            (e) =>
+              e.transactionId === p.transactionId &&
+              e.invoice_number === p.invoiceNumber
+          );
+
+          if (!hasOriginalInvoice) {
+            throw new Error(
+              "No se encontró el asiento contable original de esta factura. No se puede registrar el pago."
+            );
+          }
+
+          // =====================================================
+          // 1) Bank Movement
+          // =====================================================
+          const movement: BankMovement = {   
+            entityId,
+            bankAccountId: selectedBank.id!,
+            date: paymentDate,
+            amount: numericAmount,
+            type: "out",
+            description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
+            createdBy: userIdSafe,
+            reconciled: false,
+          };
+
+          const bankMovementId = await createBankMovement(movement);
+
+          // =====================================================
+          // 2) Journal Entry (may fail if payable is broken)
+          // =====================================================
+          const transactionId = await createPayablePaymentJournalEntry(
+            entityId,
+            p,
+            numericAmount,
+            paymentDate,
+            {
+              id: selectedBank.id!,
+              account_code: bankGLCode,
+              name: selectedBank.name,
+            },
+            userIdSafe,
+            { bankMovementId }
+          );
+
+          // =====================================================
+          // 3) Link bank → journal
+          // =====================================================
+          await linkJournalTransaction(entityId, bankMovementId, transactionId);
+
+          onSaved?.();
+          onClose();
+        } catch (e: any) {
+            const msg = e?.message ?? "No se pudo registrar el pago";
+            setError(msg);
+
+            // 🔴 Explicit invariant detection
+            if (
+              /sin cuenta contable/i.test(msg) ||
+            /debe repararse/i.test(msg) ||
+            /no tiene cuenta contable/i.test(msg)
+          ) {
+            setNeedsRepair(true);
+            }
+          } finally {
+            setSaving(false);
+          }
       }
 
-      if (numericAmount > p.balance) {
-        throw new Error("El monto excede el saldo pendiente");
+      // --------------------------------------------------
+      // Repair handler (deterministic)
+      // --------------------------------------------------
+      async function handleRepair() {
+      try {
+        setRepairing(true);
+        setError("");
+
+        if (!p.id) {
+        throw new Error("Payable inválido: falta identificador");
       }
 
-      // ✅ CRITICAL FIX:
-      // Prevent orphan bank movements by validating payable BEFORE creating movement.
-      // If payable lacks supplier account_code, we must repair first.
-      if (!p.account_code || !String(p.account_code).trim()) {
-        setNeedsRepair(true);
-        throw new Error(
-          "El payable no tiene cuenta contable de proveedores. Debe repararse antes de pagar."
-        );
-      }
+      const picked = await repairPayableAccountFromJournal(entityId, p.id);
 
-      // ✅ The Journal must credit the BANK GL ACCOUNT CODE, not necessarily the bankAccountId.
-      const bankGLCode = resolveBankGLCode(selectedBank);
-      if (!bankGLCode) {
-        throw new Error("La cuenta bancaria no tiene código contable (GL).");
-      }
-
-      // =====================================================
-      // 1) Bank Movement
-      // =====================================================
-      const movement: BankMovement = {   
-        entityId,
-        bankAccountId: selectedBank.id!,
-        date: paymentDate,
-        amount: numericAmount,
-        type: "out",
-        description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
-        createdBy: userIdSafe,
-        reconciled: false,
-      };
-
-      const bankMovementId = await createBankMovement(movement);
-
-      // =====================================================
-      // 2) Journal Entry (may fail if payable is broken)
-      // =====================================================
-      const transactionId = await createPayablePaymentJournalEntry(
-        entityId,
-        p,
-        numericAmount,
-        paymentDate,
-        {
-          id: selectedBank.id!,
-          account_code: bankGLCode,
-          name: selectedBank.name,
-        },
-        userIdSafe,
-        { bankMovementId }
-      );
-
-      // =====================================================
-      // 3) Link bank → journal
-      // =====================================================
-      await linkJournalTransaction(entityId, bankMovementId, transactionId);
-
-      onSaved?.();
-      onClose();
-    } catch (e: any) {
-      const msg = e?.message ?? "No se pudo registrar el pago";
-      setError(msg);
-
-      // 🔴 Explicit invariant detection
-      if (
-        /sin cuenta contable/i.test(msg) ||
-        /debe repararse/i.test(msg) ||
-        /no tiene cuenta contable/i.test(msg)
-      ) {
-        setNeedsRepair(true);
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // --------------------------------------------------
-  // Repair handler (deterministic)
-  // --------------------------------------------------
-  async function handleRepair() {
-  try {
-    setRepairing(true);
-    setError("");
-
-    if (!p.id) {
-      throw new Error("Payable inválido: falta identificador");
-    }
-
-    const picked = await repairPayableAccountFromJournal(entityId, p.id);
-
-    setLocalPayable((prev) =>
-      prev
-        ? {
+      setLocalPayable((prev) =>
+        prev
+          ? {
             ...prev,
             account_code: picked.account_code,
             account_name: picked.account_name,
           }
-        : prev
-    );
+          : prev
+      );
 
-    setNeedsRepair(false);
-    setError(
-      "Cuenta contable reparada correctamente. Ahora puede registrar el pago."
-    );
+      setNeedsRepair(false);
+      setError(
+        "Cuenta contable reparada correctamente. Ahora puede registrar el pago."
+      );
 
-    onSaved?.();
+      onSaved?.();
     } catch (e: any) {
       setError(e?.message ?? "No se pudo reparar la cuenta contable");
       setNeedsRepair(true);
     } finally {
       setRepairing(false);
     }
-  }
+    
+      }
 
-  // --------------------------------------------------
-  // UI
-  // --------------------------------------------------
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <Rnd
-        default={{
-          x: window.innerWidth / 2 - 300,
-          y: window.innerHeight / 2 - 220,
-          width: 600,
-          height: "auto",
-        }}
-        enableResizing={false}
-        dragHandleClassName="drag-header"
-        bounds="window"
-      >
-        <div className="bg-white rounded-xl shadow-xl w-full">
-          {/* HEADER */}
-          <div className="drag-header cursor-move px-6 py-4 border-b flex justify-between">
-            <div>
-              <h2 className="text-lg font-bold">Registrar pago</h2>
-              <p className="text-xs text-gray-500">
-                {p.supplierName} • Factura {p.invoiceNumber}
-              </p>
-            </div>
-            <button onClick={onClose} disabled={saving}>✕</button>
-          </div>
-
-          {/* BODY */}
-          <div className="p-6 space-y-4">
-            {/* AMOUNT */}
-            <div>
-              <label className="text-sm font-medium">Monto a pagar</label>
-              <input
-                type="number"
-                min={0.01}
-                max={p.balance}
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Saldo pendiente: ${p.balance.toFixed(2)}
-              </div>
-            </div>
-
-            {/* DATE */}
-            <div>
-              <label className="text-sm font-medium">Fecha de pago</label>
-              <input
-                type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-
-            {/* BANK */}
-            <div>
-              <label className="text-sm font-medium">Cuenta bancaria</label>
-              <select
-                value={bankAccountId}
-                onChange={(e) => setBankAccountId(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              >
-                <option value="">-- Seleccione una cuenta --</option>
-                {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.code})
-                  </option>
-                ))}
-              </select>
-
-              {selectedBank && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Se debitará de: <strong>{selectedBank.name}</strong>
+      // --------------------------------------------------
+      // UI
+      // --------------------------------------------------
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Rnd
+            default={{
+              x: window.innerWidth / 2 - 300,
+              y: window.innerHeight / 2 - 220,
+              width: 600,
+              height: "auto",
+            }}
+            enableResizing={false}
+            dragHandleClassName="drag-header"
+            bounds="window"
+          >
+            <div className="bg-white rounded-xl shadow-xl w-full">
+              {/* HEADER */}
+              <div className="drag-header cursor-move px-6 py-4 border-b flex justify-between">
+                <div>
+                  <h2 className="text-lg font-bold">Registrar pago</h2>
+                  <p className="text-xs text-gray-500">
+                    {p.supplierName} • Factura {p.invoiceNumber}
+                  </p>
                 </div>
-              )}
-            </div>
+                <button onClick={onClose} disabled={saving}>✕</button>
+              </div>
+
+              {/* BODY */}
+              <div className="p-6 space-y-4">
+                {/* AMOUNT */}
+                <div>
+                  <label className="text-sm font-medium">Monto a pagar</label>
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={p.balance}
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Saldo pendiente: ${p.balance.toFixed(2)}
+                  </div>
+                </div>
+
+                {/* DATE */}
+                <div>
+                  <label className="text-sm font-medium">Fecha de pago</label>
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={(e) => setPaymentDate(e.target.value)}
+                    className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                {/* BANK */}
+                <div>
+                  <label className="text-sm font-medium">Cuenta bancaria</label>
+                  <select
+                    value={bankAccountId}
+                    onChange={(e) => setBankAccountId(e.target.value)}
+                    className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">-- Seleccione una cuenta --</option>
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code})
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedBank && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Se debitará de: <strong>{selectedBank.name}</strong>
+                    </div>
+                  )}
+                </div>
 
             {/* ERROR */}
             {error && (
