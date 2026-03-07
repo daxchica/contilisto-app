@@ -20,7 +20,7 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
 import { getRealCashFlow } from "@/services/cashFlowRealService";
 
-import { getCashflowForecast } from "@/services/cashFlowForecastServices";
+import { getCashflowForecast } from "@/services/cashFlowForecastService";
 import { buildDailyCashFlowSeries } from "@/utils/buildDailyCashFlowSeries";
 
 import { JournalEntry } from "@/types/JournalEntry";

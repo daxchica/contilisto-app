@@ -1,6 +1,6 @@
 import { getOpeningCashBalance } from "./openingCashService";
 import { getRealCashFlow } from "./cashFlowRealService";
-import { getCashflowForecast } from "@/services/cashFlowForecastServices";
+import { getCashflowForecast } from "@/services/cashFlowForecastService";
 import { getRealCashBeforeDate } from "./cashFlowRealService";
 
 import type {
