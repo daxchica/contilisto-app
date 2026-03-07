@@ -26,6 +26,9 @@ export interface JournalEntry {
   userIdSafe?: string;
   transactionId?: string;
 
+  // NEW: link journal entry to normalized business document
+  documentId?: string;
+
   // Compatibility aliases (do not rely on these in new code)
   transaction_id?: string;
 
@@ -53,7 +56,7 @@ export interface JournalEntry {
   supplier_name?: string;
   invoiceDate?: string;
   entityRUC?: string;
-
+  
   // Traceability (Bank Book -> Journal)
   bankMovementId?: string; // links to entities/{entityId}/bankMovements/{bankMovementId}
 
@@ -69,4 +72,36 @@ export interface JournalEntry {
 
   customer_name?: string;
   customerRUC?: string;
+
+  // --------------------------------------------------------------------------
+  // TAX INFORMATION (SRI / ATS / IVA)
+  // --------------------------------------------------------------------------
+
+  tax?: {
+
+    // VAT classification
+    taxCode?: string;          // IVA12, IVA0, ICE, etc.
+
+    // SRI document info
+    documentType?: string;     // 01 invoice, 04 credit note, etc.
+    authorizationNumber?: string;
+
+    // Payment information
+    paymentMethod?: string;    // ATS formaPago
+
+    // Tax bases
+    base12?: number;
+    base0?: number;
+    iva?: number;
+    ice?: number;
+
+    // Retentions
+    retenciones?: Array<{
+      taxType: "IVA" | "RENTA";
+      code: string;
+      percentage: number;
+      base: number;
+      amount: number;
+    }>;
+  };
 }

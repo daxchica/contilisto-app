@@ -7,6 +7,8 @@
 
 import { getContextualAccountHint } from "./firestoreHintsService";
 import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
+import type { AccountingDocument } from "@/types/AccountingDocument";
+
 
 type VisionEntry = {
   account_code?: string;
@@ -36,6 +38,7 @@ export interface ExtractedInvoiceResponse {
 
   invoiceDate?: string;
   invoice_number?: string;
+  authorizationNumber?: string;
 
   taxableBase?: number;
   subtotal15?: number;
@@ -229,6 +232,63 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
   }
 
   return data;
+}
+
+// ============================================================================
+// Convert Vision OCR result → AccountingDocument
+// ============================================================================
+
+export function buildDocumentFromVision(
+  data: ExtractedInvoiceResponse,
+  entityId: string
+): AccountingDocument {
+
+  const issueDate =
+    data.invoiceDate?.slice(0, 10) ??
+    new Date().toISOString().slice(0, 10);
+
+  const period = issueDate.slice(0, 7);
+
+  const type =
+    data.invoiceType === "sale"
+      ? "sales_invoice"
+      : "purchase_invoice";
+
+  return {
+    id: crypto.randomUUID(),
+
+    entityId,
+
+    type,
+    source: "ai",
+    status: "draft",
+
+    issueDate,
+    period,
+
+    documentNumber: data.invoice_number,
+    authorizationNumber: data.authorizationNumber,
+
+    counterpartyName:
+      data.invoiceType === "sale"
+        ? data.buyerName
+        : data.issuerName,
+
+    counterpartyRUC:
+      data.invoiceType === "sale"
+        ? data.buyerRUC
+        : data.issuerRUC,
+
+    subtotal12: data.taxableBase ?? data.subtotal15 ?? 0,
+    subtotal0: data.subtotal0 ?? 0,
+    iva: data.iva ?? 0,
+    total: data.total ?? 0,
+
+    notes: data.concepto,
+
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
 }
 
 export async function extractInvoiceVision(

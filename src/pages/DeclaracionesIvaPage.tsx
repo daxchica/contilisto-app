@@ -62,6 +62,7 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
           <label className="text-sm font-medium text-gray-700">Periodo</label>
           <input
             type="month"
+            inputMode="numeric"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
             className="border rounded px-3 py-2"

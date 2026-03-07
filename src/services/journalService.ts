@@ -29,6 +29,15 @@ import {
 import { isCustomerReceivableAccount, isSupplierPayableAccount } from "./controlAccounts";
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
+import {
+  saveAccountingDocument,
+  linkJournalEntriesToDocument,
+  fetchAccountingDocuments,
+} from "@/services/documents/documentRegistryService";
+
+import { findDuplicateDocument } from "./documents/documentDuplicateService";
+
+import type { AccountingDocument } from "@/types/AccountingDocument";
 
 
 /* =============================================================================
@@ -386,29 +395,6 @@ async function syncReceivablesFromJournal(
 /* =============================================================================
    SAVE JOURNAL
 ============================================================================= */
-async function invoiceAlreadyExists(
-  entityId: string,
-  issuerRUC: string,
-  invoiceNumber: string
-): Promise<boolean> {
-
-  const colRef = collection(db, "entities", entityId, "journalEntries");
-
-  const constraints: QueryConstraint[] = [
-    where("invoice_number", "==", invoiceNumber),
-    limit(1),
-  ];
-
-  // Only filter by issuerRUC if stored
-  if (issuerRUC) {
-    constraints.unshift(where("issuerRUC", "==", issuerRUC));
-  }
-
-  const q = query(colRef, ...constraints);
-  const snap = await getDocs(q);
-
-  return !snap.empty;
-}
 
 function validateBalancedTransaction(entries: JournalEntry[]) {
   const totalDebit = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
@@ -432,14 +418,45 @@ function validateTransactionIntegrity(entries: JournalEntry[]) {
   }
 }
 
+// ============================================================================
+// DOCUMENT DUPLICATE VALIDATION
+// Prevents registering the same invoice twice
+// ============================================================================
+
+async function assertNoDuplicateDocument(
+  entityId: string,
+  document?: AccountingDocument
+) {
+  if (!document) return;
+
+  const existingDocs = await fetchAccountingDocuments(entityId);
+
+  const duplicate = findDuplicateDocument(existingDocs, document);
+
+  if (duplicate) {
+    throw new Error(
+      `Factura duplicada detectada.\n` +
+      `Proveedor/RUC: ${document.counterpartyRUC}\n` +
+      `Número: ${document.documentNumber}`
+    );
+  }
+}
+
 export async function saveJournalEntries(
   entityId: string,
   userIdSafe: string,
   entries: JournalEntry[],
+  document?: AccountingDocument,
 ): Promise<JournalEntry[]> {
   requireEntityId(entityId, "guardar diario");
   if (!userIdSafe?.trim()) throw new Error("saveJournalEntries: userIdSafe (uid) is required");
   
+  // ----------------------------------------------------------------------
+  // DUPLICATE DOCUMENT PROTECTION
+  // ----------------------------------------------------------------------
+
+  await assertNoDuplicateDocument(entityId, document);
+
   const col = collection(db, "entities", entityId, "journalEntries");
 
   const existing: Record<string, boolean> = {};
@@ -469,19 +486,6 @@ export async function saveJournalEntries(
       
         const invoiceNumber = first.invoice_number ?? "";
 
-      if (issuerRUC && invoiceNumber) {
-        const exists = await invoiceAlreadyExists(
-          entityId,
-          issuerRUC,
-          invoiceNumber
-        );
-
-        if (exists) {
-          throw new Error(
-            `La factura ${invoiceNumber} ya fue registrada.`
-          );
-        }
-      }
     }
 
   for (const e of validEntries) {
@@ -511,6 +515,8 @@ export async function saveJournalEntries(
       entityId,
       uid: userIdSafe,
       transactionId,
+
+      documentId: document?.id,
 
       debit: n2(e.debit),
       credit: n2(e.credit),
@@ -578,8 +584,34 @@ export async function saveJournalEntries(
 
   // ✅ SAFE TO COMMIT
   if (saved.length) {
-  
+
+    // -------------------------------------------------------
+    // 1️⃣ Save Accounting Document (if provided)
+    // -------------------------------------------------------
+
+    if (document) {
+      await saveAccountingDocument(document);
+    }
+
+    // -------------------------------------------------------
+    // 2️⃣ Commit Journal Entries
+    // -------------------------------------------------------
+
     await batch.commit();
+
+      // -------------------------------------------------------
+      // 3️⃣ Link document ↔ journal entries
+      // -------------------------------------------------------
+
+      if (document) {
+        const ids = saved.map((e) => e.id!).filter(Boolean);
+
+        await linkJournalEntriesToDocument(
+          entityId,
+          document.id,
+          ids
+        );
+      }
 
     const hasPayable = saved.some(
       (e: JournalEntry) => isSupplierPayableAccount(e.account_code));

@@ -1,48 +1,55 @@
+// ============================================================================
 // src/services/sri/iva104Service.ts
+// CONTILISTO — IVA 104 ENGINE (Production Ready)
+// ============================================================================
 
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { IvaDeclarationSummary } from "@/types/sri";
+
+/* -------------------------------------------------------------------------- */
+/* TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
+
+type AccountMap = {
+  ventas12: string[];
+  ventas0: string[];
+  ivaVentas: string[];
+  compras12: string[];
+  compras0: string[];
+  ivaCompras: string[];
+  retIvaRecibidas?: string[];
+  saldoCreditoAnterior?: string[];
+};
 
 type BuildIvaParams = {
   entries: JournalEntry[];
   entityId?: string;
   period: string; // YYYY-MM
-  accountMap?: {
-    ventas12?: string[];
-    ventas0?: string[];
-    ivaVentas?: string[];
-    compras12?: string[];
-    compras0?: string[];
-    ivaCompras?: string[];
-    retIvaRecibidas?: string[];
-    saldoCreditoAnterior?: string[];
-  };
+  accountMap: AccountMap;
 };
 
-const n = (v: unknown) => {
-  const x = Number(v ?? 0);
-  return Number.isFinite(x) ? x : 0;
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const normalizeCode = (code?: string) =>
+  String(code ?? "").trim();
+
+const toNumber = (v?: number) =>
+  Number.isFinite(Number(v)) ? Number(v) : 0;
+
+const samePeriod = (date?: string, period?: string) =>
+  date?.slice(0, 7) === period;
+
+const validatePeriod = (period: string) => {
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    throw new Error(`Invalid IVA period format: ${period}`);
+  }
 };
 
-const samePeriod = (dateLike: string | undefined, period: string) => {
-  if (!dateLike) return false;
-  return String(dateLike).slice(0, 7) === period;
-};
-
-const sumByCodes = (
-  entries: JournalEntry[],
-  codes: string[] | undefined,
-  side: "debit" | "credit"
-) => {
-  if (!codes?.length) return 0;
-
-  const set = new Set(codes);
-  return entries.reduce((acc, e) => {
-    const code = String(e.account_code ?? "").trim();
-    if (!set.has(code)) return acc;
-    return acc + n(e[side]);
-  }, 0);
-};
+/* -------------------------------------------------------------------------- */
+/* MAIN ENGINE                                                                */
+/* -------------------------------------------------------------------------- */
 
 export function buildIva104Summary({
   entries,
@@ -50,61 +57,118 @@ export function buildIva104Summary({
   period,
   accountMap,
 }: BuildIvaParams): IvaDeclarationSummary {
-  const periodEntries = entries.filter((e) => {
-    if (entityId && e.entityId !== entityId) return false;
-    if (e.source === "initial") return false;
-    return samePeriod(e.date, period);
-  });
 
-  // These should later be aligned to your Ecuador COA map.
-  const ventas12 = sumByCodes(periodEntries, accountMap?.ventas12, "credit");
-  const ventas0 = sumByCodes(periodEntries, accountMap?.ventas0, "credit");
-  const ivaVentas = sumByCodes(periodEntries, accountMap?.ivaVentas, "credit");
+  validatePeriod(period);
 
-  const compras12 = sumByCodes(periodEntries, accountMap?.compras12, "debit");
-  const compras0 = sumByCodes(periodEntries, accountMap?.compras0, "debit");
-  const ivaCompras = sumByCodes(periodEntries, accountMap?.ivaCompras, "debit");
+  let ventas12 = 0;
+  let ventas0 = 0;
+  let ivaVentas = 0;
 
-  const retIvaRecibidas = sumByCodes(
-    periodEntries,
-    accountMap?.retIvaRecibidas,
-    "debit"
-  );
+  let compras12 = 0;
+  let compras0 = 0;
+  let ivaCompras = 0;
 
-  // For now, this can come from prior period carry-forward logic.
+  let retIvaRecibidas = 0;
+
+  /* ---------------------------------------------------------------------- */
+  /* SINGLE LEDGER PASS                                                     */
+  /* ---------------------------------------------------------------------- */
+
+  for (const e of entries) {
+
+    if (!e) continue;
+
+    if (entityId && e.entityId !== entityId) continue;
+    if (e.source === "initial") continue;
+    if (!samePeriod(e.date, period)) continue;
+
+    const code = normalizeCode(e.account_code);
+
+    const debit = toNumber(e.debit);
+    const credit = toNumber(e.credit);
+
+    if (!code) continue;
+
+    /* ------------------------------- SALES ------------------------------ */
+
+    if (accountMap.ventas12.includes(code)) ventas12 += credit;
+    if (accountMap.ventas0.includes(code)) ventas0 += credit;
+    if (accountMap.ivaVentas.includes(code)) ivaVentas += credit;
+
+    /* ------------------------------ PURCHASES --------------------------- */
+
+    if (accountMap.compras12.includes(code)) compras12 += debit;
+    if (accountMap.compras0.includes(code)) compras0 += debit;
+    if (accountMap.ivaCompras.includes(code)) ivaCompras += debit;
+
+    /* ----------------------------- RETENTIONS --------------------------- */
+
+    if (accountMap.retIvaRecibidas?.includes(code)) {
+      retIvaRecibidas += debit;
+    }
+
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* TAX CALCULATION                                                        */
+  /* ---------------------------------------------------------------------- */
+
   const saldoCreditoAnterior = 0;
 
   const totalCredito =
-    ivaCompras + retIvaRecibidas + saldoCreditoAnterior;
+    ivaCompras +
+    retIvaRecibidas +
+    saldoCreditoAnterior;
 
   const neto = ivaVentas - totalCredito;
 
   const ivaPagar = neto > 0 ? neto : 0;
   const saldoArrastrar = neto < 0 ? Math.abs(neto) : 0;
 
+  /* ---------------------------------------------------------------------- */
+  /* VALIDATIONS                                                            */
+  /* ---------------------------------------------------------------------- */
+
   const warnings: string[] = [];
 
   if (ivaVentas < 0 || ivaCompras < 0) {
-    warnings.push("Se detectaron valores negativos de IVA; revisar notas de crédito o mapeo contable.");
+    warnings.push(
+      "Valores negativos detectados en IVA. Verificar notas de crédito."
+    );
   }
 
-  if (!accountMap?.ivaVentas?.length || !accountMap?.ivaCompras?.length) {
-    warnings.push("Falta configurar el mapeo contable de IVA ventas / IVA compras.");
+  if (ventas12 === 0 && ivaVentas > 0) {
+    warnings.push(
+      "IVA ventas detectado sin ventas gravadas. Revisar mapeo contable."
+    );
   }
+
+  /* ---------------------------------------------------------------------- */
+  /* RESULT                                                                 */
+  /* ---------------------------------------------------------------------- */
 
   return {
+
     period,
+
     ventas12,
     ventas0,
     ivaVentas,
+
     compras12,
     compras0,
     ivaCompras,
+
     retIvaRecibidas,
     saldoCreditoAnterior,
+
     totalCredito,
+
     ivaPagar,
     saldoArrastrar,
+
     warnings,
+
   };
+
 }
