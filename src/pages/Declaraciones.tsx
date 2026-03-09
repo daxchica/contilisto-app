@@ -8,9 +8,13 @@ import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { getDeclarationStatuses } from "@/services/sri/declarationStatusService";
 import { runTaxEngine, TaxEngineResult } from "@/services/sri/taxEngineService";
 import Iva104PreviewModal from "@/components/sri/Iva104PreviewModal";
+import AtsPreviewModal from "@/components/sri/AtsPreviewModal";
 import { generateIva104 } from "@/services/sri/generateIva104";
+import { generateAtsXml } from "@/services/sri/generateAtsXml";
 
 import type { JournalEntry } from "@/types/JournalEntry";
+import { buildAtsDocuments } from "@/services/sri/atsDocumentAggregator";
+import type { AtsDocument } from "@/types/atsDocument";
 
 type Props = {
   entries: JournalEntry[];
@@ -88,6 +92,8 @@ export default function Declaraciones({ entries }: Props) {
 
   const [showIvaPreview, setShowIvaPreview] = useState(false);
   const [ivaSummary, setIvaSummary] = useState<any | null>(null);
+  
+  const [atsXml, setAtsXml] = useState("");
 
   const [month, setMonth] = useState(
     String(now.getMonth() + 1).padStart(2, "0")
@@ -95,6 +101,9 @@ export default function Declaraciones({ entries }: Props) {
 
   const [taxEngineResult, setTaxEngineResult] =
     useState<TaxEngineResult | null>(null);
+
+  const [atsDocuments, setAtsDocuments] = useState<AtsDocument[]>([]);
+  const [showAtsPreview, setShowAtsPreview] = useState(false);
 
   const period = useMemo(() => `${year}-${month}`, [year, month]);
 
@@ -184,6 +193,52 @@ async function handleGenerateIva() {
   setShowIvaPreview(true);
 }
 
+async function handleGenerateAtsXml() {
+
+  if (!entityId || !selectedEntity) return;
+
+  const docs = buildAtsDocuments(entries ?? [], entityId, period);
+
+  if (!docs.length) {
+    alert("No existen documentos para generar ATS en este periodo.");
+    return;
+  }
+
+  setAtsDocuments(docs);
+  setShowAtsPreview(true);
+
+}
+
+async function handleExportAtsXml() {
+
+  if (!entityId || !selectedEntity) return;
+
+  const xml = await generateAtsXml({
+    entries: entries ?? [],
+    entityId,
+    period,
+    ruc: selectedEntity.ruc ?? "",
+    razonSocial: selectedEntity.name ?? "",
+  });
+
+  setAtsXml(xml);
+
+  const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+
+  link.href = url;
+
+  link.download = `ATS-${period}.xml`;
+
+  link.click();
+
+  URL.revokeObjectURL(url);
+
+}
+
   return (
     <div className="space-y-6">
 
@@ -266,6 +321,7 @@ async function handleGenerateIva() {
           status={atsStatus?.status ?? "pending"}
           primaryLabel="Generar XML"
           secondaryLabel="Descargar"
+          onPrimaryClick={handleGenerateAtsXml}
         />
 
       </div>
@@ -274,6 +330,12 @@ async function handleGenerateIva() {
         open={showIvaPreview}
         onClose={() => setShowIvaPreview(false)}
         summary={ivaSummary}
+      />
+      <AtsPreviewModal
+        open={showAtsPreview}
+        documents={atsDocuments}
+        onClose={() => setShowAtsPreview(false)}
+        onExportXml={handleExportAtsXml}
       />
     </div>
   );

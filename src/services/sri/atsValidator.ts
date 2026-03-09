@@ -1,29 +1,88 @@
 // ============================================================================
 // src/services/sri/atsValidator.ts
+// CONTILISTO — ATS Validator
 // Validates ATS documents before XML generation
 // ============================================================================
 
-import { AtsDocument } from "@/types/atsDocument";
-import {
+import type { AtsDocument } from "@/types/atsDocument";
+import type {
   AtsValidationIssue,
   AtsValidationResult
 } from "@/types/atsValidation";
 
+/* =============================================================================
+   HELPERS
+============================================================================= */
+
+function isValidRuc(ruc?: string): boolean {
+
+  if (!ruc) return false;
+
+  if (!/^\d{13}$/.test(ruc)) return false;
+
+  return true;
+
+}
+
+function isValidSequential(seq?: string): boolean {
+
+  if (!seq) return false;
+
+  // Accepts formats like:
+  // 001-001-000000123
+  // 000000123
+  return /^(\d{3}-\d{3}-)?\d{3,9}$/.test(seq);
+
+}
+
+function isValidDate(date?: string): boolean {
+
+  if (!date) return false;
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(date);
+
+}
+
+function isNegativeNumber(value?: number) {
+
+  return typeof value === "number" && value < 0;
+
+}
+
+/* =============================================================================
+   MAIN VALIDATOR
+============================================================================= */
+
 export function validateAtsDocuments(
-  docs: AtsDocument[]
+  docs: AtsDocument[] | undefined
 ): AtsValidationResult {
 
   const issues: AtsValidationIssue[] = [];
+
+  if (!Array.isArray(docs) || docs.length === 0) {
+
+    issues.push({
+      level: "warning",
+      code: "EMPTY_ATS",
+      message: "No existen documentos para generar ATS"
+    });
+
+    return {
+      valid: true,
+      issues
+    };
+
+  }
 
   const seenInvoices = new Set<string>();
 
   for (const doc of docs) {
 
-    const key = `${doc.ruc}-${doc.sequential}`;
+    const key = `${doc.ruc ?? ""}-${doc.sequential ?? ""}`;
 
-    // --------------------------------------------------
-    // Duplicate invoice detection
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       DUPLICATE DETECTION
+    ------------------------------------------------------------------------ */
 
     if (seenInvoices.has(key)) {
 
@@ -38,24 +97,33 @@ export function validateAtsDocuments(
 
     seenInvoices.add(key);
 
-    // --------------------------------------------------
-    // Missing RUC
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       RUC VALIDATION
+    ------------------------------------------------------------------------ */
 
-    if (!doc.ruc || doc.ruc.length < 10) {
+    if (!doc.ruc) {
 
       issues.push({
         level: "error",
         code: "MISSING_RUC",
-        message: "Documento sin RUC válido",
+        message: "Documento sin RUC",
+        documentId: doc.id
+      });
+
+    } else if (!isValidRuc(doc.ruc)) {
+
+      issues.push({
+        level: "error",
+        code: "INVALID_RUC",
+        message: `RUC inválido: ${doc.ruc}`,
         documentId: doc.id
       });
 
     }
 
-    // --------------------------------------------------
-    // Missing document type
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       DOCUMENT TYPE
+    ------------------------------------------------------------------------ */
 
     if (!doc.documentType) {
 
@@ -68,9 +136,57 @@ export function validateAtsDocuments(
 
     }
 
-    // --------------------------------------------------
-    // Missing authorization number
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       SEQUENTIAL NUMBER
+    ------------------------------------------------------------------------ */
+
+    if (!doc.sequential) {
+
+      issues.push({
+        level: "error",
+        code: "MISSING_SEQUENTIAL",
+        message: "Documento sin número secuencial",
+        documentId: doc.id
+      });
+
+    } else if (!isValidSequential(doc.sequential)) {
+
+      issues.push({
+        level: "warning",
+        code: "INVALID_SEQUENTIAL",
+        message: `Formato de secuencial inusual: ${doc.sequential}`,
+        documentId: doc.id
+      });
+
+    }
+
+    /* ------------------------------------------------------------------------
+       DATE VALIDATION
+    ------------------------------------------------------------------------ */
+
+    if (!doc.date) {
+
+      issues.push({
+        level: "error",
+        code: "MISSING_DATE",
+        message: "Documento sin fecha",
+        documentId: doc.id
+      });
+
+    } else if (!isValidDate(doc.date)) {
+
+      issues.push({
+        level: "error",
+        code: "INVALID_DATE",
+        message: `Fecha inválida: ${doc.date}`,
+        documentId: doc.id
+      });
+
+    }
+
+    /* ------------------------------------------------------------------------
+       AUTHORIZATION NUMBER
+    ------------------------------------------------------------------------ */
 
     if (!doc.authorizationNumber) {
 
@@ -83,11 +199,15 @@ export function validateAtsDocuments(
 
     }
 
-    // --------------------------------------------------
-    // Negative totals
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       NEGATIVE VALUES
+    ------------------------------------------------------------------------ */
 
-    if (doc.base12 < 0 || doc.base0 < 0 || doc.iva < 0) {
+    if (
+      isNegativeNumber(doc.base12) ||
+      isNegativeNumber(doc.base0) ||
+      isNegativeNumber(doc.iva)
+    ) {
 
       issues.push({
         level: "error",
@@ -98,11 +218,11 @@ export function validateAtsDocuments(
 
     }
 
-    // --------------------------------------------------
-    // IVA consistency
-    // --------------------------------------------------
+    /* ------------------------------------------------------------------------
+       IVA CONSISTENCY
+    ------------------------------------------------------------------------ */
 
-    if (doc.base12 > 0 && doc.iva === 0) {
+    if ((doc.base12 ?? 0) > 0 && (doc.iva ?? 0) === 0) {
 
       issues.push({
         level: "warning",

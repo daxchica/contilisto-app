@@ -1,34 +1,18 @@
 // ============================================================================
 // src/services/sri/atsXmlBuilder.ts
-// CONTILISTO — ATS XML Builder
-// Builds ATS XML from normalized ATS documents
+// CONTILISTO — ATS XML Builder (SRI Compatible)
 // ============================================================================
 
 import type { AtsDocument } from "@/types/atsDocument";
 
-/* =============================================================================
-   TYPES
-============================================================================= */
-
 export interface AtsXmlParams {
-
   documents: AtsDocument[];
-
   period: string;
-
   ruc: string;
-
   razonSocial: string;
-
-  anio: string;
-
-  mes: string;
-
+  anio?: string;
+  mes?: string;
 }
-
-/* =============================================================================
-   HELPERS
-============================================================================= */
 
 const escapeXml = (value?: string) =>
   String(value ?? "")
@@ -36,38 +20,52 @@ const escapeXml = (value?: string) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-const num = (v?: number) => (v ?? 0).toFixed(2);
-
-/* =============================================================================
-   MAIN BUILDER
-============================================================================= */
+const num = (v?: number) => Number(v ?? 0).toFixed(2);
 
 export function buildAtsXml({
   documents,
+  period,
   ruc,
   razonSocial,
   anio,
   mes,
 }: AtsXmlParams): string {
 
+  const [yearFromPeriod = "", monthFromPeriod = ""] = String(period).split("-");
+
+  const safeAnio = anio ?? yearFromPeriod;
+  const safeMes = mes ?? monthFromPeriod;
+
   const compras = documents.filter(d => d.documentType === "01");
   const ventas = documents.filter(d => d.documentType === "18");
   const retenciones = documents.filter(d => d.documentType === "07");
+
+  const totalVentas = ventas.reduce(
+    (acc, d) => acc + (d.base12 ?? 0) + (d.base0 ?? 0),
+    0
+  );
 
   let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
 
   xml += `
 <iva>
   <TipoIDInformante>R</TipoIDInformante>
-  <IdInformante>${ruc}</IdInformante>
+  <IdInformante>${escapeXml(ruc)}</IdInformante>
   <razonSocial>${escapeXml(razonSocial)}</razonSocial>
-  <Anio>${anio}</Anio>
-  <Mes>${mes}</Mes>
+
+  <Anio>${safeAnio}</Anio>
+  <Mes>${safeMes}</Mes>
+
+  <numEstabRuc>001</numEstabRuc>
+
+  <totalVentas>${num(totalVentas)}</totalVentas>
+
+  <codigoOperativo>IVA</codigoOperativo>
 `;
 
-  /* =============================================================================
+  /* ===============================
      COMPRAS
-  ============================================================================= */
+  =============================== */
 
   xml += `<compras>`;
 
@@ -78,27 +76,41 @@ export function buildAtsXml({
 
       <tpIdProv>01</tpIdProv>
 
-      <idProv>${doc.ruc}</idProv>
+      <idProv>${escapeXml(doc.ruc)}</idProv>
 
-      <tipoComprobante>${doc.documentType}</tipoComprobante>
+      <tipoComprobante>${escapeXml(doc.documentType)}</tipoComprobante>
 
-      <establecimiento>${doc.establishment ?? "001"}</establecimiento>
+      <parteRel>NO</parteRel>
 
-      <puntoEmision>${doc.emissionPoint ?? "001"}</puntoEmision>
+      <fechaRegistro>${escapeXml(doc.date)}</fechaRegistro>
 
-      <secuencial>${doc.sequential}</secuencial>
+      <establecimiento>${escapeXml(doc.establishment ?? "001")}</establecimiento>
 
-      <autorizacion>${doc.authorizationNumber ?? ""}</autorizacion>
+      <puntoEmision>${escapeXml(doc.emissionPoint ?? "001")}</puntoEmision>
 
-      <fechaRegistro>${doc.date}</fechaRegistro>
+      <secuencial>${escapeXml(doc.sequential ?? "")}</secuencial>
+
+      <fechaEmision>${escapeXml(doc.date)}</fechaEmision>
+
+      <autorizacion>${escapeXml(doc.authorizationNumber ?? "")}</autorizacion>
 
       <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
 
-      <baseImponible>${num(doc.base12)}</baseImponible>
+      <baseImponible>0.00</baseImponible>
 
       <baseImpGrav>${num(doc.base12)}</baseImpGrav>
 
       <montoIva>${num(doc.iva)}</montoIva>
+
+      <montoIce>${num(doc.ice)}</montoIce>
+
+      <valorRetencionIva>0.00</valorRetencionIva>
+
+      <formasDePago>
+
+        <formaPago>20</formaPago>
+
+      </formasDePago>
 
     </detalleCompras>
     `;
@@ -106,10 +118,9 @@ export function buildAtsXml({
 
   xml += `</compras>`;
 
-
-  /* =============================================================================
+  /* ===============================
      VENTAS
-  ============================================================================= */
+  =============================== */
 
   xml += `<ventas>`;
 
@@ -120,17 +131,33 @@ export function buildAtsXml({
 
       <tpIdCliente>01</tpIdCliente>
 
-      <idCliente>${doc.ruc}</idCliente>
+      <idCliente>${escapeXml(doc.ruc)}</idCliente>
 
-      <tipoComprobante>${doc.documentType}</tipoComprobante>
+      <parteRel>NO</parteRel>
+
+      <tipoComprobante>${escapeXml(doc.documentType)}</tipoComprobante>
 
       <numeroComprobantes>1</numeroComprobantes>
 
       <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
 
-      <baseImponible>${num(doc.base12)}</baseImponible>
+      <baseImponible>0.00</baseImponible>
+
+      <baseImpGrav>${num(doc.base12)}</baseImpGrav>
 
       <montoIva>${num(doc.iva)}</montoIva>
+
+      <montoIce>${num(doc.ice)}</montoIce>
+
+      <valorRetencionIva>0.00</valorRetencionIva>
+
+      <valorRetencionRenta>0.00</valorRetencionRenta>
+
+      <formasDePago>
+
+        <formaPago>20</formaPago>
+
+      </formasDePago>
 
     </detalleVentas>
     `;
@@ -138,10 +165,9 @@ export function buildAtsXml({
 
   xml += `</ventas>`;
 
-
-  /* =============================================================================
+  /* ===============================
      RETENCIONES
-  ============================================================================= */
+  =============================== */
 
   xml += `<retenciones>`;
 
@@ -156,13 +182,13 @@ export function buildAtsXml({
 
         <tpIdProv>01</tpIdProv>
 
-        <idProv>${doc.ruc}</idProv>
+        <idProv>${escapeXml(doc.ruc)}</idProv>
 
-        <codigo>${r.code}</codigo>
+        <codigo>${escapeXml(r.code)}</codigo>
 
         <baseImponible>${num(r.base)}</baseImponible>
 
-        <porcentajeRetener>${r.percentage}</porcentajeRetener>
+        <porcentajeRetener>${num(r.percentage)}</porcentajeRetener>
 
         <valorRetenido>${num(r.amount)}</valorRetenido>
 
@@ -178,4 +204,5 @@ export function buildAtsXml({
 `;
 
   return xml;
+
 }

@@ -1,14 +1,19 @@
 // src/components/BankReconciliationTab.tsx
 import React, { useState, useMemo } from "react";
 import { JournalEntry } from "../types/JournalEntry";
-import { BankMovement } from "../types/BankMovement";
+import { BankMovement } from "../types/bankTypes";
 
 interface Props {
   journalEntries: JournalEntry[];
   bankMovements: BankMovement[];
+  selectedBankName?: string;
 }
 
-export default function BankReconciliationTab({ journalEntries, bankMovements }: Props) {
+export default function BankReconciliationTab({ 
+  journalEntries, 
+  bankMovements, 
+  selectedBankName, 
+}: Props) {
   const [reconciled, setReconciled] = useState<string[]>([]);
 
   const toggleReconcile = (id: string) => {
@@ -26,28 +31,41 @@ export default function BankReconciliationTab({ journalEntries, bankMovements }:
         }).format(value)
       : "-";
 
-  const reconciledTotal = useMemo(
-    () =>
-        bankMovements
-            .filter((m) => reconciled.includes(m.id))
-            .reduce((acc, m) => acc + (m.amount || 0), 0),
-    [reconciled, bankMovements]
+  const reconciledTotal = useMemo(() => {
+    return bankMovements.reduce((acc, m) => {
+      const id = m.id;
+
+      if (!id) return acc;
+
+      if (reconciled.includes(id)) {
+        return acc + (m.amount ?? 0);
+      }
+
+      return acc;
+    } , 0);
+  }, [reconciled, bankMovements]
   );
 
   return (
     <div className="grid grid-cols-2 gap-6">
     {/* Libro Diario */}
       <div>
-        <h2 className="text-lg font-bold text-blue-700 mb-2">📒 Libro Diario</h2>
+        <h2 className="text-lg font-bold text-blue-700 mb-2">
+          📒 Libro Diario
+        </h2>
+        
         <table className="w-full text-sm border">
+        
           <thead className="bg-gray-100">
             <tr>
               <th>Fecha</th>
+              <th>Codigo</th>
               <th>Cuenta</th>
               <th>Débito</th>
               <th>Crédito</th>
             </tr>
           </thead>
+          
           <tbody>
             {journalEntries.map((entry, i) => (
               <tr key={i} className="border-t even:bg-gray-50">
@@ -59,13 +77,19 @@ export default function BankReconciliationTab({ journalEntries, bankMovements }:
               </tr>
             ))}
           </tbody>
+
         </table>
       </div>
 
       {/* Banco */}
       <div>
-        <h2 className="text-lg font-bold text-green-700 mb-2">🏦 Banco</h2>
+
+        <h2 className="text-lg font-bold text-green-700 mb-2">
+          🏦 Banco {selectedBankName ?? "-"}
+        </h2>
+        
         <table className="w-full text-sm border">
+        
           <thead className="bg-gray-100">
             <tr>
               <th>Fecha</th>
@@ -74,25 +98,39 @@ export default function BankReconciliationTab({ journalEntries, bankMovements }:
               <th>Conciliar</th>
             </tr>
           </thead>
+
           <tbody>
             {bankMovements.map((mvt) => {
-              const isReconciled = reconciled.includes(mvt.id);
+
+              if (!mvt.id) return null;
+
+              const isReconciled = reconciled.includes(mvt.id ?? "");
+              
               return (
                 <tr
                   key={mvt.id}
-                  className={`border-t ${isReconciled ? "bg-green-100" : "hover:bg-gray-50"}`}
+                  className={`border-t ${
+                    isReconciled 
+                      ? "bg-green-100" 
+                      : "hover:bg-gray-50"
+                    }`}
                 >
                   <td>{mvt.date}</td>
                   <td>{mvt.description}</td>
                   <td>{formatAmount(mvt.amount)}</td>
                   <td>
+
                     <button
-                      onClick={() => toggleReconcile(mvt.id)}
+                      onClick={() => toggleReconcile(mvt.id ?? "")}
                       className={`px-2 py-1 text-xs rounded ${
-                        isReconciled ? "bg-green-600 text-white" : "bg-gray-200"
+                        isReconciled 
+                          ? "bg-green-600 text-white" 
+                          : "bg-gray-200"
                       }`}
                     >
-                      {isReconciled ? "✅ Conciliado" : "Conciliar"}
+                      {isReconciled 
+                        ? "✅ Conciliado" 
+                        : "Conciliar"}
                     </button>
                   </td>
                 </tr>
