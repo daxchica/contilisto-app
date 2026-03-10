@@ -37,7 +37,7 @@ export default function PricingPlans() {
           </div>
 
           <h3 className="text-xl sm:text-2xl font-bold">
-            Plan Estudiante
+            Estudiante
           </h3>
 
           <div className="flex justify-center items-baseline mt-3">
@@ -55,7 +55,7 @@ export default function PricingPlans() {
             <div className="bg-emerald-600/10 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
               <p>✅ Hasta 2 empresas</p>
               <p>✅ 100 movimientos contables / mes</p>
-              <p>✅ ER y Balance</p>
+              <p>✅ Estado de Resultados y Balance General</p>
               <p>✅ Libro Bancos</p>
               <p>✅ Exportación PDF / CSV</p>
               <p>✅ Soporte por email</p>
@@ -72,16 +72,18 @@ export default function PricingPlans() {
             className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold text-center
                        hover:bg-emerald-700"
           >
-            Iniciar Gratis
+            Crear cuenta gratis
           </Link>
+          Sin tarjeta de crédito.
+          Puedes cambiar de plan en cualquier momento.
         </Wrapper>
 
         {/* =======================
             PLAN CONTADOR (POPULAR)
         ======================= */}
-        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30">
+        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30 transform scale-105">
           <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-400 text-xs font-semibold px-3 py-1 shadow">
-            Más Popular
+            Más elegido por contadores
           </span>
 
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/15 flex items-center justify-center mb-4">
@@ -89,8 +91,11 @@ export default function PricingPlans() {
           </div>
 
           <h3 className="text-xl sm:text-2xl font-bold">
-            Plan Contador
+            Contador
           </h3>
+          
+          <p>Plan Contador Profesional</p>
+          <p>Para contadores independientes</p>
 
           <div className="flex justify-center items-baseline mt-3">
             <span className="text-4xl sm:text-5xl lg:text-6xl font-extrabold">
@@ -98,6 +103,7 @@ export default function PricingPlans() {
             </span>
             <span className="text-base ml-2">/ mes</span>
           </div>
+            Menos de $1 por día
 
           <div className="mt-4">
             <span className="inline-block bg-white text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full shadow">
@@ -107,10 +113,10 @@ export default function PricingPlans() {
             <div className="bg-indigo-500/30 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
               <p>✅ Hasta 10 empresas</p>
               <p>✅ 500 movimientos / mes</p>
-              <p>✅ Estados financieros</p>
+              <p>✅ Estados financieros automáticos</p>
               <p>✅ Anexos y declaraciones SRI</p>
               <p>✅ Facturación electrónica</p>
-              <p>✅ Hasta 3 usuarios</p>
+              <p>✅ Hasta 3 usuarios por empresa</p>
             </div>
           </div>
 
@@ -120,7 +126,7 @@ export default function PricingPlans() {
             className="mt-6 w-full rounded-xl border border-white/70 py-3 font-semibold
                        hover:bg-white/10"
           >
-            Elegir Plan
+            Comenzar con este plan
           </Link>
         </Wrapper>
 
@@ -133,8 +139,10 @@ export default function PricingPlans() {
           </div>
 
           <h3 className="text-xl sm:text-2xl font-bold">
-            Plan Corporativo
+            Corporativo
           </h3>
+          Para empresas innovadoras.
+
 
           <div className="flex justify-center items-baseline mt-3">
             <span className="text-4xl sm:text-5xl lg:text-6xl font-extrabold">
@@ -150,9 +158,10 @@ export default function PricingPlans() {
 
             <div className="bg-white/10 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
               <p>✅ Soporte dedicado</p>
-              <p>✅ Facturación electrónica</p>
-              <p>✅ Declaraciones SRI</p>
-              <p>✅ Dashboard avanzado</p>
+              <p>✅ Facturación electrónica completa</p>
+              <p>✅ Declaraciones SRI automáticas</p>
+              <p>✅ Dashboard financiero avanzado</p>
+              <p>✅ Soporte Tecnológico de última generación.</p>
               <p>✅ Usuarios y límites personalizados</p>
             </div>
           </div>
@@ -163,7 +172,7 @@ export default function PricingPlans() {
             className="mt-6 w-full rounded-xl bg-white text-slate-900 py-3 font-semibold
                        hover:bg-slate-100"
           >
-            Contactar Ventas
+            Hablar con ventas
           </Link>
         </Wrapper>
       </div>

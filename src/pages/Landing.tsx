@@ -3,7 +3,7 @@
 // Landing Page profesional para Contilisto.com
 // ============================================================================
 import { Link } from "react-router-dom";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import PricingPlans from "../components/PricingPlans";
 import Footer from "../components/footer/Footer";
 import FeatureCards from "../components/FeatureCards";
@@ -12,6 +12,8 @@ import LoginModal from "@/components/modals/LoginModal";
 export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const openLogin = useCallback(() => {
     setMobileOpen(false);
@@ -24,9 +26,51 @@ export default function Landing() {
 
   const scrollToPricing = useCallback(() => {
   setMobileOpen(false);
-  document
-    .getElementById("precios")
-    ?.scrollIntoView({ behavior: "smooth" });
+
+  const el = document.getElementById("precios");
+
+  if (el) {
+    const y = el.getBoundingClientRect().top + window.scrollY - 80;
+
+    window.scrollTo({
+      top: y,
+      behavior: "smooth",
+    });
+  }
+}, []);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const closeDemo = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+    setShowDemo(false);
+  }, []);
+
+  useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") closeDemo();
+  };
+
+  if (showDemo) {
+    window.addEventListener("keydown", onKey);
+  }
+
+  return () => window.removeEventListener("keydown", onKey);
+}, [showDemo, closeDemo]);
+
+  useEffect(() => {
+  document.body.style.overflow = mobileOpen ? "hidden" : "";
+}, [mobileOpen]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setScrolled(window.scrollY > 10);
+    };
+
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
 }, []);
 
   return (
@@ -34,7 +78,12 @@ export default function Landing() {
       {/* ============================================================
        * NAVBAR
        * ============================================================ */}
-      <header className="fixed top-0 left-0 w-full z-30 bg-white/80 backdrop-blur-lg border-b">
+      <header 
+        className={`fixed top-0 left-0 w-full z-30 backdrop-blur-lg border-b transition ${
+          scrolled ? "bg-white shadow-sm" : "bg-white/80"
+        }`}
+      >
+
         <div className="max-w-7xl mx-auto px-6">
           <div className="h-16 flex items-center justify-between">
             {/* Logo */}
@@ -47,13 +96,13 @@ export default function Landing() {
 
             {/* Desktop Nav */}
             <nav className="hidden md:flex items-center gap-6 text-sm font-semibold">
-              <a href="#como-funciona" className="text-gray-700 hover:text-blue-700">
+              <a href="#como-funciona" onClick={() => setMobileOpen(false)} className="text-gray-700 hover:text-blue-700">
                 Cómo funciona
               </a>
-              <a href="#beneficios" className="text-gray-700 hover:text-blue-700">
+              <a href="#beneficios" onClick={() => setMobileOpen(false)} className="text-gray-700 hover:text-blue-700">
                 Beneficios
               </a>
-              <a href="#precios" className="text-gray-700 hover:text-blue-700">
+              <a href="#precios" onClick={() => setMobileOpen(false)} className="text-gray-700 hover:text-blue-700">
                 Precios
               </a>
 
@@ -70,12 +119,13 @@ export default function Landing() {
                 onClick={scrollToPricing}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                Crear Cuenta
+                Crear Cuenta Gratis
               </button>
             </nav>
 
             {/* Mobile button */}
             <button
+              aria-label="Abrir menú"
               onClick={() => setMobileOpen((v) => !v)}
               className="md:hidden text-2xl text-blue-900"
             >
@@ -119,24 +169,27 @@ export default function Landing() {
        * MAIN
        * ============================================================ */}
       <main className="flex-1 pt-20 md:pt-24">
+        
         {/* ============================================================
          * HERO
          * ============================================================ */}
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-blue-50 via-white to-white" />
 
-          <div className="relative max-w-7xl mx-auto px-6 py-12 lg:py-20">
+          <div className="relative max-w-7xl mx-auto px-6 py-20 lg:py-24">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* TEXT */}
               <div className="text-center lg:text-left">
+                
                 <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-50 text-green-700 text-sm font-semibold mb-5">
                   ● Impulsado por Inteligencia Artificial
                 </span>
 
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight">
-                  Contabilidad más rápida. Más precisa.
+                  Contabilidad más rápida. 
+                  Más precisa.
                   <span className="block text-blue-700">
-                    Totalmente automatizada con IA.
+                    Automatizada con Inteligencia Artificial.
                   </span>
                 </h1>
 
@@ -146,24 +199,44 @@ export default function Landing() {
                   IVA, conciliaciones bancarias y reportes SRI — en minutos.
                 </p>
 
+                <div className="flex flex-wrap gap-10 mt-10 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-blue-700">10x</span> más rápido
+                  </div>
+                  <div>
+                    <span className="font-bold text-blue-700">90%</span> menos trabajo manual
+                  </div>
+                  <div>
+                    <span className="font-bold text-blue-700">100%</span> compatible con SRI
+                  </div>
+                </div>
+
+                <p className="mt-4 text-sm text-gray-500">
+                  Diseñado para contadores en Ecuador · Compatible con SRI · Plan Único de Cuentas
+                </p>
+
                 {/* ====================================================
                  * CTA DESKTOP
                  * ==================================================== */}
                 <div className="hidden md:flex mt-8 gap-4">
                   <button
                     onClick={scrollToPricing}
-                    className="px-8 py-3 bg-blue-600 text-white rounded-xl text-lg font-semibold hover:bg-blue-700"
+                    className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition"
                   >
                     Crear Cuenta Gratis
                   </button>
 
                   <button
-                    onClick={openLogin}
-                    className="px-8 py-3 bg-white border rounded-xl text-lg font-semibold hover:bg-gray-50"
+                    onClick={() => setShowDemo(true)}
+                    className="px-8 py-3 bg-white border border-gray-300 rounded-xl text-lg font-semibold hover:bg-gray-50"
                   >
                     Ver demostración
                   </button>
                 </div>
+
+                <p className="text-sm text-gray-500 mt-4">
+                  Sin tarjeta de crédito. Prueba gratuita disponible.
+                </p>
 
                 {/* ====================================================
                  * CTA MOBILE (LOGIN PRIMARY)
@@ -190,21 +263,25 @@ export default function Landing() {
               </div>
 
               {/* MOCKUP */}
-              <div className="bg-white border rounded-2xl shadow-xl p-6">
-                <p className="text-sm font-semibold text-blue-700 mb-2">
-                  Vista rápida · Demo IA
-                </p>
+              <div className="bg-white border rounded-2xl shadow-2xl overflow-hidden transform lg:scale-105">
+                
 
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <p className="px-4 py-3 text-sm font-semibold text-blue-700 mb-3">
+                  Automatización contable en segundos.
+                </p>
+                
+
+                <div className="grid grid-cols-3 gap-4 text-sm items-center">
                   <div className="bg-gray-50 p-3 rounded-lg">
                     <p className="font-semibold">PDF Factura</p>
                     <p className="text-xs text-gray-500">
                       Proveedor XYZ<br />Total $120,50
                     </p>
                   </div>
+                  
 
                   <div className="flex items-center justify-center">
-                    <span className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
+                    <span className="h-14 w-14 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold animate-[pulse_2.5s_infinite]">
                       IA
                     </span>
                   </div>
@@ -220,23 +297,149 @@ export default function Landing() {
             </div>
           </div>
         </section>
+        
+        <div className="border-t border-gray-100" />
+        
+        {/* HOW IT WORKS */}
+        <section id="como-funciona" className="py-20">
+
+          <div className="max-w-6xl mx-auto px-6 text-center">
+
+            <h2 className="text-3xl md:text-4xl font-bold mb-6">
+              Cómo funciona Contilisto
+            </h2>
+
+            <p className="text-gray-600 max-w-2xl mx-auto mb-14">
+              Automatiza el proceso contable en segundos.
+              Solo sube tu factura y la inteligencia artificial hace el resto.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr] gap-6 items-center">
+
+              {/* Step 1 */}
+              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-3xl font-bold mb-3">1</div>
+                <h3 className="font-semibold text-lg mb-2">
+                  📄 Subes la factura 
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Arrastra tu factura PDF o XML al sistema.
+                </p>
+              </div>
+              {/* Arrow */}
+              <div className="hidden md:flex items-center justify-center text-gray-300 text-3xl">
+                →
+              </div>
+              {/* Step 2 */}
+              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-3xl font-bold mb-3">2</div>
+                <h3 className="font-semibold text-lg mb-2">
+                  🤖 La IA analiza 
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  Contilisto identifica proveedor, impuestos y cuentas contables.
+                </p>
+              </div>
+              {/* Arrow */}
+              <div className="hidden md:flex items-center justify-center text-gray-300 text-3xl">
+                →
+              </div>
+              {/* Step 3 */}
+              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-3xl font-bold mb-3">3</div>
+                <h3 className="font-semibold text-lg mb-2">
+                  📊 Asiento generado
+                </h3>
+                <p className="text-gray-600 text-sm">
+                  El asiento contable se crea automáticamente según el PUC.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <div className="border-t border-gray-100" />
 
         {/* BENEFICIOS */}
-        <section id="beneficios" className="bg-gray-50 py-16">
+        <section id="beneficios" className="bg-gray-50 py-20">
+          <h2 className="text-3xl md:text-4xl font-bold text-center mb-10">
+          Funciones diseñadas para contadores
+          </h2>
+
+          <p className="text-gray-600 text-center max-w-2xl mx-auto mb-16">
+          Todo lo que necesitas para automatizar tu contabilidad,
+          desde generación de asientos hasta conciliación bancaria.
+          </p>
           <div className="max-w-6xl mx-auto px-6">
             <FeatureCards />
           </div>
         </section>
 
         {/* PRECIOS */}
-        <section id="precios" className="py-16">
+        <section id="precios" className="py-20">
+          <h2 className="text-3xl md:text-4xl font-bold text-center mb-6">
+            Planes diseñados para contadores
+          </h2>
+
+          <p className="text-gray-600 text-center mb-6">
+            Automatiza tu contabilidad y ahorra horas de trabajo cada semana.
+          </p>
+          <p className="text-gray-600 text-center mb-16">
+          Un contador puede ahorrar mas de 10 horas al mes automatizando el registro de facturas.</p>
           <PricingPlans />
+
         </section>
       </main>
 
+      {showDemo && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+          onClick={closeDemo}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-4xl w-full p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <video
+              ref={videoRef}
+              controls
+              autoPlay
+              className="w-full rounded-lg"
+            >
+              <source src="/videos/demo-contilisto.mp4" type="video/mp4" />
+            </video>
+
+            <button
+              onClick={closeDemo}
+              className="mt-4 text-sm text-gray-600 hover:text-gray-900"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* LOGIN MODAL */}
       <LoginModal isOpen={loginOpen} onClose={closeLogin} />
+      
+      <section className="py-28 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center">
+        <h2 className="text-3xl font-bold mb-4">
+          Empieza a usar Contilisto hoy
+        </h2>
 
+        <p className="mb-6 opacity-90">
+          Automatiza tu contabilidad en minutos.
+        </p>
+
+        <p className="mb-6 opacity-90">  
+          Recibe tips contables y actualizaciones del sistema.
+        </p>
+
+        <button className="bg-white text-blue-600 px-8 py-3 rounded-xl font-semibold">
+          Crear Cuenta Gratis
+        </button>
+      </section>
       <Footer />
     </div>
   );
