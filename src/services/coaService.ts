@@ -15,7 +15,7 @@ import {
   DocumentReference,
 } from "firebase/firestore";
 import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
-import type { BankAccount } from "@/types/bankTypes";
+import type { Account } from "@/types/AccountTypes";
 import { requireEntityId } from "./requireEntityId";
 
 export async function initializeEntityCOA(entityId: string) {
@@ -109,13 +109,18 @@ export async function createSubAccountUnderParent(
     counter++;
   } while (existingCodes.includes(newCode));
 
-  await setDoc(doc(accountsRef, newCode), {
-    code: newCode,
-    name,
-    parentCode,
-    level: newCode.length,
-    isSystem: false,
-    createdAt: serverTimestamp(),
+  await setDoc(
+    doc(accountsRef, newCode), 
+    {
+      code: newCode,
+      name,
+      parentCode,
+      level: newCode.length,
+      isSystem: false,
+      
+      isBank: parentCode === "1010103",
+      
+      createdAt: serverTimestamp(),
   }, { merge: false });
 
   return newCode;
@@ -123,20 +128,20 @@ export async function createSubAccountUnderParent(
 
 export async function fetchBankAccountsFromCOA(
     entityId: string
-): Promise<BankAccount[]> {
+): Promise<Account[]> {
 
   requireEntityId(entityId, "cargar cuentas bancarias");
 
   const accountsRef = collection(db, "entities", entityId, "accounts");
 
   const q = query(
-        accountsRef,
-        where("parentCode", "==", "1010103")
+    accountsRef,
+    where("parentCode", "==", "1010103")
   );
 
   const snap = await getDocs (q);
   
-  const banks: BankAccount[] = snap.docs.map((docSnap) => {
+  const banks: Account[] = snap.docs.map((docSnap) => {
     const data = docSnap.data() as any;
  
       return {
@@ -150,6 +155,9 @@ export async function fetchBankAccountsFromCOA(
         createdBy: "",
         number: String(data.code ?? ""),
         bankName: String(data.name ?? ""),
+        level: Number(data.level ?? 0),
+        isSystem: Boolean(data.isSystem ?? false),
+        isBank: true,
       };
   });
 

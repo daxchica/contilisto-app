@@ -1,9 +1,10 @@
 // ============================================================================
 // src/services/receivablesService.ts
-// Accounts Receivable — CONTILISTO v1.0 (MIRROR of payablesService.ts) + SAFE ANNULMENT
+// Accounts Receivable — CONTILISTO v1.1 (Atomic Payments + Stability Improvements)
 // ============================================================================
 
 import { db } from "@/firebase-config";
+
 import {
   collection,
   query,
@@ -15,6 +16,7 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
+  runTransaction,
   type QueryDocumentSnapshot,
   type DocumentData,
 } from "firebase/firestore";
@@ -25,7 +27,7 @@ import type { JournalEntry } from "@/types/JournalEntry";
 import {
   applyPaymentToInstallments,
   buildInstallmentSchedule,
-} from "@/utils/payable"; // ✅ reuse same installment utilities (they are generic)
+} from "@/utils/payable";
 
 import {
   fetchJournalEntriesByTransactionId,
@@ -33,80 +35,53 @@ import {
   annulInvoiceByTransaction,
 } from "./journalService";
 
-import { deleteBankMovementsByJournalTransactionId } from "./bankMovementService";
-import { RECEIVABLE_PREFIXES, isCustomerReceivableAccount } from "./controlAccounts";
+import {
+  RECEIVABLE_PREFIXES,
+  isCustomerReceivableAccount,
+  isBankAccount,
+} from "./controlAccounts";
+
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
 import { createBankMovement } from "./bankMovementService";
 
 /* ============================================================================
- * HELPERS
- * ========================================================================== */
+HELPERS
+============================================================================ */
 
-const n2 = (x: any) =>
-  Number.isFinite(Number(x)) ? Number(Number(x).toFixed(2)) : 0;
+const n2 = (x: any) => {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+};
 
 const normAcc = (c?: string) => (c || "").replace(/\./g, "").trim();
 
-// Ecuador "Consumidor Final" (SRI): 9999999999999
 const CONSUMIDOR_FINAL_ID = "9999999999999";
 const CONSUMIDOR_FINAL_NAME = "CONSUMIDOR FINAL";
 
-/**
- * Ecuador COA typical:
- * - 113... = Cuentas por Cobrar
- * - 114... = CxC relacionadas (optional)
- */
-
-function extractCustomerNameFromDescription(desc?: string): string | null {
-  if (!desc) return null;
-
-  // Matches: "Cliente: AGENSITUR SA"
-  const m = desc.match(/cliente\s*:\s*(.+)$/i);
-  if (!m) return null;
-  return m[1].trim();
-}
-
-/**
- * Prefer consistent customer names to avoid duplicates in reporting.
- * (Optional but safe: only normalizes whitespace + uppercases)
- */
 function normalizeCustomerName(name: string) {
   return name.replace(/\s+/g, " ").trim().toUpperCase();
 }
 
-/**
- * Finds the receivable control line in a transaction journal.
- * Rule: Receivable control lives on DEBIT side for customer receivable accounts.
- */
-function findReceivableControlLine(entries: JournalEntry[]) {
-  return entries.find((e) =>
-      isCustomerReceivableAccount(e.account_code) && n2(e.debit) > 0);
+function extractCustomerNameFromDescription(desc?: string): string | null {
+  if (!desc) return null;
+  const m = desc.match(/cliente\s*:\s*(.+)$/i);
+  return m ? m[1].trim() : null;
 }
 
-function assertReceivableAccount(account_code?: string) {
-  const c = normAcc(account_code);
-  if (!c) throw new Error("Receivable requiere cuenta contable");
+function computeStatus(paid: number, total: number) {
+  const balance = Math.max(0, n2(total - paid));
 
-  if (!isCustomerReceivableAccount(c)) {
-    throw new Error(`Cuenta inválida para CxC: ${account_code}`);
-  }
+  if (balance <= 0) return { balance, status: "paid" as ReceivableStatus };
+  if (paid > 0) return { balance, status: "partial" as ReceivableStatus };
+
+  return { balance, status: "pending" as ReceivableStatus };
 }
 
 function assertTransactionId(tx: unknown): asserts tx is string {
   if (typeof tx !== "string" || !tx.trim()) {
     throw new Error("Receivable inválido: falta transactionId");
-  }
-}
-
-function assertInvoiceInvariant(
-  receivable: Pick<Receivable, "invoiceNumber" | "issueDate">
-) {
-  if (!receivable.invoiceNumber?.trim()) {
-    throw new Error("Receivable requiere número de factura");
-  }
-  if (!receivable.issueDate?.trim()) {
-    throw new Error("Receivable requiere fecha de emisión");
   }
 }
 
@@ -116,25 +91,29 @@ function assertNotAnnulled(r: Pick<Receivable, "status">) {
   }
 }
 
-function computeStatus(paid: number, total: number) {
-  const balance = n2(total - paid);
-  if (balance <= 0) return { balance, status: "paid" as ReceivableStatus };
-  if (paid > 0) return { balance, status: "partial" as ReceivableStatus };
-  return { balance, status: "pending" as ReceivableStatus };
+function assertReceivableAccount(account_code?: string) {
+  const c = normAcc(account_code);
+
+  if (!c) throw new Error("Receivable requiere cuenta contable");
+
+  if (!isCustomerReceivableAccount(c)) {
+    throw new Error(`Cuenta inválida para CxC: ${account_code}`);
+  }
 }
 
 /* ============================================================================
- * FETCH (by transactionId)
- * ========================================================================== */
+FETCH RECEIVABLE
+============================================================================ */
 
 export async function fetchReceivableByTransactionId(
   entityId: string,
   transactionId: string
 ): Promise<Receivable | null> {
+
   requireEntityId(entityId, "cargar CxC");
-  if (!transactionId) return null;
 
   const ref = doc(db, "entities", entityId, "receivables", transactionId);
+
   const snap = await getDoc(ref);
 
   if (!snap.exists()) return null;
@@ -143,13 +122,15 @@ export async function fetchReceivableByTransactionId(
 }
 
 /* ============================================================================
- * FETCH RECEIVABLES
- * ========================================================================== */
+FETCH RECEIVABLES
+============================================================================ */
 
 export async function fetchReceivables(entityId: string): Promise<Receivable[]> {
+
   requireEntityId(entityId, "cargar CxC");
 
   const colRef = collection(db, "entities", entityId, "receivables");
+
   const qRef = query(colRef, orderBy("issueDate", "desc"));
 
   const snap = await getDocs(qRef);
@@ -161,8 +142,8 @@ export async function fetchReceivables(entityId: string): Promise<Receivable[]> 
 }
 
 /* ============================================================================
- * UPSERT RECEIVABLE
- * ========================================================================== */
+UPSERT RECEIVABLE
+============================================================================ */
 
 export async function upsertReceivable(
   entityId: string,
@@ -171,113 +152,59 @@ export async function upsertReceivable(
     "id" | "entityId" | "status" | "balance" | "createdAt" | "updatedAt"
   >
 ) {
+
   requireEntityId(entityId, "guardar CxC");
+
   assertTransactionId(receivable.transactionId);
   assertReceivableAccount(receivable.account_code);
-  assertInvoiceInvariant(receivable);
+
   requireNonEmpty(receivable.account_code, "account code");
 
   const tx = receivable.transactionId;
+
   const ref = doc(db, "entities", entityId, "receivables", tx);
+
   const snap = await getDoc(ref);
 
   const existing = snap.exists() ? (snap.data() as Receivable) : null;
+
   if (existing) assertNotAnnulled(existing);
 
   const paid = n2((receivable as any).paid ?? existing?.paid ?? 0);
   const total = n2((receivable as any).total ?? existing?.total ?? 0);
 
   if (total <= 0) throw new Error("Receivable requiere total > 0");
-  if (paid < 0 || paid > total) throw new Error("Monto cobrado inválido");
 
-  // ------------------------------------------------------------------
-  // 🔎 Resolve customer identity from journal (source of truth)
-  // ------------------------------------------------------------------
+  let customerName =
+    (receivable as any).customerName ||
+    (receivable as any).customer_name ||
+    CONSUMIDOR_FINAL_NAME;
 
-  // Receivable type uses camelCase (customerName/customerRUC).
-  let customerName = (receivable as any).customerName as string | undefined;
-  let customerRUC = (receivable as any).customerRUC as string | undefined;
-
-  // Also accept legacy snake_case if any caller still passes it
-  customerName =
-    customerName || String((receivable as any).customer_name ?? "").trim() || "";
-  customerRUC =
-    customerRUC || String((receivable as any).customer_ruc ?? "").trim() || "";
-
-  let customerSource: "payload" | "journal_control" | "description" | "default" =
-    customerName && customerRUC ? "payload" : "default";
-
-  if (!customerName || !customerRUC) {
-    const journalEntries = await fetchJournalEntriesByTransactionId(entityId, tx);
-    const control = findReceivableControlLine(journalEntries);
-
-    // Try to read identity from the control line first (support both casings)
-    const fromControlName =
-      String((control as any)?.customer_name ?? (control as any)?.customerName ?? "")
-        .trim();
-    const fromControlRuc =
-      String((control as any)?.customer_ruc ?? (control as any)?.customerRUC ?? "")
-        .trim();
-
-    // If not present, attempt from description
-    const fromDescName = extractCustomerNameFromDescription(control?.description);
-
-    if (!customerName) {
-      if (fromControlName) {
-        customerName = fromControlName;
-        customerSource = "journal_control";
-      } else if (fromDescName) {
-        customerName = fromDescName;
-        customerSource = "description";
-      }
-    }
-
-    if (!customerRUC) {
-      if (fromControlRuc) {
-        customerRUC = fromControlRuc;
-        customerSource = customerSource === "default" ? "journal_control" : customerSource;
-      }
-    }
-
-    // Final fallback: consumidor final (pair them)
-    if (!customerName && !customerRUC) {
-      customerName = CONSUMIDOR_FINAL_NAME;
-      customerRUC = CONSUMIDOR_FINAL_ID;
-      customerSource = "default";
-    } else {
-      // If one side is missing, force consistent pairing rules
-      if (!customerName) customerName = CONSUMIDOR_FINAL_NAME;
-      if (!customerRUC) customerRUC = CONSUMIDOR_FINAL_ID;
-      customerSource = customerSource === "default" ? "default" : customerSource;
-    }
-  }
+  let customerRUC =
+    (receivable as any).customerRUC ||
+    (receivable as any).customer_ruc ||
+    CONSUMIDOR_FINAL_ID;
 
   customerName = normalizeCustomerName(customerName);
-
-  // 🔒 HARD invariant: customer identity must exist
-  if (!customerName?.trim() || !customerRUC?.trim()) {
-    throw new Error(`Receivable ${tx} missing customer identity after resolution`);
-  }
 
   const { balance, status } = computeStatus(paid, total);
 
   const payload: any = {
-    ...(existing ? existing : {}),
+    ...(existing ?? {}),
     ...receivable,
 
     customer_name: customerName,
     customer_ruc: customerRUC,
-    
+
     customerName,
     customerRUC,
-
-    customerSource,
 
     entityId,
     paid,
     total,
     balance,
     status,
+
     installmentSchedule:
       (receivable as any).installmentSchedule ??
       existing?.installmentSchedule ??
@@ -287,78 +214,19 @@ export async function upsertReceivable(
         receivable.termsDays,
         receivable.installments
       ),
+
     updatedAt: serverTimestamp(),
     ...(existing ? {} : { createdAt: serverTimestamp() }),
   };
 
-  // 🔒 Never allow caller to override createdAt accidentally
   delete payload.createdAt;
 
   await setDoc(ref, payload, { merge: true });
 }
 
 /* ============================================================================
- * APPLY COLLECTION (PAYMENT RECEIVED)
- * ========================================================================== */
-
-export async function applyReceivableCollection(
-  entityId: string,
-  receivable: Receivable,
-  amount: number
-) {
-  requireEntityId(entityId, "registrar cobro");
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("Monto de cobro inválido");
-  }
-
-  
-
-  if (!receivable?.id) throw new Error("Receivable inválido (id faltante)");
-
-  const ref = doc(db, "entities", entityId, "receivables", receivable.id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Receivable no existe");
-
-  const current = snap.data() as Receivable;
-
-  assertNotAnnulled(current);
-  assertTransactionId(current.transactionId);
-  assertReceivableAccount(current.account_code);
-
-  const paidNow = n2(current.paid);
-  const total = n2(current.total);
-  const { balance } = computeStatus(paidNow, total);
-
-  if (amount > balance) throw new Error("El monto excede el saldo pendiente");
-
-  let paidDelta = amount;
-  let schedule = current.installmentSchedule ?? [];
-
-  if (schedule.length) {
-    const res = applyPaymentToInstallments(schedule, amount);
-    schedule = res.updatedSchedule;
-    paidDelta = res.paidDelta;
-  }
-
-  const paid = n2(paidNow + paidDelta);
-  const next = computeStatus(paid, total);
-
-  await updateDoc(ref, {
-    installmentSchedule: schedule,
-    paid,
-    balance: next.balance,
-    status: next.status,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-
-
-/* ============================================================================
- * APPLY RECEIVABLE PAYMENT (ERP SAFE)
- * Wrapper used by UI components like ARPaymentModal
- * Creates accounting trace + applies collection
- * ========================================================================== */
+ATOMIC RECEIVABLE PAYMENT
+============================================================================ */
 
 export async function applyReceivablePayment(
   entityId: string,
@@ -367,43 +235,64 @@ export async function applyReceivablePayment(
   userIdSafe: string,
   paymentTransactionId: string
 ) {
+
   requireEntityId(entityId, "registrar pago CxC");
 
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Monto de pago inválido");
   }
 
-  if (!receivable?.id) {
-    throw new Error("Receivable inválido (falta id)");
+  const receivableId = receivable?.id ?? receivable?.transactionId;
+
+  if (!receivableId) {
+    throw new Error("Receivable inválido (id faltante)");
   }
 
-  if (!paymentTransactionId?.trim()) {
-    throw new Error("transactionId requerido para pago");
-  }
+  const ref = doc(db, "entities", entityId, "receivables", receivableId);
 
-  const ref = doc(db, "entities", entityId, "receivables", receivable.id);
-  const snap = await getDoc(ref);
+  await runTransaction(db, async (tx) => {
 
-  if (!snap.exists()) {
-    throw new Error("Receivable no existe");
-  }
+    const snap = await tx.get(ref);
 
-  const current = snap.data() as Receivable;
+    if (!snap.exists()) {
+      throw new Error("Receivable no existe");
+    }
 
-  assertNotAnnulled(current);
-  assertTransactionId(current.transactionId);
+    const current = snap.data() as Receivable;
 
-  const balance = n2(current.balance);
+    assertNotAnnulled(current);
 
-  if (amount > balance) {
-    throw new Error("El pago excede el saldo pendiente");
-  }
+    const balance = n2(current.balance);
 
-  /* APPLY COLLECTION */
+    if (amount > balance) {
+      throw new Error("El pago excede el saldo pendiente");
+    }
 
-  await applyReceivableCollection(entityId, current, amount);
+    const collectionIds: string[] =
+      Array.isArray(current.collectionTransactionIds)
+        ? current.collectionTransactionIds
+        : [];
 
-  /* CREATE BANK MOVEMENTS */
+    if (collectionIds.includes(paymentTransactionId)) {
+      throw new Error("Este pago ya fue registrado");
+    }
+
+    const paid = n2(current.paid + amount);
+
+    const next = computeStatus(paid, current.total);
+
+    tx.update(ref, {
+      paid,
+      balance: next.balance,
+      status: next.status,
+      collectionTransactionIds: [...collectionIds, paymentTransactionId],
+      lastPaymentAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+  });
+
+  /* CREATE BANK MOVEMENT */
 
   const journalEntries = await fetchJournalEntriesByTransactionId(
     entityId,
@@ -411,151 +300,31 @@ export async function applyReceivablePayment(
   );
 
   const bankLines = journalEntries.filter(
-    (e) => n2(e.debit) > 0 && e.account_code?.startsWith("11")
+    (e) => n2(e.debit) > 0 && isBankAccount(normAcc(e.account_code))
   );
 
   for (const line of bankLines) {
+
+    const { account_code, date } = line;
+
+    if (!account_code) throw new Error("Movimiento bancario sin cuenta contable");
+    if (!date) throw new Error("Movimiento bancario sin fecha contable");
+
     await createBankMovement({
       entityId,
-      bankAccountId: line.account_code ?? "",
-      
-      date: line.date,
+      bankAccountId: account_code,
+      date,
       amount: n2(line.debit),
       type: "deposit",
       description: line.description ?? "Cobro de cliente",
       relatedJournalTransactionId: paymentTransactionId,
     });
   }
-
-  /* REGISTER PAYMENT TRACE */
-
-  const collectionIds: string[] = Array.isArray(current.collectionTransactionIds)
-    ? current.collectionTransactionIds
-    : [];
-
-  await updateDoc(ref, {
-    collectionTransactionIds: [...collectionIds, paymentTransactionId],
-    lastPaymentAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
 }
 
 /* ============================================================================
- * REPAIR LEGACY RECEIVABLE (NO account_code)
- * ========================================================================== */
-
-export async function repairReceivableAccountFromJournal(
-  entityId: string,
-  receivableId: string
-) {
-  requireEntityId(entityId, "reparar CxC");
-  if (!receivableId?.trim()) {
-    throw new Error("receivableId requerido para reparar CxC");
-  }
-  const ref = doc(db, "entities", entityId, "receivables", receivableId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Receivable no existe");
-
-  const receivable = snap.data() as Receivable;
-
-  assertNotAnnulled(receivable);
-  assertTransactionId(receivable.transactionId);
-
-  if (receivable.account_code) return receivable;
-
-  if (n2(receivable.paid) > 0) {
-    throw new Error("No se puede reparar un receivable con cobros registrados");
-  }
-
-  const entries = await fetchJournalEntriesByTransactionId(
-    entityId,
-    receivable.transactionId
-  );
-
-  const candidates = entries.filter((e) => {
-    const c = normAcc(e.account_code);
-    return RECEIVABLE_PREFIXES.some((p) => c.startsWith(p)) && n2(e.debit) > 0;
-  });
-
-  if (candidates.length !== 1) {
-    throw new Error("Asiento ambiguo o inválido para reparación");
-  }
-
-  const picked = candidates[0];
-  assertReceivableAccount(picked.account_code);
-  requireNonEmpty(picked.account_code, "account code");
-
-  await updateDoc(ref, {
-    account_code: picked.account_code,
-    account_name: picked.account_name,
-    updatedAt: serverTimestamp(),
-  });
-
-  return picked;
-}
-
-/* ============================================================================
- * UPDATE RECEIVABLE TERMS
- * ========================================================================== */
-
-export async function updateReceivableTerms(
-  entityId: string,
-  receivableId: string,
-  termsDays: number,
-  installments: number
-) {
-  requireEntityId(entityId, "actualizar CxC");
-  if (!receivableId?.trim()) throw new Error("receivableId requerido");
-
-  if (!Number.isInteger(termsDays) || termsDays < 0) {
-    throw new Error("Plazo de días inválido");
-  }
-  if (!Number.isInteger(installments) || installments < 1) {
-    throw new Error("Número de cuotas inválido");
-  }
-
-  const ref = doc(db, "entities", entityId, "receivables", receivableId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error("Receivable no existe");
-
-  const current = snap.data() as Receivable;
-
-  assertNotAnnulled(current);
-
-  if (n2(current.paid) > 0) {
-    throw new Error(
-      "No se pueden modificar los plazos de un receivable con cobros registrados"
-    );
-  }
-
-  assertTransactionId(current.transactionId);
-  assertReceivableAccount(current.account_code);
-  assertInvoiceInvariant(current);
-
-  const total = n2(current.total);
-  if (total <= 0) throw new Error("Total inválido");
-
-  const installmentSchedule = buildInstallmentSchedule(
-    total,
-    current.issueDate,
-    termsDays,
-    installments
-  );
-
-  await updateDoc(ref, {
-    termsDays,
-    installments,
-    installmentSchedule,
-    balance: total,
-    status: "pending",
-    updatedAt: serverTimestamp(),
-  });
-}
-
-/* ============================================================================
- * SAFE ANNULMENT (NO DELETE) — SALES INVOICE
- * Creates reversal journal and marks receivable as "annulled"
- * ========================================================================== */
+ANNUL RECEIVABLE
+============================================================================ */
 
 export async function annulReceivableInvoice(
   entityId: string,
@@ -563,12 +332,13 @@ export async function annulReceivableInvoice(
   userIdSafe: string,
   reason = "Anulación de factura"
 ) {
+
   requireEntityId(entityId, "anular CxC");
-  if (!receivableId?.trim()) throw new Error("receivableId requerido");
-  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
   const ref = doc(db, "entities", entityId, "receivables", receivableId);
+
   const snap = await getDoc(ref);
+
   if (!snap.exists()) throw new Error("Receivable no existe");
 
   const r = snap.data() as Receivable;
@@ -577,23 +347,19 @@ export async function annulReceivableInvoice(
     throw new Error("La factura ya está anulada");
   }
 
-  if (n2(r.paid) > 0) {
-    throw new Error("No se puede anular: la factura tiene cobros registrados");
+  if (!r.transactionId) {
+    throw new Error("Receivable sin transactionId");
   }
-
-  assertTransactionId(r.transactionId);
 
   const original = await fetchJournalEntriesByTransactionId(
     entityId,
     r.transactionId
   );
 
-  if (!original.length) {
-    throw new Error("No se encontraron asientos contables de la factura");
-  }
-
   const today = new Date().toISOString().slice(0, 10);
-  const reversalTx = doc(collection(db, "entities", entityId, "journalEntries")).id;
+
+  const reversalTx =
+    doc(collection(db, "entities", entityId, "journalEntries")).id;
 
   const reversal: JournalEntry[] = original.map((e) => ({
     entityId,
@@ -604,78 +370,80 @@ export async function annulReceivableInvoice(
     debit: n2(e.credit),
     credit: n2(e.debit),
     invoice_number: e.invoice_number,
-    description: `ANULACIÓN — ${e.description || `Factura ${e.invoice_number}`}`,
+    description: `ANULACIÓN — ${e.description}`,
     source: "manual_journal" as any,
   }));
 
   await saveJournalEntries(entityId, userIdSafe, reversal);
 
   await updateDoc(ref, {
-    status: "annulled" as any,
+    status: "annulled",
     balance: 0,
     updatedAt: serverTimestamp(),
-    annulledAt: serverTimestamp() as any,
+    annulledAt: serverTimestamp(),
     annulledBy: userIdSafe,
     annulmentTransactionId: reversalTx,
     annulmentReason: reason,
   });
 
-  return { annulmentTransactionId: reversalTx };
 }
 
-/* ============================================================================
- * DELETE RECEIVABLE (CASCADE) — DEV ONLY
- * IMPORTANT: In production, prefer annulReceivableInvoice instead.
- * ========================================================================== */
-
-async function deleteReceivable(entityId: string, receivableId: string) {
-  requireEntityId(entityId, "eliminar CxC");
-  if (!receivableId?.trim()) {
-    throw new Error("receivableId requerido para eliminar CxC");
-  }
-  await deleteDoc(doc(db, "entities", entityId, "receivables", receivableId));
-}
-
-async function fetchCollectionsForReceivable(
+// -------------------
+// REPAIR RECEIVABLE ACCOUNT FROM JOURNAL
+// -------------------
+export async function repairReceivableAccountFromJournal(
   entityId: string,
   receivableId: string
-): Promise<{ transactionId: string }[]> {
-  const ref = doc(db, "entities", entityId, "receivables", receivableId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return [];
-
-  const receivable = snap.data() as any;
-  const txs: string[] = Array.isArray(receivable.collectionTransactionIds)
-    ? receivable.collectionTransactionIds.filter(
-        (x: any) => typeof x === "string" && x.trim()
-      )
-    : [];
-
-  return txs.map((transactionId) => ({ transactionId }));
-}
-
-export async function deleteReceivableCascade(
-  entityId: string,
-  transactionId: string
 ) {
-  requireEntityId(entityId, "eliminar CxC");
-  if (!transactionId?.trim()) {
-    throw new Error("transactionId requerido para eliminar CxC");
-  }
-  const receivable = await fetchReceivableByTransactionId(entityId, transactionId);
-  if (!receivable) return;
+  requireEntityId(entityId, "reparar cuenta contable");
 
-  if (!receivable.id) {
-    throw new Error("Receivable inválido: falta id");
-  }
+  const ref = doc(db, "entities", entityId, "receivables", receivableId);
 
-  const collections = await fetchCollectionsForReceivable(entityId, receivable.id);
+  const snap = await getDoc(ref);
 
-  for (const c of collections) {
-    if (!c.transactionId) continue;
-
-    await annulInvoiceByTransaction(entityId, c.transactionId);
+  if (!snap.exists()) {
+    throw new Error("Receivable no existe");
   }
 
-  await deleteReceivable(entityId, receivable.id);
+  const receivable = snap.data() as Receivable;
+
+  if (!receivable.transactionId) {
+    throw new Error("Receivable sin transactionId");
+  }
+
+  const journal = await fetchJournalEntriesByTransactionId(
+    entityId,
+    receivable.transactionId
+  );
+
+  const controlLine = journal.find(e => {
+    if (!e.account_code) return false;
+
+    const code = e.account_code.trim();
+
+    return isCustomerReceivableAccount(code);
+  });
+
+  if (!controlLine) {
+    throw new Error(
+      "No se encontró línea contable de clientes para reparar"
+    );
+  }
+
+  const accountCode = controlLine.account_code;
+
+  if (!accountCode) {
+    throw new Error("Linea contable sin account_code");
+  }
+
+  await updateDoc(ref, {
+    account_code: accountCode,
+    account_name: controlLine.account_name ?? "Clientes",
+    updatedAt: serverTimestamp(),
+  });
+
+  return {
+    account_code: accountCode,
+    account_name: controlLine.account_name ?? "Clientes",
+  };
 }

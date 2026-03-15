@@ -68,6 +68,20 @@ const parseMoney = (raw: string) => {
   return Number.isFinite(num) ? num : 0;
 };
 
+function toISODate(raw?: string) {
+  if (!raw) return todayISO();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const [_, d, mth, y] = m;
+    return `${y}-${mth}-${d}`;
+  }
+
+  return todayISO();
+}
+
 const createEmptyRow = (
   entityId: string,
   uid: string,
@@ -79,7 +93,7 @@ const createEmptyRow = (
   transactionId,
   entityId,
   uid,
-  date,
+  date: toISODate(date),
   account_code: "",
   account_name: "",
   debit: 0,
@@ -165,7 +179,7 @@ export default function JournalPreviewModal({
             entityId, 
             userIdSafe,
             transactionId,
-            metadata.invoiceDate ?? todayISO(),
+            toISODate(metadata.invoiceDate),
             invoiceNumber)];
 
     setRows(prepared);
@@ -238,7 +252,7 @@ export default function JournalPreviewModal({
           entityId, 
           userIdSafe, 
           transactionId,
-          metadata.invoiceDate ?? todayISO(),
+          toISODate(metadata.invoiceDate),
           metadata.invoice_number),
       ];
     });
@@ -249,7 +263,7 @@ export default function JournalPreviewModal({
     entityId,
     userIdSafe,
     transactionId,
-    metadata.invoiceDate ?? todayISO(),
+    toISODate(metadata.invoiceDate),
     metadata.invoice_number
   );
 
@@ -382,7 +396,7 @@ export default function JournalPreviewModal({
                 <b>Factura:</b> {metadata.invoice_number ?? "-"}
               </div>
               <div>
-                <b>Fecha:</b> {metadata.invoiceDate ?? "-"}
+                <b>Fecha:</b> {new Date(toISODate(metadata.invoiceDate)).toLocaleDateString("es-EC")}
               </div>
             </div>
           </div>

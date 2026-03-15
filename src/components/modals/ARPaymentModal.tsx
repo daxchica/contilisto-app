@@ -4,7 +4,7 @@
 // Supports Ecuador tax retentions
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 import type { JournalEntry } from "@/types/JournalEntry";
@@ -13,6 +13,7 @@ import type { Account } from "@/types/AccountTypes";
 
 import { saveJournalEntries } from "@/services/journalService";
 import { applyReceivablePayment } from "@/services/receivablesService";
+import { saveRetention } from "@/services/retentionsService";
 
 interface Props {
   entityId: string;
@@ -31,6 +32,10 @@ export default function ARPaymentModal({
   onClose,
   onSuccess,
 }: Props) {
+  /* -------------------------------------------------------------------------- */
+  /* STATE                                                                      */
+  /* -------------------------------------------------------------------------- */
+
   const [paymentAmount, setPaymentAmount] = useState<number>(
     receivable.balance || receivable.total
   );
@@ -43,21 +48,17 @@ export default function ARPaymentModal({
   );
 
   const [certificate, setCertificate] = useState("");
-
   const [loading, setLoading] = useState(false);
+  const [bankAccountId, setBankAccountId] = useState("");
+  const [error, setError] = useState("");
 
   /* -------------------------------------------------------------------------- */
   /* DERIVED VALUES                                                             */
   /* -------------------------------------------------------------------------- */
 
-  const totalApplied = useMemo(() => {
-    return paymentAmount + retIR + retIVA;
-  }, [paymentAmount, retIR, retIVA]);
-
-  const difference = useMemo(() => {
-    return (receivable.balance || receivable.total) - totalApplied;
-  }, [receivable, totalApplied]);
-
+  const invoiceBalance = Number(receivable.balance || receivable.total || 0);
+  const totalApplied = Number(paymentAmount || 0) + Number(retIR || 0) + Number(retIVA || 0);
+  const difference = invoiceBalance - totalApplied;
   const balanced = Math.abs(difference) < 0.01;
 
   /* -------------------------------------------------------------------------- */
@@ -67,23 +68,76 @@ export default function ARPaymentModal({
   const findAccount = (code: string) =>
     accounts.find((a) => a.code === code);
 
-  const bankAccount = findAccount("110101");
-  const arAccount = findAccount("120101");
-  const retIRAccount = findAccount("113201");
-  const retIVAAccount = findAccount("113202");
+  // Adjust this filter if your bank accounts use a different coding pattern.
+  // For now it includes common asset/bank account prefixes.
+  const bankAccounts = useMemo(() => {
+    return accounts.filter(
+      (a) => a.isBank === true || a.parentCode === "1010103"
+    );
+  }, [accounts]);
+
+  const bankAccount = useMemo(() => {
+    return bankAccounts.find((a) => a.code === bankAccountId);
+  }, [bankAccounts, bankAccountId]);
+
+  const arAccount = findAccount("1010301");
+  const retIRAccount = findAccount("113020101");
+  const retIVAAccount = findAccount("113020201");
 
   /* -------------------------------------------------------------------------- */
   /* CONFIRM PAYMENT                                                            */
   /* -------------------------------------------------------------------------- */
 
   const handleConfirm = async () => {
-    if (!balanced) {
-      alert("The payment is not balanced with the invoice.");
+    setError("");
+
+    if (paymentAmount < 0 || retIR < 0 || retIVA < 0) {
+      setError("Los valores no pueden ser negativos.");
       return;
     }
 
-    if (!bankAccount || !arAccount) {
-      alert("Required accounting accounts are missing.");
+    if (totalApplied <= 0) {
+      setError("El valor aplicado debe ser mayor que cero.");
+      return;
+    }
+
+    if (!balanced) {
+      setError("El cobro no está balanceado contra la factura.");
+      return;
+    }
+
+    if (!bankAccountId) {
+      setError("Debe seleccionar una cuenta bancaria.");
+      return;
+    }
+
+    if (!bankAccount) {
+      setError("La cuenta bancaria seleccionada no es válida.");
+      return;
+    }
+
+    if (!bankAccount.code || !bankAccount.name) {
+      setError("La cuenta bancaria seleccionada no tiene código o nombre contable.");
+      return;
+    }
+
+    if (!arAccount?.code || !arAccount?.name) {
+      setError("Falta la cuenta contable de cuentas por cobrar (120101).");
+      return;
+    }
+
+    if (retIR > 0 && (!retIRAccount?.code || !retIRAccount?.name)) {
+      setError("Falta la cuenta contable de retención IR (113201).");
+      return;
+    }
+
+    if (retIVA > 0 && (!retIVAAccount?.code || !retIVAAccount?.name)) {
+      setError("Falta la cuenta contable de retención IVA (113202).");
+      return;
+    }
+
+    if ((retIR > 0 || retIVA > 0) && !certificate.trim()) {
+      setError("Debe ingresar el certificado de retención.");
       return;
     }
 
@@ -91,26 +145,25 @@ export default function ARPaymentModal({
       setLoading(true);
 
       const transactionId = uuidv4();
-
       const entries: JournalEntry[] = [];
 
-      /* BANK */
+      /* ---------------- BANK DEBIT ---------------- */
 
       if (paymentAmount > 0) {
         entries.push({
           id: uuidv4(),
           entityId,
-          account_code: bankAccount.code,
-          account_name: bankAccount.name,
+          account_code: String(bankAccount.code),
+          account_name: String(bankAccount.name),
           debit: paymentAmount,
           credit: 0,
           date,
           transactionId,
-          description: `Customer payment ${receivable.invoiceNumber}`,
+          description: `Cobro cliente ${receivable.customerName ?? ""} Factura ${receivable.invoiceNumber}`,
         });
       }
 
-      /* IR RETENTION RECEIVABLE */
+      /* ---------------- IR RETENTION ---------------- */
 
       if (retIR > 0 && retIRAccount) {
         entries.push({
@@ -118,64 +171,88 @@ export default function ARPaymentModal({
           entityId,
           transactionId,
           date,
-          account_code: retIRAccount.code,
-          account_name: retIRAccount.name,
+          account_code: String(retIRAccount.code),
+          account_name: String(retIRAccount.name),
           debit: retIR,
           credit: 0,
-          description: `IR retention ${certificate}`,
+          description: `Retención IR cliente ${receivable.customerName ?? ""} Cert ${certificate}`,
         });
       }
 
-      /* IVA RETENTION RECEIVABLE */
+      /* ---------------- IVA RETENTION ---------------- */
 
       if (retIVA > 0 && retIVAAccount) {
         entries.push({
           id: uuidv4(),
           entityId,
-          account_code: retIVAAccount.code,
-          account_name: retIVAAccount.name,
+          transactionId,
+          date,
+          account_code: String(retIVAAccount.code),
+          account_name: String(retIVAAccount.name),
           debit: retIVA,
           credit: 0,
-          date,
-          transactionId,
-          description: `IVA retention ${certificate}`,
+          description: `Retención IVA cliente ${receivable.customerName ?? ""} Cert ${certificate}`,
         });
       }
 
-      /* CREDIT ACCOUNTS RECEIVABLE */
+      /* ---------------- CREDIT AR ---------------- */
 
       entries.push({
         id: uuidv4(),
         entityId,
-        account_code: arAccount.code,
-        account_name: arAccount.name,
+        account_code: String(arAccount.code),
+        account_name: String(arAccount.name),
         debit: 0,
         credit: totalApplied,
         date,
         transactionId,
-        description: `Invoice payment ${receivable.invoiceNumber}`,
+        description: `Cobro factura ${receivable.invoiceNumber}`,
       });
 
-      /* SAVE JOURNAL */
+      /* ---------------- SAFETY CHECK ---------------- */
 
-      await saveJournalEntries(entityId, userId, entries );
+      const totalDebit = entries.reduce((sum, e) => sum + Number(e.debit ?? 0), 0);
+      const totalCredit = entries.reduce((sum, e) => sum + Number(e.credit ?? 0), 0);
 
-      /* UPDATE RECEIVABLE */
+      if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        throw new Error("El asiento contable no está balanceado.");
+      }
+
+      /* ---------------- SAVE JOURNAL ---------------- */
+
+      await saveJournalEntries(entityId, userId, entries);
+
+      /* ---------------- UPDATE RECEIVABLE ---------------- */
 
       await applyReceivablePayment(
         entityId,
         receivable,
         totalApplied,
         userId,
-        transactionId,
+        transactionId
       );
 
-      if (onSuccess) onSuccess();
+      /* ---------------- SAVE RETENTION ---------------- */
 
+      if (retIR > 0 || retIVA > 0) {
+        await saveRetention(entityId, {
+          invoiceNumber: receivable.invoiceNumber,
+          customerRUC: receivable.customerRUC,
+          customerName: receivable.customerName,
+          date,
+          certificate,
+          irRetention: retIR,
+          ivaRetention: retIVA,
+          transactionId,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      onSuccess?.();
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Error registering payment.");
+      setError(err?.message || "Error registrando el cobro.");
     } finally {
       setLoading(false);
     }
@@ -188,115 +265,114 @@ export default function ARPaymentModal({
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl w-[520px] p-6 space-y-4">
-
-        <h2 className="text-lg font-semibold">
-          Register Customer Payment
-        </h2>
+        <h2 className="text-lg font-semibold">Registrar Cobro</h2>
 
         <div className="text-sm text-gray-600">
-          Invoice: {receivable.invoiceNumber}
+          Factura No.: {receivable.invoiceNumber}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-
           <div>
-            <label className="text-xs">Invoice Balance</label>
-            <input
-              value={receivable.balance}
-              readOnly
-              className="input"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs">Payment Date</label>
+            <label className="text-sm font-medium">Fecha de cobro</label>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="input"
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
             />
           </div>
 
           <div>
-            <label className="text-xs">Cash Received</label>
+            <label className="text-sm font-medium">Cuenta bancaria</label>
+            <select
+              value={bankAccountId}
+              onChange={(e) => setBankAccountId(e.target.value)}
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+            >
+              <option value="">-- Seleccione una cuenta --</option>
+
+              {bankAccounts.map((b) => (
+                <option key={b.code} value={b.code}>
+                  {b.name} ({b.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs">Saldo de Factura</label>
+            <input value={invoiceBalance} readOnly className="input" />
+          </div>
+
+          <div>
+            <label className="text-xs">Pago Recibido</label>
             <input
               type="number"
               value={paymentAmount}
-              onChange={(e) =>
-                setPaymentAmount(Number(e.target.value))
-              }
+              onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
               className="input"
             />
           </div>
 
           <div>
-            <label className="text-xs">IR Retention</label>
+            <label className="text-xs">IR Retención</label>
             <input
               type="number"
               value={retIR}
-              onChange={(e) => setRetIR(Number(e.target.value))}
+              onChange={(e) => setRetIR(parseFloat(e.target.value) || 0)}
               className="input"
             />
           </div>
 
           <div>
-            <label className="text-xs">IVA Retention</label>
+            <label className="text-xs">IVA Retención</label>
             <input
               type="number"
               value={retIVA}
-              onChange={(e) => setRetIVA(Number(e.target.value))}
+              onChange={(e) => setRetIVA(parseFloat(e.target.value) || 0)}
               className="input"
             />
           </div>
 
-          <div>
-            <label className="text-xs">Retention Certificate</label>
+          <div className="col-span-2">
+            <label className="text-xs">Certificado de Retención</label>
             <input
               value={certificate}
               onChange={(e) => setCertificate(e.target.value)}
-              className="input"
+              className="input w-full"
             />
           </div>
-
         </div>
 
         <div className="text-sm mt-3">
-
           <div>
-            Total Applied:{" "}
-            <b>${totalApplied.toFixed(2)}</b>
+            Total Aplicado: <b>${totalApplied.toFixed(2)}</b>
           </div>
 
-          <div
-            className={
-              balanced ? "text-green-600" : "text-red-600"
-            }
-          >
-            Difference: {difference.toFixed(2)}
+          <div className={balanced ? "text-green-600" : "text-red-600"}>
+            Diferencia: {difference.toFixed(2)}
           </div>
-
         </div>
+
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error}
+          </div>
+        )}
 
         <div className="flex justify-end gap-3 pt-4">
-
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border rounded"
-          >
-            Cancel
+          <button onClick={onClose} className="px-4 py-2 border rounded">
+            Cancelar
           </button>
 
           <button
-            disabled={!balanced || loading}
+            disabled={!balanced || loading || totalApplied <= 0}
             onClick={handleConfirm}
-            className="px-4 py-2 bg-blue-600 text-white rounded"
+            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
           >
-            {loading ? "Processing..." : "Confirm Payment"}
+            {loading ? "Procesando..." : "Confirmar Cobro"}
           </button>
-
         </div>
-
       </div>
     </div>
   );

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body{
+    margin:0;
+    background:transparent;
+    color:white;
+    font-family:monospace;
+    font-size:80px;
+    font-weight:bold;
+}
+#timer{
+    position:absolute;
+    top:20px;
+    right:40px;
+}
+</style>
+</head>
+<body>
+
+<div id="timer">00:00</div>
+
+<script>
+let start = Date.now();
+
+function update(){
+    let diff = Math.floor((Date.now()-start)/1000);
+
+    let m = Math.floor(diff/60);
+    let s = diff%60;
+
+    let mm = String(m).padStart(2,"0");
+    let ss = String(s).padStart(2,"0");
+
+    document.getElementById("timer").textContent = mm+":"+ss;
+}
+
+setInterval(update,1000);
+</script>
+
+</body>
+</html>

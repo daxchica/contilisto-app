@@ -7,76 +7,90 @@ const raw_coa: RawAccount[] = [
 
   { code: "1", name: "ACTIVO", level: 1, parentCode: null },
 
-  { code: "101", name: "ACTIVO CORRIENTE", level: 2, parentCode: "1" },
+    { code: "101", name: "ACTIVO CORRIENTE", level: 2, parentCode: "1" },
 
-  { code: "10101", name: "EFECTIVO Y EQUIVALENTES DE EFECTIVO", level: 3, parentCode: "101" },
+      { code: "10101", name: "EFECTIVO Y EQUIVALENTES DE EFECTIVO", level: 3, parentCode: "101" },
 
-  { code: "1010101", name: "CAJA", level: 4, parentCode: "10101", postable: true },
-  { code: "1010102", name: "INSTITUCIONES FINANCIERAS PÚBLICAS", level: 4, parentCode: "10101", postable: true },
-  { code: "1010103", name: "INSTITUCIONES FINANCIERAS PRIVADAS", level: 4, parentCode: "10101", postable: true },
+        { code: "1010101", name: "CAJA", level: 4, parentCode: "10101", postable: true },
+        { code: "1010102", name: "INSTITUCIONES FINANCIERAS PÚBLICAS", level: 4, parentCode: "10101", postable: true },
+        { code: "1010103", name: "INSTITUCIONES FINANCIERAS PRIVADAS", level: 4, parentCode: "10101", postable: true },
 
-  { code: "10102", name: "ACTIVOS FINANCIEROS", level: 3, parentCode: "101" },
+    { code: "10102", name: "ACTIVOS FINANCIEROS", level: 3, parentCode: "101" },
 
-  { code: "1010201", name: "ACTIVOS FINANCIEROS A VALOR RAZONABLE CON CAMBIOS EN RESULTADOS", level: 4, parentCode: "10102" },
+      { code: "1010201", name: "ACTIVOS FINANCIEROS A VALOR RAZONABLE CON CAMBIOS EN RESULTADOS", level: 4, parentCode: "10102" },
 
-  { code: "101020101", name: "RENTA VARIABLE", level: 5, parentCode: "1010201" },
-  { code: "10102010101", name: "ACCIONES Y PARTICIPACIONES", level: 6, parentCode: "101020101", postable: true },
-  { code: "10102010102", name: "CUOTAS DE FONDOS COLECTIVOS", level: 6, parentCode: "101020101", postable: true },
-  { code: "10102010103", name: "VALORES DE TITULARIZACIÓN DE PARTICIPACIÓN", level: 6, parentCode: "101020101", postable: true },
-  { code: "10102010104", name: "UNIDADES DE PARTICIPACIÓN", level: 6, parentCode: "101020101", postable: true },
-  { code: "10102010105", name: "INVERSIONES EN EL EXTERIOR", level: 6, parentCode: "101020101", postable: true },
-  { code: "10102010106", name: "OTROS", level: 6, parentCode: "101020101", postable: true },
+        { code: "101020101", name: "RENTA VARIABLE", level: 5, parentCode: "1010201" },
+          { code: "10102010101", name: "ACCIONES Y PARTICIPACIONES", level: 6, parentCode: "101020101", postable: true },
+          { code: "10102010102", name: "CUOTAS DE FONDOS COLECTIVOS", level: 6, parentCode: "101020101", postable: true },
+          { code: "10102010103", name: "VALORES DE TITULARIZACIÓN DE PARTICIPACIÓN", level: 6, parentCode: "101020101", postable: true },
+          { code: "10102010104", name: "UNIDADES DE PARTICIPACIÓN", level: 6, parentCode: "101020101", postable: true },
+          { code: "10102010105", name: "INVERSIONES EN EL EXTERIOR", level: 6, parentCode: "101020101", postable: true },
+          { code: "10102010106", name: "OTROS", level: 6, parentCode: "101020101", postable: true },
 
-  { code: "101020102", name: "RENTA FIJA", level: 5, parentCode: "1010201" },
-  { code: "10102010201", name: "AVALES", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010202", name: "BONOS DEL ESTADO", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010203", name: "BONOS DE PRENDA", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010204", name: "CÉDULAS HIPOTECARIAS", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010205", name: "CERTIFICADOS FINANCIEROS", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010206", name: "CERTIFICADOS DE INVERSIÓN", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010207", name: "CERTIFICADOS DE TESORERÍA", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010208", name: "CERTIFICADOS DE DEPÓSITO", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010209", name: "CUPONES", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010210", name: "DEPÓSITOS A PLAZO", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010211", name: "LETRAS DE CAMBIO", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010212", name: "NOTAS DE CRÉDITO", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010213", name: "OBLIGACIONES", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010214", name: "FACTURAS COMERCIALES NEGOCIABLES", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010215", name: "OVERNIGHTS", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010216", name: "OBLIGACIONES CONVERTIBLES EN ACCIONES", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010217", name: "PAPEL COMERCIAL", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010218", name: "PAGARÉS", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010219", name: "PÓLIZAS DE ACUMULACIÓN", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010220", name: "TÍTULOS DEL BANCO CENTRAL", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010221", name: "VALORES DE TITULARIZACIÓN", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010222", name: "INVERSIONES EN EL EXTERIOR", level: 6, parentCode: "101020102", postable: true },
-  { code: "10102010223", name: "OTROS", level: 6, parentCode: "101020102", postable: true },
+        { code: "101020102", name: "RENTA FIJA", level: 5, parentCode: "1010201" },
+          { code: "10102010201", name: "AVALES", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010202", name: "BONOS DEL ESTADO", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010203", name: "BONOS DE PRENDA", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010204", name: "CÉDULAS HIPOTECARIAS", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010205", name: "CERTIFICADOS FINANCIEROS", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010206", name: "CERTIFICADOS DE INVERSIÓN", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010207", name: "CERTIFICADOS DE TESORERÍA", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010208", name: "CERTIFICADOS DE DEPÓSITO", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010209", name: "CUPONES", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010210", name: "DEPÓSITOS A PLAZO", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010211", name: "LETRAS DE CAMBIO", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010212", name: "NOTAS DE CRÉDITO", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010213", name: "OBLIGACIONES", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010214", name: "FACTURAS COMERCIALES NEGOCIABLES", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010215", name: "OVERNIGHTS", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010216", name: "OBLIGACIONES CONVERTIBLES EN ACCIONES", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010217", name: "PAPEL COMERCIAL", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010218", name: "PAGARÉS", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010219", name: "PÓLIZAS DE ACUMULACIÓN", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010220", name: "TÍTULOS DEL BANCO CENTRAL", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010221", name: "VALORES DE TITULARIZACIÓN", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010222", name: "INVERSIONES EN EL EXTERIOR", level: 6, parentCode: "101020102", postable: true },
+          { code: "10102010223", name: "OTROS", level: 6, parentCode: "101020102", postable: true },
 
-  { code: "101020103", name: "DERIVADOS", level: 5, parentCode: "1010201" },
-  { code: "10102010301", name: "FORWARD", level: 6, parentCode: "101020103", postable: true },
-  { code: "10102010302", name: "FUTUROS", level: 6, parentCode: "101020103", postable: true },
-  { code: "10102010303", name: "OPCIONES", level: 6, parentCode: "101020103", postable: true },
-  { code: "10102010304", name: "OTROS", level: 6, parentCode: "101020103", postable: true },
+        { code: "101020103", name: "DERIVADOS", level: 5, parentCode: "1010201" },
+          { code: "10102010301", name: "FORWARD", level: 6, parentCode: "101020103", postable: true },
+          { code: "10102010302", name: "FUTUROS", level: 6, parentCode: "101020103", postable: true },
+          { code: "10102010303", name: "OPCIONES", level: 6, parentCode: "101020103", postable: true },
+          { code: "10102010304", name: "OTROS", level: 6, parentCode: "101020103", postable: true },
 
-  // -----------------------------
-  // ACTIVO CORRIENTE CUENTAS POR COBRAR
-  // -----------------------------
+    // -----------------------------
+    // ACTIVO CORRIENTE CUENTAS POR COBRAR
+    // -----------------------------
 
-  { code: "10103", name: "Cuentas por cobrar", level: 3, parentCode: "101" },
-  { code: "1010301",  name: "Clientes", level: 4, parentCode: "10103" },
-  { code: "101030101", name: "Clientes nacionales", level: 5, parentCode: "1010301", postable: true },
-  { code: "101030102", name: "Clientes del exterior", level: 5, parentCode: "1010301", postable: true },
+    { code: "10103", name: "Cuentas por cobrar", level: 3, parentCode: "101" },
+      { code: "1010301",  name: "Clientes por cobrar", level: 4, parentCode: "10103" },
+      { code: "101030101", name: "Clientes nacionales", level: 5, parentCode: "1010301", postable: true, isReceivable: true },
+      { code: "101030102", name: "Clientes del exterior", level: 5, parentCode: "1010301", postable: true },
 
-  // ===============================
-  // 13 - IMPUESTOS (ACTIVO)
-  // ===============================
+    // -----------------------------
+    // RETENCIONES POR COBRAR
+    // -----------------------------
+    
+    { code: "113", name: "RETENCIONES POR COBRAR", level: 2, parentCode: "1" },
 
-  { code: "13", name: "IMPUESTOS POR RECUPERAR", level: 2 },
-  { code: "133", name: "IVA CRÉDITO TRIBUTARIO", level: 3 },
-  { code: "13301", name: "IVA CRÉDITO EN COMPRAS", level: 4 },
-  { code: "1330101", name: "IVA 12% CRÉDITO TRIBUTARIO", level: 5 },
-  { code: "133010102", name: "IVA 12% CREDITO EN COMPRAS", level: 6, postable: true },
-  { code: "1330102", name: "IVA 0% CRÉDITO TRIBUTARIO", level: 5, postable: true },
+      { code: "11302", name: "Retenciones corrientes por cobrar", level: 3, parentCode: "113"},
+  
+        { code: "1130201", name: "Retenciones de Impuesto a la Renta por cobrar", level: 4, parentCode: "11302"},
+          { code: "113020101", name: "Retención IR clientes locales", level: 5, parentCode: "1130201", postable: true, isReceivable: true },
+          { code: "113020102", name: "Retención IR clientes exterior", level: 5, parentCode: "1130201", postable: true },
+  
+        { code: "1130202", name: "Retenciones de IVA por cobrar", level: 4, parentCode: "11302" },
+          { code: "113020201", name: "Retención IVA clientes locales", level: 5, parentCode: "1130202", postable: true, isReceivable: true },
+          { code: "113020202", name: "Retención IVA clientes exterior", level: 5, parentCode: "1130202", postable: true },
+
+    // ===============================
+    // 13 - IMPUESTOS (ACTIVO)
+    // ===============================
+
+  { code: "133", name: "IVA POR COBRAR", level: 2 , parentCode: "1" },
+  { code: "13301", name: "IVA CRÉDITO EN COMPRAS", level: 3, parentCode: "133" },
+  { code: "1330101", name: "IVA CRÉDITO TRIBUTARIO 12%", level: 4, parentCode: "13301", postable: true },
+  { code: "1330102", name: "IVA CRÉDITO TRIBUTARIO 0%", level: 4, parentCode: "13301", postable: true },
 
   // ===============================
   // 2 - PASIVO

@@ -89,8 +89,27 @@ export function applyPaymentToInstallments(
 /* ==============================
    Helpers
 ================================ */
+function normalizeDate(raw: string): Date {
+  if (!raw) return new Date();
+
+  // already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return new Date(raw);
+  }
+
+  // DD/MM/YYYY → ISO
+  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const [, d, mth, y] = m;
+    return new Date(`${y}-${mth}-${d}`);
+  }
+
+  // fallback
+  return new Date(raw);
+}
+
 function addDays(date: string, days: number): string {
-  const d = new Date(date);
+  const d = normalizeDate(date);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }

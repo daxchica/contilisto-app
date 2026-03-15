@@ -475,19 +475,6 @@ export async function saveJournalEntries(
     throw new Error("Asientos de múltiples transacciones en un mismo guardado no permitido");
   }
   
-  if (validEntries.length > 0) {
-      const first = validEntries[0];
-
-      const issuerRUC = 
-        (first as any).issuerRUC ??
-        (first as any).supplier_ruc ??
-        (first as any).customer_ruc ??
-        "";
-      
-        const invoiceNumber = first.invoice_number ?? "";
-
-    }
-
   for (const e of validEntries) {
     // If caller didn't provide id, we still want deterministic write id for this entry.
     const autoRef = doc(col);
@@ -571,6 +558,13 @@ export async function saveJournalEntries(
     existing[key] = true;
   }
 
+  const debit = saved.reduce((s, e) => s + (e.debit ?? 0), 0);
+  const credit = saved.reduce((s, e) => s + (e.credit ?? 0), 0);
+
+  if (Math.abs(debit - credit) > 0.001) {
+    throw new Error("Transacción no balanceada");
+  }
+
   // 🔒 HARD ACCOUNTING RULE — BEFORE WRITE
   const initialDate = await fetchInitialBalanceDate(entityId);
     if (initialDate) {
@@ -621,7 +615,11 @@ export async function saveJournalEntries(
 
     if (!isInitialBalance) {
       if (hasPayable) await syncPayablesFromJournal(entityId, saved);
-      if (hasReceivable) await syncReceivablesFromJournal(entityId, saved);
+      try {
+        await syncReceivablesFromJournal(entityId, saved);
+      } catch(e){
+        console.error("AR SYNC FAILED", e)
+      }
     }
   }
   return saved;
@@ -638,63 +636,111 @@ export async function saveJournalEntries(
 export async function createPayablePaymentJournalEntry(
   entityId: string,
   payable: Payable,
-  amount: number,
+  amountPaid: number,
   paymentDate: string,
   bankAccount: { id: string; account_code: string; name?: string },
   userIdSafe: string,
-  options?: { bankMovementId?: string }
+  options?: {
+    bankMovementId?: string;
+    retentionIR?: number;
+    retentionIVA?: number;
+  }
 ) {
   requireEntityId(entityId, "registrar pago");
-  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
 
-  if (!payable.account_code) {
-    throw new Error("Payable sin cuenta contable. Debe repararse.");
-  }
+  const retentionIR = options?.retentionIR ?? 0;
+  const retentionIVA = options?.retentionIVA ?? 0;
 
-  if (!Number.isFinite(amount) || amount <= 0 || amount > n2(payable.balance)) {
-    throw new Error("Monto inválido");
-  }
+  const totalApplied = amountPaid + retentionIR + retentionIVA;
 
-  if (!paymentDate) throw new Error("Fecha de pago requerida");
-
-  if (!bankAccount?.id || !bankAccount?.account_code?.trim()) {
-    throw new Error("Cuenta bancaria inválida (falta id o account_code)");
+  if (totalApplied > payable.balance) {
+    throw new Error("El pago aplicado excede el saldo de la factura");
   }
 
   const tx =
     options?.bankMovementId ??
     doc(collection(db, "entities", entityId, "journalEntries")).id;
 
-  const description = `Pago a proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;
+  const description =
+    `Pago proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;
 
-  const entries: JournalEntry[] = [
-    {
+  const entries: JournalEntry[] = [];
+
+  // -------------------------------------------------------
+  // DEBIT AP
+  // -------------------------------------------------------
+
+  entries.push({
+    entityId,
+    transactionId: tx,
+    date: paymentDate,
+    account_code: payable.account_code,
+    account_name: payable.account_name,
+    debit: totalApplied,
+    credit: 0,
+    invoice_number: payable.invoiceNumber,
+    supplier_name: payable.supplierName as any,
+    description,
+    source: "manual",
+  });
+
+  // -------------------------------------------------------
+  // CREDIT BANK
+  // -------------------------------------------------------
+
+  entries.push({
+    entityId,
+    transactionId: tx,
+    date: paymentDate,
+    account_code: bankAccount.account_code,
+    account_name: bankAccount.name ?? "Banco",
+    debit: 0,
+    credit: amountPaid,
+    invoice_number: payable.invoiceNumber,
+    supplier_name: payable.supplierName as any,
+    description,
+    source: "manual",
+  });
+
+  // -------------------------------------------------------
+  // CREDIT IR RETENTION
+  // -------------------------------------------------------
+
+  if (retentionIR > 0) {
+    entries.push({
       entityId,
       transactionId: tx,
-      date: paymentDate as any,
-      account_code: payable.account_code,
-      account_name: payable.account_name,
-      debit: amount,
-      credit: 0,
-      invoice_number: payable.invoiceNumber,
-      supplier_name: payable.supplierName as any,
-      description,
-      source: "manual" as any,
-    },
-    {
-      entityId,
-      transactionId: tx,
-      date: paymentDate as any,
-      account_code: bankAccount.account_code,
-      account_name: bankAccount.name || "Banco",
+      date: paymentDate,
+      account_code: "236", // Retenciones IR
+      account_name: "Retenciones Impuesto a la Renta",
       debit: 0,
-      credit: amount,
+      credit: retentionIR,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName as any,
-      description,
-      source: "manual" as any,
-    },
-  ];
+      description: `Retención IR — Factura ${payable.invoiceNumber}`,
+      source: "manual",
+    });
+  }
+
+  // -------------------------------------------------------
+  // CREDIT IVA RETENTION
+  // -------------------------------------------------------
+
+  if (retentionIVA > 0) {
+    entries.push({
+      entityId,
+      transactionId: tx,
+      date: paymentDate,
+      account_code: "233", // Retenciones IVA
+      account_name: "Retenciones IVA",
+      debit: 0,
+      credit: retentionIVA,
+      invoice_number: payable.invoiceNumber,
+      supplier_name: payable.supplierName as any,
+      description: `Retención IVA — Factura ${payable.invoiceNumber}`,
+      source: "manual",
+    });
+  }
 
   await saveJournalEntries(entityId, userIdSafe, entries);
 
@@ -702,14 +748,15 @@ export async function createPayablePaymentJournalEntry(
     entityId,
     bankAccountId: bankAccount.id,
     date: paymentDate,
-    amount,
+    amount: amountPaid,
     type: "out",
     description,
-    createdBy: userIdSafe as any,
+    createdBy: userIdSafe,
   });
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
-  await applyPayablePayment(entityId, payable, amount);
+
+  await applyPayablePayment(entityId, payable, totalApplied);
 
   return tx;
 }
@@ -724,7 +771,7 @@ export async function createPayablePaymentJournalEntry(
 ============================================================================= */
 
 import type { Receivable } from "@/types/Receivable";
-import { applyReceivableCollection } from "./receivablesService";
+import { applyReceivablePayment } from "./receivablesService";
 
 export async function createReceivableCollectionJournalEntry(
   entityId: string,
@@ -789,18 +836,17 @@ export async function createReceivableCollectionJournalEntry(
 
   await saveJournalEntries(entityId, userIdSafe, entries);
 
-  const bankMovementId = await createBankMovement({
-    entityId,
-    bankAccountId: bankAccount.id,
-    date: collectionDate,
-    amount,
-    type: "in",
-    description,
-    createdBy: userIdSafe as any,
-  });
+  const bankMovementId = options?.bankMovementId ??
+    doc(collection(db, "entities", entityId, "bankMovements")).id;
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
-  await applyReceivableCollection(entityId, receivable, amount);
+  await applyReceivablePayment(
+    entityId, 
+    receivable, 
+    amount,
+    userIdSafe,
+    tx
+  );
 
   return tx;
 }

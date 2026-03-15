@@ -14,3 +14,14 @@ export function isSupplierPayableAccount(code?: string) {
   const c = normAcc(code);
   return PAYABLE_PREFIXES.some((p) => c.startsWith(p));
 }
+
+export function isBankAccount(accountCode?: string) {
+  if (!accountCode) return false;
+
+  const c = accountCode.replace(/\./g, "").trim();
+
+  // Ecuador typical bank accounts
+  // 10101 = Caja
+  // 10102 = Bancos
+  return c.startsWith("10101") || c.startsWith("10102");
+}

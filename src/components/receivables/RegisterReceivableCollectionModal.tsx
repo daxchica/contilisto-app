@@ -253,7 +253,38 @@ export default function RegisterReceivableCollectionModal({
           </div>
 
           {/* BODY */}
+
           <div className="p-6 space-y-4">
+              
+          {/* DATE */}
+          <div>
+            <label className="text-sm font-medium">Fecha de cobro</label>
+            <input
+              type="date"
+              value={collectionDate}
+              onChange={(e) => setCollectionDate(e.target.value)}
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          {/* BANK */}
+          <div>
+            <label className="text-sm font-medium">Cuenta bancaria</label>
+            <select
+              value={bankAccountId}
+              onChange={(e) => setBankAccountId(e.target.value)}
+              className="mt-1 w-full border rounded px-3 py-2 text-sm"
+            >
+              <option value="">-- Seleccione una cuenta --</option>
+              {bankAccounts.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+            {/* AMOUNT */}
             <div>
               <label className="text-sm font-medium">Monto a cobrar</label>
               <input
@@ -268,32 +299,6 @@ export default function RegisterReceivableCollectionModal({
               <div className="text-xs text-gray-500 mt-1">
                 Saldo pendiente: ${r.balance.toFixed(2)}
               </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Fecha de cobro</label>
-              <input
-                type="date"
-                value={collectionDate}
-                onChange={(e) => setCollectionDate(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Cuenta bancaria</label>
-              <select
-                value={bankAccountId}
-                onChange={(e) => setBankAccountId(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              >
-                <option value="">-- Seleccione una cuenta --</option>
-                {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.number})
-                  </option>
-                ))}
-              </select>
             </div>
 
             {error && (
