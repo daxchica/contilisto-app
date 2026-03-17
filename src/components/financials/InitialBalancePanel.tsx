@@ -174,28 +174,32 @@ export default function InitialBalancePanel({
   /* ------------------------------------------------------------------------ */
 
   const persistInitialBalance = async (entries: JournalEntry[]) => {
-    if (existingInitialBalanceTx) {
-      throw new Error(
-        "Esta entidad ya tiene un Balance Inicial guardado."
-      );
-    }
 
+    const all = await fetchJournalEntries(entityId);
     const txId = INITIAL_BALANCE_TX(entityId);
+    
+    const exists = all.some(
+      (e) => e.source === "initial" && e.transactionId === txId
+  );
+ 
+  if (exists) {
+    throw new Error("Esta entidad ya tiene un Balance Inicial guardado.");
+  }
 
-    const payload: JournalEntry[] = entries.map((e) => ({
-      ...e,
-      entityId,
-      uid: userIdSafe,
-      transactionId: txId,
-      invoice_number: "INITIAL_BALANCE",
-      source: INITIAL_SOURCE,
-      date: initialBalanceDate,
-    }));
+  const payload: JournalEntry[] = entries.map((e) => ({
+    ...e,
+    entityId,
+    uid: userIdSafe,
+    transactionId: txId,
+    invoice_number: "INITIAL_BALANCE",
+    source: INITIAL_SOURCE,
+    date: initialBalanceDate,
+  }));
+    
+  await saveJournalEntries(entityId, userIdSafe, payload);
 
-    await saveJournalEntries(entityId, userIdSafe, payload);
-
-    setExistingInitialBalanceTx(true);
-  };
+  setExistingInitialBalanceTx(true);
+};
 
   /* ------------------------------------------------------------------------ */
   /* Manual Submit                                                            */
@@ -204,7 +208,12 @@ export default function InitialBalancePanel({
   const handleManualSubmit = async (entries: ManualBalanceEntry[]) => {
     try {
       const normalized: JournalEntry[] = entries.map((e) => {
+        
         const code = (e.account_code ?? "").trim();
+
+        if (!code) {
+          throw new Error("Cuenta contable inválida.");
+        }
 
         const side = normalizeInitialSide(
           code,
@@ -213,7 +222,7 @@ export default function InitialBalancePanel({
         );
 
         return {
-          id: crypto.randomUUID(),
+          // id: crypto.randomUUID(),
           entityId,
           uid: userIdSafe,
           account_code: code,
@@ -247,6 +256,11 @@ export default function InitialBalancePanel({
     try {
       const normalized: JournalEntry[] = entries.map((e) => {
         const code = (e.account_code ?? "").trim();
+        
+        if (!code) {
+          throw new Error("Cuenta contable invalida.");
+        }
+
         const amount = Math.abs(Number(e.initial_balance ?? 0));
         const g = accountGroup(code);
 
@@ -254,7 +268,7 @@ export default function InitialBalancePanel({
         const credit = g === "2" || g === "3" ? amount : 0;
 
         return {
-          id: crypto.randomUUID(),
+          // id: crypto.randomUUID(),
           entityId,
           uid: userIdSafe,
           account_code: code,
@@ -307,7 +321,7 @@ export default function InitialBalancePanel({
         </div>
       )}
 
-      {showPanel && (
+      {showPanel && !existingInitialBalanceTx && (
         <div className="mt-4 space-y-6">
           <ManualBalanceForm
             entityId={entityId}

@@ -744,7 +744,7 @@ const ACCOUNT_MAP: AccountMap = {
   },
   expense: {
     expenseDefault: "502010101",
-    iva: "133010102",
+    iva: "1330101",
     ap: "201030102",
   },
 };

@@ -104,8 +104,23 @@ const createEmptyRow = (
   createdAt: Date.now(),
 });
 
-const areAllRowsPostable = (rows: Row[], leafCodeSet: Set<string>) =>
-  rows.every((r) => leafCodeSet.has((r.account_code ?? "").trim()));
+const normalizeCode = (c?: string) =>
+  (c || "").replace(/\./g, "").trim();
+
+const areAllRowsPostable = (rows: Row[], postableAccounts: Account[]) => {
+  const postableSet = new Set(
+    postableAccounts.map(a =>
+      (a.code || "").replace(/\./g, "").trim()
+    )
+  );
+
+  return rows
+    .filter(r => r.account_code || r.debit || r.credit)
+    .every(r => {
+      const code = (r.account_code || "").replace(/\./g, "").trim();
+      return code && postableSet.has(code);
+    });
+};
 
 
 // ---------------------------------------------------------------------------
@@ -217,7 +232,7 @@ export default function JournalPreviewModal({
     const credit = rows.reduce((s, r) => s + (r.credit ?? 0), 0);
 
     const mathBalanced = Math.abs(debit - credit) < 0.01;
-    const leafOk = areAllRowsPostable(rows, leafCodeSet);
+    const leafOk = areAllRowsPostable(rows, postableAccounts);
 
     let structureOk = true;
     try {
@@ -226,8 +241,12 @@ export default function JournalPreviewModal({
       structureOk = false;
     }
 
+    console.log("ROWS", rows);
+    console.log("LEAF SET", leafCodeSet);
+    console.log("LEAF OK", leafOk);
+
     return { debit, credit, mathBalanced, leafOk, structureOk };
-  }, [rows, leafCodeSet, invoiceType]);
+  }, [rows, postableAccounts, invoiceType]);
 
   // -------------------------------------------------------------------------
   // ROW ACTIONS
@@ -313,7 +332,7 @@ export default function JournalPreviewModal({
       const normalized: JournalEntry[] = rows.map((r) => ({
         ...r,
         transactionId,
-        account_code: (r.account_code ?? "").trim(),
+        account_code: (r.account_code ?? "").replace(/\./g, "").trim(),
         account_name: (r.account_name ?? "").trim(),
         entityId,
         uid: userIdSafe,
@@ -321,6 +340,11 @@ export default function JournalPreviewModal({
         debit: Number(r.debit ?? 0),
         credit: Number(r.credit ?? 0),
       }));
+
+      console.log(
+        "POSTABLE ACCOUNTS:",
+        postableAccounts.map(a => a.code)
+      );
 
       await onSave(normalized, note);
 
@@ -332,6 +356,16 @@ export default function JournalPreviewModal({
       setSaving(false);
     }
   };
+
+  console.log("ALL ACCOUNTS", accounts.length);
+  console.log("POSTABLE ACCOUNTS", postableAccounts.length);
+  console.log("POSTABLE LIST", postableAccounts.map(a => a.code));
+
+  const rowsValid = 
+    rows.length > 0 &&
+    rows
+      .filter((r) => r.account_code || r.debit || r.credit)
+      .every((r) => r.account_code && (r.debit > 0 || r.credit > 0));
 
   // -------------------------------------------------------------------------
   // METADATA
@@ -543,7 +577,8 @@ export default function JournalPreviewModal({
                 disabled={
                   saving ||
                   !totals.mathBalanced ||
-                  !totals.leafOk
+                  !totals.leafOk ||
+                  !rowsValid
                 }
                 className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50"
               >

@@ -100,7 +100,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
   // ----------------------------
   if (data.invoiceType === "sale") {
     // Always ensure Receivable line exists
-    if (total > 0 && !hasAccountPrefix(data.entries, "1010301")) {
+    if (total > 0 && !hasAccountPrefix(data.entries, "10103")) {
       data.entries.push({
         account_code: "101030101",
         account_name: "Clientes Nacionales",
@@ -122,7 +122,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     }
 
     // Ensure sales VAT (IVA débito) line exists if iva>0
-    if (iva > 0 && !hasAccountPrefix(data.entries, "201020101")) {
+    if (iva > 0 && !data.entries.some(e => String(e.account_code ?? "") === "201030102")) {
       data.entries.push({
         account_code: "201020101",
         account_name: "IVA débito en ventas",
@@ -170,7 +170,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     // Ensure purchase VAT (IVA crédito) line exists if iva>0
     if (iva > 0 && !hasAccountPrefix(data.entries, "133")) {
       data.entries.push({
-        account_code: "133010102",
+        account_code: "1330101",
         account_name: "IVA crédito en compras",
         debit: iva,
         credit: 0,
@@ -214,7 +214,9 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
       if (idx >= 0) {
         data.entries[idx] = {
           ...data.entries[idx],
-          debit: Number((n(data.entries[idx].debit) - diff).toFixed(2)),
+          debit: Math.max(
+            0, 
+            Number((n(data.entries[idx].debit) - diff).toFixed(2))),
         };
       }
     }

@@ -80,7 +80,7 @@ export default function ARPaymentModal({
     return bankAccounts.find((a) => a.code === bankAccountId);
   }, [bankAccounts, bankAccountId]);
 
-  const arAccount = findAccount("1010301");
+  const arAccount = findAccount(receivable.account_code);
   const retIRAccount = findAccount("113020101");
   const retIVAAccount = findAccount("113020201");
 
@@ -122,7 +122,7 @@ export default function ARPaymentModal({
     }
 
     if (!arAccount?.code || !arAccount?.name) {
-      setError("Falta la cuenta contable de cuentas por cobrar (120101).");
+      setError(`No se encontró la cuenta contable ${receivable.account_code} para la factura.`);
       return;
     }
 

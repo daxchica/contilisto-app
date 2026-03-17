@@ -31,7 +31,6 @@ import {
   type QueryConstraint
 } from "firebase/firestore";
 import type { BankMovement, BankMovementType } from "@/types/bankTypes";
-import { data } from "react-router-dom";
 import { requireEntityId } from "./requireEntityId";
 
 export type { BankMovement, BankMovementType } from "@/types/bankTypes";
@@ -39,6 +38,23 @@ export type { BankMovement, BankMovementType } from "@/types/bankTypes";
 /* ============================================================================
  * Helpers
  * ========================================================================== */
+
+function normalizeDate(date: string): string {
+  if (!date) throw new Error("Fecha inválida");
+
+  // already ISO
+  if (/^\d{4}-\d{2}-\d{2}/.test(date)) return date.slice(0, 10);
+
+  const m = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const day = m[1];
+    const month = m[2];
+    const year = m[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  throw new Error(`Formato de fecha inválido: ${date}`);
+}
 
 /**
  * Ensures amount sign consistency based on movement type.
@@ -72,6 +88,8 @@ export function isBankMovementLocked(movement: BankMovement): boolean {
   );
 }
 
+
+
 /* ============================================================================
  * CRUD Operations
  * ========================================================================== */
@@ -79,14 +97,18 @@ export function isBankMovementLocked(movement: BankMovement): boolean {
 export async function createBankMovement(
   movement: BankMovement
 ): Promise<string> {
+
   requireEntityId(movement.entityId, "crear movimiento");
   if (!movement.bankAccountId) throw new Error("Cuenta bancaria requerida");
+  
   if (!movement.date) throw new Error("Fecha requerida");
+
+  const normalizedDate = normalizeDate(movement.date);
 
   if (!Number.isFinite(movement.amount) || movement.amount === 0) {
     throw new Error("La transferencia debe tener un monto válido");
   }
-
+  
   const normalizedAmount = normalizeAmount(
     movement.amount,
     movement.type
@@ -102,6 +124,7 @@ export async function createBankMovement(
   const docRef = await addDoc(
     colRef, {
     ...movement,
+    date: normalizedDate,
     amount: normalizedAmount,
     reconciled: false,
     createdAt: serverTimestamp(),
@@ -161,13 +184,8 @@ export async function linkJournalTransaction(
   movementId: string,
   transactionId: string
 ): Promise<void> {
+
   requireEntityId(entityId, "vincular movimiento");
-  if (!movementId?.trim()) {
-    throw new Error("movementId requerido para vincular movimiento");
-  }
-  if (!transactionId) {
-    throw new Error("transactionId es requerido para el enlace contable");
-  }
 
   const ref = doc(
     db,
@@ -177,6 +195,15 @@ export async function linkJournalTransaction(
     movementId
   );
 
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Movimiento no encontrado");
+
+  const movement = snap.data() as BankMovement;
+
+  if (movement.reconciled) {
+    throw new Error("Movimiento conciliado no puede vincularse a un asiento");
+  }
+  
   await updateDoc(ref, {
     relatedJournalTransactionId: transactionId,
     updatedAt: serverTimestamp(),
@@ -230,7 +257,18 @@ export async function deleteBankMovementsByJournalTransactionId(
   if (snap.empty) return;
 
   const batch = writeBatch(db);
-  snap.forEach((d) => batch.delete(d.ref));
+  snap.forEach((d) => {
+    const data = d.data() as BankMovement;
+
+    if (data.reconciled) {
+      throw new Error(
+        "No se pueden eliminar movimientos conciliados"
+      );
+    }
+
+    batch.delete(d.ref);
+  });
+
   await batch.commit();
 }
 
@@ -255,8 +293,10 @@ export async function fetchBankMovements(
 
   const constraints: QueryConstraint[] = [];
   if (bankAccountId) constraints.push(where("bankAccountId", "==", bankAccountId));
+  if (bankAccountId) constraints.push(where("bankAccountId", "==", bankAccountId));
   if (from) constraints.push(where("date", ">=", from));
   if (to) constraints.push(where("date", "<=", to));
+
   constraints.push(orderBy("date", "asc"));
 
   const qRef = query(colRef, ...constraints);
@@ -291,6 +331,7 @@ export async function reconcileBankMovement(
   await updateDoc(ref, {
     reconciled: true,
     reconciledAt: serverTimestamp(),
+    reconciledBy: "system",
     updatedAt: serverTimestamp(),
   });
 }

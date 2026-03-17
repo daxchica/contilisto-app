@@ -13,7 +13,6 @@ import {
   where,
   writeBatch,
   limit,
-  serverTimestamp,
   type QueryConstraint,
 } from "firebase/firestore";
 
@@ -38,6 +37,7 @@ import {
 import { findDuplicateDocument } from "./documents/documentDuplicateService";
 
 import type { AccountingDocument } from "@/types/AccountingDocument";
+import { updateAccountBalancesFromJournalEntries } from "./accountBalanceService";
 
 
 /* =============================================================================
@@ -125,6 +125,12 @@ function assertNotBeforeInitialBalanceDate(
   }
 }
 
+function isParentAccount(code: string) {
+  const clean = norm(code);
+
+  return clean.length <= 7; // adjust if your chart uses another length
+}
+
 /**
  * Removes undefined recursively without destroying Firestore special values
  * (Timestamp / FieldValue / etc).
@@ -155,6 +161,30 @@ const norm = (c?: string) => (c || "").replace(/\./g, "").trim();
 
 const n2 = (x: any) =>
   Number.isFinite(Number(x)) ? Number(Number(x).toFixed(2)) : 0;
+
+function validateControlAccounts(entries: JournalEntry[]) {
+  const arAccounts = entries.filter(e => isCustomerReceivableAccount(norm(e.account_code)));
+  const apAccounts = entries.filter(e => isSupplierPayableAccount(norm(e.account_code)));
+
+  const uniqueAR = [...new Set(arAccounts.map(e => norm(e.account_code)))];
+  const uniqueAP = [...new Set(apAccounts.map(e => norm(e.account_code)))];
+
+  if (uniqueAR.length > 1) {
+    throw new Error(
+      `La transacción contiene múltiples cuentas de clientes (${uniqueAR.join(", ")})`
+    );
+  }
+
+  if (uniqueAP.length > 1) {
+    throw new Error(
+      `La transacción contiene múltiples cuentas de proveedores (${uniqueAP.join(", ")})`
+    );
+  }
+
+  
+}
+
+
 
 /* =============================================================================
    CONTROL ACCOUNT HELPERS (ROBUST)
@@ -246,6 +276,38 @@ export async function fetchJournalEntriesByTransactionId(
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as JournalEntry) }));
 }
 
+export async function fetchJournalEntriesByDateRange(
+  entityId: string,
+  fromDate?: string,
+  toDate?: string
+): Promise<JournalEntry[]> {
+
+  requireEntityId(entityId, "cargar diario");
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const constraints: QueryConstraint[] = [];
+
+  if (fromDate) {
+    constraints.push(where("date", ">=", fromDate));
+  }
+
+  if (toDate) {
+    constraints.push(where("date", "<=", toDate));
+  }
+
+  constraints.push(orderBy("date", "asc"));
+
+  const q = query(col, ...constraints);
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as JournalEntry),
+  }));
+}
+
 /* =============================================================================
    INTERNAL SYNC (Journal → AP / AR)
    Notes:
@@ -275,7 +337,10 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
   for (const [tx, group] of grouped) {
     if (group.some((e: JournalEntry) => e.source === "initial")) continue;
     
-    const control = group.find((e) => isSupplierPayableAccount(e.account_code));
+    const control = group.find((e) => 
+      isCustomerReceivableAccount(e.account_code) &&
+      !isParentAccount(e.account_code)
+    );
     
     if (!control) continue;
 
@@ -314,7 +379,7 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
       supplierName,
       supplierRUC,
 
-      account_code: control.account_code,
+      account_code: norm(control.account_code),
       account_name: control.account_name || "Proveedores",
 
       total,
@@ -348,7 +413,10 @@ async function syncReceivablesFromJournal(
       continue;
     }
 
-    const control = group.find((e) => isCustomerReceivableAccount(e.account_code));
+    const control = group.find((e) => 
+      isCustomerReceivableAccount(e.account_code) &&
+      !isParentAccount(e.account_code)
+    );
     if (!control) continue;
 
     const total = n2(control.debit);
@@ -378,8 +446,8 @@ async function syncReceivablesFromJournal(
       customerName,
       customerRUC,
 
-      account_code: control.account_code,
-      account_name: control.account_name || "Clientes",
+      account_code: norm(control.account_code),
+      account_name: String(control.account_name ?? "Clientes"),
 
       total,
       paid: 0,
@@ -469,6 +537,20 @@ export async function saveJournalEntries(
 
   validateTransactionIntegrity(validEntries);
   validateBalancedTransaction(validEntries);
+  validateControlAccounts(validEntries);
+
+  for (const e of validEntries) {
+    const code = norm(e.account_code);
+
+    if (
+      isCustomerReceivableAccount(code) && 
+      isParentAccount(code)
+     ) {
+      throw new Error(
+        `Cuenta de clientes invalida (${code}). Use una subcuenta.`
+      );
+    }
+  }
 
   const txIds = new Set(entries.map((e: JournalEntry) => e.transactionId));
   if (txIds.size !== 1) {
@@ -492,9 +574,11 @@ export async function saveJournalEntries(
     // 🔒 DUPLICATE INVOICE PROTECTION (RUN ONCE)
     // ----------------------------------------------------------------------
 
-    if (!e.date) {
-        throw new Error("JournalEntry sin fecha contable (date)");
-      }
+    const normalizedDate = toISODateOrNull(String(e.date ?? ""));
+
+    if (!normalizedDate) {
+      throw new Error(`Fecha inválida: ${e.date}`);
+    }
 
     const entry: JournalEntry = {
       ...e,
@@ -508,20 +592,23 @@ export async function saveJournalEntries(
       debit: n2(e.debit),
       credit: n2(e.credit),
 
-      account_code: String(e.account_code ?? "").trim(),
+      account_code: norm(e.account_code),
       account_name: String(e.account_name ?? "").trim(),
 
-      invoice_number: e.invoice_number ?? `MANUAL-${transactionId}`,
+      invoice_number:
+        e.invoice_number ??
+        (e.source === "manual" ? `MANUAL-${transactionId}` : undefined),
 
-      date: e.date,
-      
+      date: normalizedDate,
+
       description: resolveDescription(e),
 
       source: e.source ?? "vision",
 
-      createdAt: typeof e.createdAt === "number"
-        ? e.createdAt
-        : Date.now(), 
+      createdAt:
+        typeof e.createdAt === "number"
+          ? e.createdAt
+          : Date.now(),
 
       updatedAt: Date.now(),
     };
@@ -593,19 +680,29 @@ export async function saveJournalEntries(
 
     await batch.commit();
 
-      // -------------------------------------------------------
-      // 3️⃣ Link document ↔ journal entries
-      // -------------------------------------------------------
+    // -------------------------------------------------------
+    // Update account balances accelerator
+    // -------------------------------------------------------
 
-      if (document) {
-        const ids = saved.map((e) => e.id!).filter(Boolean);
+    try {
+      await updateAccountBalancesFromJournalEntries(entityId, saved);
+    } catch (err) {
+      console.error("Account balance update failed:", err);
+    }
 
-        await linkJournalEntriesToDocument(
-          entityId,
-          document.id,
-          ids
-        );
-      }
+    // -------------------------------------------------------
+    // 3️⃣ Link document ↔ journal entries
+    // -------------------------------------------------------
+
+    if (document) {
+      const ids = saved.map((e) => e.id!).filter(Boolean);
+
+      await linkJournalEntriesToDocument(
+        entityId,
+        document.id,
+        ids
+      );
+    }
 
     const hasPayable = saved.some(
       (e: JournalEntry) => isSupplierPayableAccount(e.account_code));
@@ -789,6 +886,15 @@ export async function createReceivableCollectionJournalEntry(
     throw new Error("Receivable sin cuenta contable. Debe repararse.");
   }
 
+  if (
+    !isCustomerReceivableAccount(norm(receivable.account_code)) ||
+    isParentAccount(norm(receivable.account_code))
+  ) {
+    throw new Error(
+      `Cuenta de cliente invalida: ${receivable.account_code}`
+    );
+  }
+
   if (!Number.isFinite(amount) || amount <= 0 || amount > n2(receivable.balance)) {
     throw new Error("Monto inválido");
   }
@@ -809,7 +915,7 @@ export async function createReceivableCollectionJournalEntry(
     {
       entityId,
       transactionId: tx,
-      date: collectionDate as any,
+      date: toISODateOrNull(collectionDate) ?? collectionDate,
       account_code: bankAccount.account_code,
       account_name: bankAccount.name || "Banco",
       debit: amount,
@@ -822,7 +928,7 @@ export async function createReceivableCollectionJournalEntry(
     {
       entityId,
       transactionId: tx,
-      date: collectionDate as any,
+      date: toISODateOrNull(collectionDate) ?? collectionDate,
       account_code: receivable.account_code,
       account_name: receivable.account_name,
       debit: 0,
@@ -946,6 +1052,11 @@ export async function createTransferJournalEntry(
   if (!userId?.trim()) {
     throw new Error("userId requerido para transferencia");
   }
+
+  if (norm(fromAccountCode) === norm(toAccountCode)) {
+    throw new Error("Transferencia inválida: misma cuenta origen y destino");
+  }
+
   const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
   const description = "Transferencia entre bancos";
 

@@ -174,17 +174,29 @@ export default function TrialBalance({
   const exactAmountsByCode = useMemo(() => {
     const map = new Map<string, Amounts>();
 
-    for (const e of filteredEntries) {
+    for (const e of entries) {
+      if (e.entityId !== entityId) continue;
+
       const code = String(e.account_code ?? "").trim();
       if (!code) continue;
 
+      const d = iso(e.date);
+      if (!d) continue;
+
       const existing = map.get(code) ?? { initial: 0, debit: 0, credit: 0 };
+
       const debit = toNumber(e.debit);
       const credit = toNumber(e.credit);
 
       if (e.source === "initial") {
         existing.initial += debit - credit;
+      }
+      else if (fromISO && d < fromISO) {
+        // movements before the range become opening balance
+        existing.initial += debit - credit;
       } else {
+        if (toISO && d > toISO) continue;
+
         existing.debit += debit;
         existing.credit += credit;
       }
@@ -193,7 +205,7 @@ export default function TrialBalance({
     }
 
     return map;
-  }, [filteredEntries]);
+  }, [entries, entityId, fromISO, toISO]);
 
   /* ------------------------------------------------------------------------ */
   /* ACCOUNT UNIVERSE + TREE                                                  */

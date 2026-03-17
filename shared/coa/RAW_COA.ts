@@ -83,9 +83,9 @@ const raw_coa: RawAccount[] = [
           { code: "113020201", name: "Retención IVA clientes locales", level: 5, parentCode: "1130202", postable: true, isReceivable: true },
           { code: "113020202", name: "Retención IVA clientes exterior", level: 5, parentCode: "1130202", postable: true },
 
-    // ===============================
-    // 13 - IMPUESTOS (ACTIVO)
-    // ===============================
+  // ===============================
+  // 13 - IMPUESTOS (ACTIVO)
+  // ===============================
 
   { code: "133", name: "IVA POR COBRAR", level: 2 , parentCode: "1" },
   { code: "13301", name: "IVA CRÉDITO EN COMPRAS", level: 3, parentCode: "133" },
