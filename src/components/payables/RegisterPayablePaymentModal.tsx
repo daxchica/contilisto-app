@@ -3,7 +3,9 @@
 // ACCOUNTING SAFE FLOW:
 // 1) Bank Movement
 // 2) Journal Entry
-// 3) Link Bank → Journal
+// ECUADOR SAFE RETENTIONS:
+// - IR retention is calculated on expense base
+// - IVA retention is calculated on invoice IVA
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -11,10 +13,10 @@ import { Rnd } from "react-rnd";
 
 import type { Payable } from "@/types/Payable";
 import type { BankAccount } from "@/types/bankTypes";
+import type { JournalEntry } from "@/types/JournalEntry";
 
 import {
   createBankMovement,
-  linkJournalTransaction,
   type BankMovement,
 } from "@/services/bankMovementService";
 
@@ -40,9 +42,13 @@ type Props = {
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-function toNumber(v: unknown): number {
+function safeMoney(v: string): number {
   const n = Number(v);
-  return Number.isFinite(n) ? n : NaN;
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+}
+
+function round2(v: number): number {
+  return Number(Number(v || 0).toFixed(2));
 }
 
 function resolveBankGLCode(bank: BankAccount): string {
@@ -53,6 +59,65 @@ function resolveBankGLCode(bank: BankAccount): string {
   }
 
   return normalizeAccountCode(code as any);
+}
+
+function calcRetentionFromPercent(base: number, percent: number) {
+  return round2((base * percent) / 100);
+}
+
+function normCode(code?: string): string {
+  return String(code ?? "").replace(/\./g, "").trim();
+}
+
+function getExpenseAndIVAFromJournal(entries: JournalEntry[]) {
+  let expenseBase = 0;
+  let ivaAmount = 0;
+
+  for (const e of entries) {
+    const code = normCode(e.account_code);
+    const debit = Number(e.debit ?? 0);
+    const credit = Number(e.credit ?? 0);
+
+    if (credit > 0) continue;
+
+    if (code.startsWith("5") && debit > 0) {
+      expenseBase += debit;
+    }
+
+    if (
+      debit > 0 &&
+      (
+        code === "1330101" ||
+        code === "133010101" ||
+        code === "133010102" ||
+        code.startsWith("133")
+      )
+    ) {
+      ivaAmount += debit;
+    }
+  }
+
+  return {
+    expenseBase: round2(expenseBase),
+    ivaAmount: round2(ivaAmount),
+  };
+}
+
+function resolvePayableAccountFromJournal(
+  entries: JournalEntry[]
+): { account_code: string; account_name: string } | null {
+  const control = entries.find((e) => {
+    const code = normCode(e.account_code);
+    const credit = Number(e.credit ?? 0);
+    return code.startsWith("20103") && credit > 0;
+  });
+
+  if (!control?.account_code) return null;
+
+  return {
+    account_code: normCode(control.account_code),
+    account_name: String(control.account_name ?? "Proveedores").trim(),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -69,26 +134,47 @@ export default function RegisterPayablePaymentModal({
   onSaved,
 }: Props) {
   const [localPayable, setLocalPayable] = useState<Payable | null>(null);
-  const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
   const [bankAccountId, setBankAccountId] = useState("");
 
   const [saving, setSaving] = useState(false);
+  const [loadingBases, setLoadingBases] = useState(false);
   const [error, setError] = useState("");
 
   const [needsRepair, setNeedsRepair] = useState(false);
   const [repairing, setRepairing] = useState(false);
-  
+
+  const [applyIR, setApplyIR] = useState(false);
+  const [applyIVA, setApplyIVA] = useState(false);
+
+  const [retentionIR, setRetentionIR] = useState("");
+  const [retentionIVA, setRetentionIVA] = useState("");
+
+  const [expenseBase, setExpenseBase] = useState(0);
+  const [invoiceIVA, setInvoiceIVA] = useState(0);
+
+  const [modalPosition, setModalPosition] = useState({
+    x: 0,
+    y: 0,
+  });
 
   /* -------------------------------------------------------------------------- */
   /* Init                                                                       */
   /* -------------------------------------------------------------------------- */
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    setModalPosition({
+      x: Math.max(12, window.innerWidth / 2 - 320),
+      y: 24,
+    });
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen || !payable) return;
 
     setLocalPayable(payable);
-    setAmount(payable.balance.toString());
     setPaymentDate(new Date().toISOString().slice(0, 10));
 
     setBankAccountId(
@@ -97,21 +183,128 @@ export default function RegisterPayablePaymentModal({
 
     setError("");
     setNeedsRepair(false);
+    setApplyIR(false);
+    setApplyIVA(false);
+    setRetentionIR("");
+    setRetentionIVA("");
+    setExpenseBase(0);
+    setInvoiceIVA(0);
   }, [isOpen, payable, bankAccounts]);
 
   /* -------------------------------------------------------------------------- */
-  /* Selected bank                                                              */
+  /* Load invoice bases from original journal                                   */
   /* -------------------------------------------------------------------------- */
+
+  useEffect(() => {
+    async function loadBases() {
+      if (!isOpen || !payable?.transactionId || !entityId) return;
+
+      try {
+        setLoadingBases(true);
+
+        const journalEntries = await fetchJournalEntriesByTransactionId(
+          entityId,
+          payable.transactionId
+        );
+
+        const { expenseBase, ivaAmount } =
+          getExpenseAndIVAFromJournal(journalEntries);
+
+        setExpenseBase(expenseBase);
+        setInvoiceIVA(ivaAmount);
+      } catch (err) {
+        console.error("No se pudieron cargar las bases de retención:", err);
+        setExpenseBase(0);
+        setInvoiceIVA(0);
+      } finally {
+        setLoadingBases(false);
+      }
+    }
+
+    loadBases();
+  }, [isOpen, payable?.transactionId, entityId]);
+
+  /* -------------------------------------------------------------------------- */
+  /* Derived values                                                             */
+  /* -------------------------------------------------------------------------- */
+
+  const currentPayable = localPayable ?? payable;
 
   const selectedBank = useMemo(
     () => bankAccounts.find((b) => b.id === bankAccountId),
     [bankAccounts, bankAccountId]
   );
 
-  const numericAmount = useMemo(() => toNumber(amount), [amount]);
+  const invoiceTotal = useMemo(() => {
+    return round2(Number(currentPayable?.balance ?? 0));
+  }, [currentPayable?.balance]);
 
-  if (!isOpen || !localPayable) return null;
-  const p = localPayable;
+  const numericRetentionIR = useMemo(
+    () => safeMoney(retentionIR),
+    [retentionIR]
+  );
+
+  const numericRetentionIVA = useMemo(
+    () => safeMoney(retentionIVA),
+    [retentionIVA]
+  );
+
+  const totalRetentions = useMemo(() => {
+    return round2(
+      (applyIR ? numericRetentionIR : 0) +
+      (applyIVA ? numericRetentionIVA : 0)
+    );
+  }, [applyIR, applyIVA, numericRetentionIR, numericRetentionIVA]);
+
+  const bankPaymentAmount = useMemo(() => {
+    return round2(Math.max(0, invoiceTotal - totalRetentions));
+  }, [invoiceTotal, totalRetentions]);
+
+  const appliedTotal = useMemo(() => {
+    return round2(
+      bankPaymentAmount +
+      (applyIR ? numericRetentionIR : 0) +
+      (applyIVA ? numericRetentionIVA : 0)
+    );
+  }, [
+    bankPaymentAmount,
+    applyIR,
+    applyIVA,
+    numericRetentionIR,
+    numericRetentionIVA,
+  ]);
+
+  const difference = useMemo(() => {
+    return round2(appliedTotal - invoiceTotal);
+  }, [appliedTotal, invoiceTotal]);
+
+  const exceedsInvoice = totalRetentions > invoiceTotal;
+  const belowInvoice = false;
+  const isBalanced = !exceedsInvoice && Math.abs(difference) <= 0.009;
+
+  console.log("SELECTED BANK FULL OBJECT", selectedBank);
+
+  /* -------------------------------------------------------------------------- */
+  /* Guard AFTER hooks                                                          */
+  /* -------------------------------------------------------------------------- */
+
+  if (!isOpen || !currentPayable) return null;
+
+  const p = currentPayable;
+
+  /* -------------------------------------------------------------------------- */
+  /* Retention preset handlers                                                  */
+  /* -------------------------------------------------------------------------- */
+
+  function applyIRPreset(percent: number) {
+    const value = calcRetentionFromPercent(expenseBase, percent);
+    setRetentionIR(value.toFixed(2));
+  }
+
+  function applyIVAPreset(percent: number) {
+    const value = calcRetentionFromPercent(invoiceIVA, percent);
+    setRetentionIVA(value.toFixed(2));
+  }
 
   /* -------------------------------------------------------------------------- */
   /* Save payment                                                               */
@@ -129,31 +322,34 @@ export default function RegisterPayablePaymentModal({
       if (!paymentDate) throw new Error("Fecha requerida");
       if (!selectedBank) throw new Error("Cuenta bancaria requerida");
 
-      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      if (invoiceTotal <= 0) {
         throw new Error("Monto inválido");
       }
 
-      if (numericAmount > p.balance) {
-        throw new Error("El monto excede el saldo pendiente");
+      if (applyIR && numericRetentionIR <= 0) {
+        throw new Error("La retención IR debe ser mayor a cero.");
       }
 
-      if (!p.account_code?.trim()) {
-        setNeedsRepair(true);
+      if (applyIVA && numericRetentionIVA <= 0) {
+        throw new Error("La retención IVA debe ser mayor a cero.");
+      }
+
+      if (applyIR && numericRetentionIR > expenseBase) {
+        throw new Error("La retención IR no puede exceder la base del gasto.");
+      }
+
+      if (applyIVA && numericRetentionIVA > invoiceIVA) {
+        throw new Error("La retención IVA no puede exceder el IVA de la factura.");
+      }
+
+      if (!isBalanced) {
         throw new Error(
-          "El payable no tiene cuenta contable de proveedores."
+          "El pago más las retenciones debe ser igual al saldo de la factura."
         );
       }
-
-      const bankGLCode = resolveBankGLCode(selectedBank);
-
-      /* ---------------------------------------------------------------------- */
-      /* Verify original invoice journal                                        */
-      /* ---------------------------------------------------------------------- */
 
       if (!p.transactionId) {
-        throw new Error(
-          "La factura no tiene transactionId contable."
-        );
+        throw new Error("La factura no tiene transactionId contable.");
       }
 
       const journalEntries = await fetchJournalEntriesByTransactionId(
@@ -173,62 +369,78 @@ export default function RegisterPayablePaymentModal({
 
       if (!hasOriginalInvoice) {
         console.warn(
-          "Advertencia: el asiento existe pero no coincide el numbero de factura."
+          "Advertencia: el asiento existe pero no coincide el número de factura."
         );
       }
 
-      /* ---------------------------------------------------------------------- */
-      /* 1️⃣ Create bank movement                                               */
-      /* ---------------------------------------------------------------------- */
+      let payableAccountCode = String(p.account_code ?? "").trim();
+      let payableAccountName = String(p.account_name ?? "Proveedores").trim();
 
-      if (!selectedBank) {
-        throw new Error("Cuenta bancaria requerida");
+      if (!payableAccountCode) {
+        const recovered = resolvePayableAccountFromJournal(journalEntries);
+
+        if (!recovered) {
+          setNeedsRepair(true);
+          throw new Error(
+            "No se pudo recuperar la cuenta contable del proveedor."
+          );
+        }
+
+        payableAccountCode = recovered.account_code;
+        payableAccountName = recovered.account_name;
       }
 
-      const bank = selectedBank;
-
-      if (!bank.id) {
-        throw new Error("La cuenta bancaria no tiene ID válido.");
-      }
+      const bankGLCode = resolveBankGLCode(selectedBank);
 
       const movement: BankMovement = {
         entityId,
-        bankAccountId: bank.id,
+        bankAccountId: selectedBank.id ?? "",
         date: paymentDate,
-        amount: numericAmount,
+        amount: bankPaymentAmount,
         type: "out",
-        description: `Pago a proveedor ${
-          p.supplierName ?? "Proveedor"
-        } — Factura ${p.invoiceNumber}`,
+        description: `Pago a proveedor ${p.supplierName ?? "Proveedor"} — Factura ${p.invoiceNumber}`,
         createdBy: userIdSafe,
         reconciled: false,
       };
 
+      if (!selectedBank.id) {
+        throw new Error("La cuenta bancaria no tiene ID válido.");
+      }
+
+      if (!selectedBank.account_code?.trim()) {
+        throw new Error(
+          `La cuenta bancaria "${selectedBank.name}" no tiene cuenta contable asignada.`
+        );
+      }
+
       const bankMovementId = await createBankMovement(movement);
 
-      /* ---------------------------------------------------------------------- */
-      /* 2️⃣ Create journal entry                                               */
-      /* ---------------------------------------------------------------------- */
+      const payableForSave: Payable = {
+        ...p,
+        entityId: p.entityId ?? entityId,
+        account_code: payableAccountCode,
+        account_name: payableAccountName,
+      };
 
-      const transactionId = await createPayablePaymentJournalEntry(
+      await createPayablePaymentJournalEntry(
         entityId,
-        p,
-        numericAmount,
+        payableForSave,
+        bankPaymentAmount,
         paymentDate,
         {
-          id: bank.id,
-          account_code: bankGLCode,
-          name: bank.name ?? "Cuenta bancaria",
+          id: selectedBank.id,
+          account_code: normalizeAccountCode({
+            account_code: selectedBank.account_code,
+          }),
+          name: selectedBank.name ?? "Cuenta bancaria",
         },
         userIdSafe,
-        { bankMovementId }
+        {
+          bankMovementId,
+          retentionIR: applyIR ? numericRetentionIR : 0,
+          retentionIVA: applyIVA ? numericRetentionIVA : 0,
+        }
       );
-
-      /* ---------------------------------------------------------------------- */
-      /* 3️⃣ Link bank ↔ journal                                                */
-      /* ---------------------------------------------------------------------- */
-
-      await linkJournalTransaction(entityId, bankMovementId, transactionId);
 
       onSaved?.();
       onClose();
@@ -289,19 +501,21 @@ export default function RegisterPayablePaymentModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <Rnd
         default={{
-          x: window.innerWidth / 2 - 300,
-          y: window.innerHeight / 2 - 220,
-          width: 600,
-          height: "auto",
+          x: Math.max(12, window.innerWidth / 2 - 320),
+          y: 24,
+          width: 640,
+          height: 560,
         }}
+        onDragStop={(_, d) => {
+          setModalPosition({ x: d.x, y: d.y });
+        }}
+        position={modalPosition}
         enableResizing={false}
         dragHandleClassName="drag-header"
         bounds="window"
       >
         <div className="bg-white rounded-xl shadow-xl w-full">
-
           {/* HEADER */}
-
           <div className="drag-header cursor-move px-6 py-4 border-b flex justify-between">
             <div>
               <h2 className="text-lg font-bold">Registrar pago</h2>
@@ -316,59 +530,53 @@ export default function RegisterPayablePaymentModal({
           </div>
 
           {/* BODY */}
-
           <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Monto a pagar</label>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={p.balance}
+                  step="0.01"
+                  value={invoiceTotal.toFixed(2)}
+                  disabled
+                  className="mt-1 w-full border rounded px-3 py-2 text-sm bg-gray-100"
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Saldo pendiente: ${round2(Number(p.balance ?? 0)).toFixed(2)}
+                </div>
+              </div>
 
-            {/* AMOUNT */}
-
-            <div>
-              <label className="text-sm font-medium">Monto a pagar</label>
-
-              <input
-                type="number"
-                min={0.01}
-                max={p.balance}
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              />
-
-              <div className="text-xs text-gray-500 mt-1">
-                Saldo pendiente: ${p.balance.toFixed(2)}
+              <div>
+                <label className="text-sm font-medium">Fecha de pago</label>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                />
               </div>
             </div>
 
-            {/* DATE */}
-
-            <div>
-              <label className="text-sm font-medium">Fecha de pago</label>
-
-              <input
-                type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="mt-1 w-full border rounded px-3 py-2 text-sm"
-              />
-            </div>
-
-            {/* BANK */}
-
             <div>
               <label className="text-sm font-medium">Cuenta bancaria</label>
-
               <select
                 value={bankAccountId}
                 onChange={(e) => setBankAccountId(e.target.value)}
                 className="mt-1 w-full border rounded px-3 py-2 text-sm"
               >
                 <option value="">-- Seleccione una cuenta --</option>
+                {bankAccounts.map((b) => {
+                  const disabled = !b.account_code?.trim();
 
-                {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.account_code})
+                  return (
+                    <option key={b.id} value={b.id} disabled={disabled}>
+                    {b.name} ({b.account_code || "SIN CUENTA"}) {disabled ? "❌" : ""}
                   </option>
-                ))}
+                  );
+                })}
+
               </select>
 
               {selectedBank && (
@@ -378,15 +586,181 @@ export default function RegisterPayablePaymentModal({
               )}
             </div>
 
-            {/* ERROR */}
+            
+
+            <div className="border-t pt-4 mt-2">
+              <h3 className="text-sm font-semibold mb-2">
+                Retenciones (opcional)
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-600 mb-3">
+                <div className="border rounded p-3 bg-gray-50">
+                  <div className="font-medium text-gray-700">
+                    Base gasto para IR
+                  </div>
+                  <div>${expenseBase.toFixed(2)}</div>
+                </div>
+
+                <div className="border rounded p-3 bg-gray-50">
+                  <div className="font-medium text-gray-700">
+                    IVA factura para retención IVA
+                  </div>
+                  <div>${invoiceIVA.toFixed(2)}</div>
+                </div>
+              </div>
+
+              {loadingBases && (
+                <div className="text-xs text-blue-600 mb-3">
+                  Cargando bases de retención desde el asiento original...
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={applyIR}
+                      onChange={(e) => {
+                        setApplyIR(e.target.checked);
+                        if (!e.target.checked) setRetentionIR("");
+                      }}
+                    />
+                    Aplicar retención IR
+                  </label>
+
+                  {applyIR && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex gap-2 flex-wrap">
+                        {[1, 2, 8, 10].map((percent) => (
+                          <button
+                            key={percent}
+                            type="button"
+                            onClick={() => applyIRPreset(percent)}
+                            disabled={expenseBase <= 0}
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            {percent}%
+                          </button>
+                        ))}
+                      </div>
+
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={retentionIR}
+                        onChange={(e) => setRetentionIR(e.target.value)}
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="Valor retención IR"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={applyIVA}
+                      onChange={(e) => {
+                        setApplyIVA(e.target.checked);
+                        if (!e.target.checked) setRetentionIVA("");
+                      }}
+                    />
+                    Aplicar retención IVA
+                  </label>
+
+                  {applyIVA && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex gap-2 flex-wrap">
+                        {[30, 70, 100].map((percent) => (
+                          <button
+                            key={percent}
+                            type="button"
+                            onClick={() => applyIVAPreset(percent)}
+                            disabled={invoiceIVA <= 0}
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            {percent}%
+                          </button>
+                        ))}
+                      </div>
+
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={retentionIVA}
+                        onChange={(e) => setRetentionIVA(e.target.value)}
+                        className="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="Valor retención IVA"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(applyIR || applyIVA) && (
+                <div className="text-xs text-gray-700 mt-3 space-y-1">
+                  <div>
+                    Retención IR:{" "}
+                    <strong>
+                      ${(applyIR ? numericRetentionIR : 0).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div>
+                    Retención IVA:{" "}
+                    <strong>
+                      ${(applyIVA ? numericRetentionIVA : 0).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div className="text-xs text-gray-700 mt-3 space-y-1">
+                    <div>
+                      Factura (CxP): <strong>${invoiceTotal.toFixed(2)}</strong>
+                    </div>
+
+                    {applyIR && (
+                      <div>
+                        (-) Retención IR:{" "}
+                        <strong>${numericRetentionIR.toFixed(2)}</strong>
+                      </div>
+                    )}
+
+                    {applyIVA && (
+                      <div>
+                        (-) Retención IVA:{" "}
+                        <strong>${numericRetentionIVA.toFixed(2)}</strong>
+                      </div>
+                    )}
+
+                    <div className="border-t pt-1">
+                      Pago por banco:{" "}
+                      <strong>${bankPaymentAmount.toFixed(2)}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {exceedsInvoice && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-3">
+                Las retenciones no pueden exceder el saldo pendiente de la
+                factura.
+              </div>
+            )}
+
+            {belowInvoice && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded p-3">
+                El total aplicado aún no cubre el saldo de la factura.
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-3">
                 {error}
               </div>
             )}
-
-            {/* REPAIR */}
 
             {needsRepair && (
               <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
@@ -403,13 +777,9 @@ export default function RegisterPayablePaymentModal({
                 </button>
               </div>
             )}
-
           </div>
 
-          {/* FOOTER */}
-
           <div className="px-6 py-4 border-t flex justify-end gap-2">
-
             <button
               onClick={onClose}
               className="px-4 py-2 border rounded text-sm"
@@ -421,13 +791,11 @@ export default function RegisterPayablePaymentModal({
             <button
               onClick={handleSave}
               className="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-60"
-              disabled={saving}
+              disabled={saving || loadingBases || exceedsInvoice}
             >
               {saving ? "Registrando..." : "Registrar pago"}
             </button>
-
           </div>
-
         </div>
       </Rnd>
     </div>

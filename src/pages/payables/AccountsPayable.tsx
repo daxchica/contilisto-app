@@ -40,16 +40,32 @@ export default function AccountsPayablePage() {
     if (!entityId) return;
     
     const loadAccounts = async () => {
-    setAccountsLoading(true);
-    try {
-      const data = await fetchBankAccountsFromCOA(entityId);
-      setBankAccounts(data);
-    } catch (err) {
-      console.error("Error loading bank accounts", err);
-      setBankAccounts([]);
-    } finally {
-      setAccountsLoading(false);
-    }
+
+      setAccountsLoading(true);
+
+      try {
+      
+        const accounts = await fetchBankAccountsFromCOA(entityId);
+
+        const mappedBanks: BankAccount[] = accounts.map((a) => ({
+          id: a.code,
+          entityId: entityId,
+          name: a.name,
+          code: a.code,
+          account_code: a.code,
+        }));
+
+        setBankAccounts(mappedBanks);
+      
+      } catch (err) {
+      
+        console.error("Error loading bank accounts", err);
+        setBankAccounts([]);
+    
+      } finally {
+    
+        setAccountsLoading(false);
+      }
   };
 
   loadAccounts();

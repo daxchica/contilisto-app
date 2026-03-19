@@ -104,7 +104,7 @@ const raw_coa: RawAccount[] = [
   { code: "20103", name: "CUENTAS Y DOCUMENTOS POR PAGAR", level: 3, parentCode: "201" },
   { code: "2010301", name: "LOCALES", level: 4, parentCode: "20103" },
   { code: "201030101", name: "PRÉSTAMOS", level: 5, parentCode: "2010301", postable: true },
-  { code: "201030102", name: "PROVEEDORES", level: 5, parentCode: "2010301", postable: true },
+  { code: "201030102", name: "PROVEEDORES", level: 5, parentCode: "2010301", postable: true, isPayable: true },
   
 
 

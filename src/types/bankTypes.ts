@@ -2,37 +2,21 @@
 
 import type { Timestamp } from "firebase/firestore";
 
-
 /* ============================================================================
  * Bank Account
  * ========================================================================== */
 export interface BankAccount {
-  id?: string;
+
+  id: string;
   entityId: string;
-
-  bankAccountId: string;
-
-  date: string;
-  amount: number;
-  type: BankMovementType;
-
-  payee?: string;
-  description?: string;
-  reference?: string;
-
-  relatedInvoiceId?: string;
-  relatedJournalTransactionId?: string;
-
-  account_code?: string;
-  accountCode?: string;
-
-  code: string;
-  parentCode: string;
   
   name: string;
+  code: string;
+  parentCode?: string;
 
-  currency: string;
-  createdBy?: string;
+  account_code: string;
+  
+  currency?: string;
   number?: string;
   bankName?: string;
 }

@@ -2,28 +2,64 @@
 // src/services/rebuildPayablesFromJournal.ts
 // CONTILISTO — Rebuild Accounts Payable Subledger
 // Reconstructs AP ledger from journal entries
+// FIXES:
+// - Prevent sales invoices appearing in AP
+// - Only detect supplier invoice control accounts (20103)
+// - Skip VAT / retention liabilities
 // ============================================================================
 
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/firebase-config";
 
 import type { JournalEntry } from "@/types/JournalEntry";
-import { isSupplierPayableAccount } from "@/services/controlAccounts";
 import { upsertPayable } from "@/services/payablesService";
 
 /* ============================================================================
  * HELPERS
  * ========================================================================== */
 
+function norm(code?: string) {
+  return (code || "").replace(/\./g, "").trim();
+}
+
+function isParentAccount(code?: string) {
+  const c = norm(code);
+  return c.length <= 7;
+}
+
+/**
+ * TRUE AP control account
+ * Ecuador supplier invoices normally live in:
+ *
+ * 20103xxxx
+ */
+function isAPInvoiceControlAccount(code?: string) {
+  const c = norm(code);
+  return c.startsWith("20103") && !isParentAccount(c);
+}
+
+/**
+ * Detect sales transactions
+ * If transaction contains revenue account (4xxxx)
+ * it must NEVER be treated as AP
+ */
+function groupLooksLikeSale(group: JournalEntry[]) {
+  return group.some(
+    (e) => norm(e.account_code).startsWith("4") && (e.credit ?? 0) > 0
+  );
+}
+
+/**
+ * Clean OCR garbage from supplier name
+ */
 function cleanSupplierName(raw?: string): string {
   if (!raw) return "";
 
   let name = raw.trim();
 
-  // remove common prefix: "Factura 001-001-000000123 —"
+  // remove "Factura 001-001-000000123 —"
   name = name.replace(/^Factura\s+[0-9\-]+\s+—\s*/i, "");
 
-  // patterns that are NOT supplier names
   const badPatterns = [
     /^DIR\.?\s*CONTRIBUYENTE/i,
     /^AUTORIZACI[ÓO]N/i,
@@ -42,14 +78,24 @@ function cleanSupplierName(raw?: string): string {
  * ========================================================================== */
 
 export async function rebuildPayablesFromJournal(entityId: string) {
-  const journalCol = collection(db, "entities", entityId, "journalEntries");
+
+  const journalCol = collection(
+    db,
+    "entities",
+    entityId,
+    "journalEntries"
+  );
+
   const snap = await getDocs(journalCol);
 
   const entries = snap.docs.map((d) => d.data() as JournalEntry);
 
   const grouped = new Map<string, JournalEntry[]>();
 
-  // group entries by transactionId
+  /* -------------------------------------------------------------------------
+   * GROUP BY TRANSACTION
+   * ----------------------------------------------------------------------- */
+
   for (const e of entries) {
     if (!e.transactionId) continue;
 
@@ -60,15 +106,25 @@ export async function rebuildPayablesFromJournal(entityId: string) {
     grouped.get(e.transactionId)!.push(e);
   }
 
+  /* -------------------------------------------------------------------------
+   * PROCESS GROUPS
+   * ----------------------------------------------------------------------- */
+
   for (const [tx, group] of grouped) {
 
-    // skip initial balance entries
+    // skip initial balances
     if (group.some((e) => e.source === "initial")) continue;
 
-    // locate the AP control account line
+    // skip sales transactions
+    if (groupLooksLikeSale(group)) continue;
+
+    /* -----------------------------------------------------------------------
+     * Locate AP control account
+     * --------------------------------------------------------------------- */
+
     const control = group.find(
       (e) =>
-        isSupplierPayableAccount(e.account_code) &&
+        isAPInvoiceControlAccount(e.account_code) &&
         (e.credit ?? 0) > 0
     );
 
@@ -84,6 +140,7 @@ export async function rebuildPayablesFromJournal(entityId: string) {
     }
 
     const total = control.credit ?? 0;
+
     if (total <= 0) continue;
 
     /* -----------------------------------------------------------------------
@@ -98,11 +155,15 @@ export async function rebuildPayablesFromJournal(entityId: string) {
         ""
       ).trim();
 
-    // fallback to description
+    // fallback: extract from description
     if (!supplierName && control.description) {
+
       const parts = control.description.split("—");
+
       supplierName =
-        parts.length > 1 ? parts[1].trim() : control.description.trim();
+        parts.length > 1
+          ? parts[1].trim()
+          : control.description.trim();
     }
 
     supplierName = cleanSupplierName(supplierName);
@@ -122,10 +183,11 @@ export async function rebuildPayablesFromJournal(entityId: string) {
       ).trim();
 
     /* -----------------------------------------------------------------------
-     * Create / Update Payable
+     * CREATE / UPDATE PAYABLE
      * --------------------------------------------------------------------- */
 
     await upsertPayable(entityId, {
+
       transactionId: control.transactionId,
 
       account_code: control.account_code,
