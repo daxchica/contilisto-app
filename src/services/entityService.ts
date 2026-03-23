@@ -49,18 +49,6 @@ export async function createEntity(data: {
     createdBy: uid,
   });
 
-  // Create membership document
-  await setDoc(entityRef, {
-    ruc: data.ruc.trim(),
-    name: data.name.trim(),
-    type: data.type,
-    address: data.address?.trim() ?? null,
-    phone: data.phone?.trim() ?? null,
-    email: data.email?.trim() ?? null,
-    createdAt: serverTimestamp(),
-    createdBy: uid,
-  });
-
   await setDoc(doc(db, "entities", entityRef.id, "members", uid), {
     uid,
     role: "owner",

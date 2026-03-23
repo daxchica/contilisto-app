@@ -20,10 +20,16 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
   const { selectedEntity } = useSelectedEntity();
   const { user } = useAuth();
 
-  const [period, setPeriod] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  /* -------------------------------------------------------------------------- */
+  /* PERIOD STATE (CROSS-BROWSER SAFE)                                           */
+  /* -------------------------------------------------------------------------- */
+
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(
+    String(new Date().getMonth() + 1).padStart(2, "0")
+  );
+
+  const period = `${year}-${month}`;
 
   // Temporary mapping: replace these with your real Ecuador COA codes.
   const accountMap = useMemo(
@@ -39,7 +45,28 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
     []
   );
 
+  /* -------------------------------------------------------------------------- */
+  /* SUMMARY CALCULATION                                                        */
+  /* -------------------------------------------------------------------------- */
+
   const summary = useMemo(() => {
+    if (!selectedEntity?.id) {
+      return {
+        ventas12: 0,
+        ventas0: 0,
+        ivaVentas: 0,
+        compras12: 0,
+        compras0: 0,
+        ivaCompras: 0,
+        retIvaRecibidas: 0,
+        saldoCreditoAnterior: 0,
+        totalCredito: 0,
+        ivaPagar: 0,
+        saldoArrastrar: 0,
+        warnings: ["Seleccione una entidad"],
+      };
+    }
+
     return buildIva104Summary({
       entries,
       entityId: selectedEntity?.id,
@@ -48,8 +75,14 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
     });
   }, [entries, selectedEntity?.id, period, accountMap]);
 
+  /* -------------------------------------------------------------------------- */
+  /* UI                                                                         */
+  /* -------------------------------------------------------------------------- */
+
   return (
     <div className="space-y-6">
+      {/* HEADER */}
+
       <div className="bg-white p-6 rounded-xl shadow">
         <h1 className="text-2xl font-bold text-[#0A3558]">
           IVA - Formulario 104
@@ -58,17 +91,50 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
           Vista previa de la declaración mensual de IVA del período seleccionado.
         </p>
 
+        {/* PERIOD SELECTOR */}
+
         <div className="mt-4 flex items-center gap-3">
           <label className="text-sm font-medium text-gray-700">Periodo</label>
-          <input
-            type="month"
-            inputMode="numeric"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
+          
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
             className="border rounded px-3 py-2"
-          />
+          >
+            {Array.from({ length: 5 }).map((_, i) => {
+              const y = new Date().getFullYear() - i;
+              return (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              );
+            })}
+          </select>
+
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border rounded px-3 py-2"
+          >
+            {[
+              ["01","Enero"],["02","Febrero"],["03","Marzo"],
+              ["04","Abril"],["05","Mayo"],["06","Junio"],
+              ["07","Julio"],["08","Agosto"],["09","Septiembre"],
+              ["10","Octubre"],["11","Noviembre"],["12","Diciembre"],
+            ].map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="text-sm text-gray-500 mt-2">
+          Período seleccionado: {month}/{year}    
         </div>
       </div>
+
+      {/* WARNINGS */}
 
       {summary.warnings.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4">
@@ -81,6 +147,8 @@ export default function DeclaracionesIvaPage({ entries }: Props) {
         </div>
       )}
 
+      {/* VENTAS */}
+      
       <div className="grid md:grid-cols-2 gap-4">
         <div className="bg-white p-5 rounded-xl shadow border">
           <h3 className="font-bold text-lg text-[#0A3558] mb-3">

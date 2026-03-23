@@ -12,7 +12,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Rnd } from "react-rnd";
 
 import type { Payable } from "@/types/Payable";
-import type { BankAccount } from "@/types/bankTypes";
 import type { JournalEntry } from "@/types/JournalEntry";
 
 import {
@@ -27,6 +26,7 @@ import {
 
 import { repairPayableAccountFromJournal } from "@/services/payablesService";
 import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
+import type { BankAccount } from "@/types/bankTypes";
 
 type Props = {
   isOpen: boolean;

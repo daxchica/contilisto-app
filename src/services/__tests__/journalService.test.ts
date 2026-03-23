@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { saveJournalEntries } from "@/services/journalService";
 
 vi.mock("@/firebase-config", () => ({
   db: { __mock: "db" },
@@ -32,8 +33,6 @@ vi.mock("firebase/firestore", () => ({
   writeBatch: writeBatchMock,
   serverTimestamp: vi.fn(() => ({ __ts: "server" })),
 }));
-
-import { saveJournalEntries } from "@/services/journalService";
 
 describe("journalService guards and integrity", () => {
   beforeEach(() => {

@@ -1,14 +1,10 @@
 // src/components/BankReconciliation.tsx
 
-import React, { useState, useEffect } from "react";
 import { JournalEntry } from "../types/JournalEntry";
 import { BankMovement } from "@/types/bankTypes";
-import { reconcileBankMovement, unreconcileBankMovement } from "../services/bankMovementService";
+import { fetchBankMovements, reconcileBankMovement, unreconcileBankMovement } from "../services/bankMovementService";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
-import { getAuth } from "firebase/auth";
-import { fetchEntities } from "../services/entityService";
-import { fetchBankMovements } from "../services/bankMovementService";
-import { fetchJournalEntries } from "../services/journalService";
+type TestFetch = typeof fetchBankMovements;
 
 interface Props {
   journalEntries: JournalEntry[];

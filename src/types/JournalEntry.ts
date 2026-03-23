@@ -49,6 +49,7 @@ export interface JournalEntry {
 
   // Invoice metadata (optional)
   invoice_number?: string;
+  invoice_number_normalized?: string;
   documentRef?: string;
   
   issuerRUC?: string;

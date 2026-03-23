@@ -49,7 +49,7 @@ export default function ARPaymentModal({
 
   const [certificate, setCertificate] = useState("");
   const [loading, setLoading] = useState(false);
-  const [bankAccountId, setBankAccountId] = useState("");
+  const [bankAccountId, setBankAccountId] = useState<string>("");
   const [error, setError] = useState("");
 
   /* -------------------------------------------------------------------------- */
@@ -309,7 +309,16 @@ export default function ARPaymentModal({
             <input
               type="number"
               value={paymentAmount}
-              onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value) || 0;
+                
+                setPaymentAmount(value);
+                
+                if (value >= invoiceBalance) {
+                  setRetIR(0);
+                  setRetIVA(0);
+                }
+              }}
               className="input"
             />
           </div>
@@ -317,9 +326,21 @@ export default function ARPaymentModal({
           <div>
             <label className="text-xs">IR Retención</label>
             <input
-              type="number"
-              value={retIR}
-              onChange={(e) => setRetIR(parseFloat(e.target.value) || 0)}
+              type="text"
+              value={retIR === 0 ? "" : retIR}
+              onFocus={(e) => {
+                if (retIR === 0) setRetIR(0);
+              }}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value) || 0;
+                
+                setRetIR(value);
+                
+                const newTotal = value + retIVA;
+                const newPayment = invoiceBalance - newTotal;
+
+                setPaymentAmount(Math.max(newPayment, 0));
+              }}
               className="input"
             />
           </div>
@@ -329,7 +350,16 @@ export default function ARPaymentModal({
             <input
               type="number"
               value={retIVA}
-              onChange={(e) => setRetIVA(parseFloat(e.target.value) || 0)}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value) || 0;
+                
+                setRetIVA(value);
+                
+                const newTotal = value + retIR;
+                const newPayment = invoiceBalance - newTotal;
+
+                setPaymentAmount(Math.max(newPayment, 0));
+              }}
               className="input"
             />
           </div>

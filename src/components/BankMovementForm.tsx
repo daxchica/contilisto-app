@@ -1,6 +1,6 @@
 // components/BankMovementForm.tsx
 import { useState } from "react";
-import { addBankMovement } from "../services/bankMovementService";
+
 
 export default function BankMovementForm({ entityId }: { entityId: string }) {
   const [date, setDate] = useState("");

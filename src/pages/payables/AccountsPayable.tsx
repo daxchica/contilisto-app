@@ -15,6 +15,7 @@ import { resolveSupplierName, resolveSupplierRUC } from "@/utils/supplier";
 import { BankAccount } from "@/types/bankTypes";
 import { rebuildPayablesFromJournal } from "@/services/rebuildPayablesFromJournal";
 
+
 export default function AccountsPayablePage() {
   const { user } = useAuth();
   const { selectedEntity } = useSelectedEntity();
@@ -40,11 +41,9 @@ export default function AccountsPayablePage() {
     if (!entityId) return;
     
     const loadAccounts = async () => {
-
       setAccountsLoading(true);
 
       try {
-      
         const accounts = await fetchBankAccountsFromCOA(entityId);
 
         const mappedBanks: BankAccount[] = accounts.map((a) => ({
@@ -61,9 +60,7 @@ export default function AccountsPayablePage() {
       
         console.error("Error loading bank accounts", err);
         setBankAccounts([]);
-    
       } finally {
-    
         setAccountsLoading(false);
       }
   };

@@ -1,7 +1,8 @@
 // src/hooks/useEntities.ts
 import { useEffect, useState } from "react";
-import { fetchEntities } from "@/services/entityService";
+import { fetchEntities } from "../services/entityService";
 import { useAuth } from "@/context/AuthContext";
+import type { Entity } from "@/types/Entity";
 
 export function useEntities() {
   const { user } = useAuth();  
@@ -13,7 +14,7 @@ export function useEntities() {
 
     const load = async () => {
       setLoading(true);
-      const data = await fetchEntities(user.uid);
+      const data = await fetchEntities();
       setEntities(data || []);
       setLoading(false);
     };

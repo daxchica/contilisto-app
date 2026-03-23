@@ -318,7 +318,8 @@ function applyAutoBalance(next: Row[]): Row[] {
     date,
     description,
     
-    document: `MANUAL - ${description}`,
+    invoice_number: "MANUAL",
+    documentId: txId,
     
     source: "manual",
     isManual: true,

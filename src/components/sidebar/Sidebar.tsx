@@ -15,8 +15,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const { user } = useAuth();
   const isMaster = (user as any)?.role === "master";
 
-  const { selectedEntity, setEntity } = useSelectedEntity();
   const { entities } = useEntities();
+  const { selectedEntity, setEntity } = useSelectedEntity();
+  
 
   const navigate = useNavigate();
   const location = useLocation();

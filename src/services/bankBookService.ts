@@ -7,7 +7,7 @@
 // No separate storage.
 // ============================================================================
 
-import { fetchBankMovements } from "./bankMovementService";
+import { fetchBankMovements } from "@/services/bankMovementService";
 import type { BankBookEntry } from "../types/bankTypes";
 
 /* ============================================================

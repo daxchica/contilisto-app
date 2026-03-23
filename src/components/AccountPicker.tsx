@@ -114,29 +114,30 @@ export default function AccountPicker({
   // ============================================================================
 
   const mergedAccounts = useMemo(() => {
+  const map = new Map<string, Account>();
 
-    const base = accounts ?? [];
+  (accounts ?? []).forEach((a) => {
+    const code = getCode(a);
+    if (!map.has(code)) {
+      map.set(code, a);
+    }
+  });
 
-    if (!hints?.length)
-      return base;
+  if (hints?.length) {
+    hints.forEach((h) => {
+      const code = getCode(h);
+      if (!map.has(code)) {
+        map.set(code, {
+          code,
+          name: getName(h),
+          level: 99,
+        });
+      }
+    });
+  }
 
-    const map = new Map<string, Account>();
-
-    hints.forEach(h =>
-      map.set(h.code, {
-        code: h.code,
-        name: h.name,
-        level: 99,
-      })
-    );
-
-    base.forEach(a =>
-      map.set(a.code, a)
-    );
-
-    return Array.from(map.values());
-
-  }, [accounts, hints]);
+  return Array.from(map.values());
+}, [accounts, hints]);
 
   // ============================================================================
   // FILTER
@@ -194,6 +195,10 @@ export default function AccountPicker({
   // ============================================================================
 
   function pick(acc: Account) {
+
+    if (!acc.code) {
+      console.error("Invalid account selected", acc);
+    }
 
     onChange({
       code: acc.code,
@@ -268,8 +273,8 @@ export default function AccountPicker({
       {filtered.map((acc, i) => (
 
         <div
-          key={acc.code}
-          id={`account-option-${acc.code}`}
+          key={`${acc.code}-${acc.name}-${i}`}
+          id={`account-option-${acc.code}-${i}`}
           role="option"
           aria-selected={i === activeIndex}
           className={`

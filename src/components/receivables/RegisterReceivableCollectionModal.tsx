@@ -10,7 +10,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Rnd } from "react-rnd";
 
 import type { Receivable } from "@/types/Receivable";
-import type { BankAccount } from "@/types/bankTypes";
 
 import {
   createBankMovement,
@@ -20,6 +19,7 @@ import {
 
 import { createReceivableCollectionJournalEntry } from "@/services/journalService";
 import { repairReceivableAccountFromJournal } from "@/services/receivablesService";
+import type { BankAccount } from "@/types/bankTypes";
 
 type Props = {
   isOpen: boolean;

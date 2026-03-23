@@ -1,5 +1,7 @@
+// src/services/cashFlowRealService.ts
+
 import type { BankMovement } from "@/types/bankTypes";
-import { fetchBankMovements } from "./bankMovementService";
+import { fetchBankMovements } from "@/services/bankMovementService";
 
 import {
   collection,

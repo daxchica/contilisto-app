@@ -2,7 +2,7 @@
 
 import React from "react";
 import PDFUploader from "../PDFUploader";
-import ManualEntryModal from "../ManualEntryModal_backup.tsx.old";
+import ManualEntryModal from "../ManualEntryModal";
 import { JournalEntry } from "../../types/JournalEntry";
 import { ProcessedLog } from "../../types/ProcessedLog";
 

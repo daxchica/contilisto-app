@@ -8,7 +8,12 @@ import { Rnd } from "react-rnd";
 
 import { createInterBankTransfer, linkJournalTransactionByTransferId } from "@/services/bankMovementService";
 import { createTransferJournalEntry } from "@/services/journalService";
-import type { BankAccount } from "@/types/bankTypes";
+
+type BankAccount = {
+  id?: string;
+  code: string;
+  name: string;
+};
 
 type Props = {
   isOpen: boolean;
@@ -27,8 +32,8 @@ export default function TransferBetweenBanksModal({
   onClose,
   onSaved,
 }: Props) {
-  const [fromBankAccountId, setFromBankAccountId] = useState("");
-  const [toBankAccountId, setToBankAccountId] = useState("");
+  const [fromBankCode, setFromBankCode] = useState("");
+  const [toBankCode, setToBankCode] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
@@ -46,12 +51,12 @@ export default function TransferBetweenBanksModal({
         throw new Error("Monto inválido");
       }
 
-      if (!fromBankAccountId || !toBankAccountId) {
+      if (!fromBankCode || !toBankCode) {
         throw new Error("Seleccione ambas cuentas");
       }
 
-      const fromBank = bankAccounts.find((b) => b.id === fromBankAccountId);
-      const toBank = bankAccounts.find((b) => b.id === toBankAccountId);
+      const fromBank = bankAccounts.find((b) => b.code === fromBankCode);
+      const toBank = bankAccounts.find((b) => b.code === toBankCode);
 
       if (!fromBank || !toBank) {
         throw new Error("Cuenta bancaria inválida");
@@ -61,8 +66,8 @@ export default function TransferBetweenBanksModal({
         entityId,
         date,
         amount: numericAmount,
-        fromBankAccountId,
-        toBankAccountId,
+        fromBankAccountId: fromBankCode,
+        toBankAccountId: toBankCode,
         fromAccountCode: fromBank.code,
         toAccountCode: toBank.code,
         description: "Transferencia entre bancos",
@@ -119,12 +124,12 @@ export default function TransferBetweenBanksModal({
               <label>Cuenta Origen</label>
               <select
                 className="w-full border p-2 rounded"
-                value={fromBankAccountId}
-                onChange={(e) => setFromBankAccountId(e.target.value)}
+                value={fromBankCode}
+                onChange={(e) => setFromBankCode(e.target.value)}
               >
                 <option value="">Seleccione...</option>
                 {bankAccounts.map((b) => (
-                  <option key={b.id ?? b.code} value={b.id ?? ""}>
+                  <option key={b.code} value={b.code}>
                     {b.code} — {b.name}
                   </option>
                 ))}
@@ -135,12 +140,12 @@ export default function TransferBetweenBanksModal({
               <label>Cuenta Destino</label>
               <select
                 className="w-full border p-2 rounded"
-                value={toBankAccountId}
-                onChange={(e) => setToBankAccountId(e.target.value)}
+                value={toBankCode}
+                onChange={(e) => setToBankCode(e.target.value)}
               >
                 <option value="">Seleccione...</option>
                 {bankAccounts.map((b) => (
-                  <option key={b.id ?? b.code} value={b.id ?? ""}>
+                  <option key={b.code} value={b.code}>
                     {b.code} — {b.name}
                   </option>
                 ))}

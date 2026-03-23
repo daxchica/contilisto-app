@@ -373,7 +373,13 @@ export default function LedgerPage() {
                               </td>
 
                               <td className="p-2 whitespace-nowrap">
-                                {e.invoice_number || e.documentId || "-"}
+                                {
+                                  e.invoice_number 
+                                    ? e.invoice_number
+                                    : e.source === "manual"
+                                      ? "MANUAL"
+                                      : e.documentId || "-"
+                                }
                               </td>
 
                               <td className="p-2">

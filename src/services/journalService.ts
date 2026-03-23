@@ -68,6 +68,8 @@ function isParentAccount(code: string) {
   return clean.length <= 7;
 }
 
+
+
 /**
  * STRICT CONTROL RULES
  * These are the important fixes.
@@ -280,6 +282,61 @@ function getCustomerName(e: JournalEntry): string {
   return String(anyE.customer_name ?? anyE.customerName ?? "").trim();
 }
 
+function normalizeInvoiceNumber(n?: string) {
+  return String(n ?? "")
+    .replace(/\s+/g, "")
+    .replace(/-/g, "")
+    .trim();
+}
+
+function buildInvoiceKey(
+  entityId: string,
+  ruc: string,
+  invoiceNumber: string
+) {
+  return `${entityId}::${ruc}::${normalizeInvoiceNumber(invoiceNumber)}`;
+}
+
+// ----------------------------------------------------------------------------
+// CHECK IF INVOICE ALREADY EXISTS
+// ----------------------------------------------------------------------------
+
+export async function invoiceAlreadyExists(
+  entityId: string,
+  invoiceNumber: string,
+  ruc?: string
+): Promise<boolean> {
+  if (!invoiceNumber) return false;
+
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
+
+  const colRef = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    colRef,
+    where("invoice_number_normalized", "==", normalized)
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return false;
+
+  // OPTIONAL: filter by RUC if provided
+  if (ruc) {
+    return snap.docs.some((d) => {
+      const data = d.data();
+      const existingRUC =
+        data.supplier_ruc ||
+        data.customer_ruc ||
+        data.issuerRUC ||
+        data.buyerRUC;
+
+        return String(existingRUC ?? "").trim() === ruc;
+    });
+  }
+
+  return true;
+}
+
 /* =============================================================================
    FETCH
 ============================================================================= */
@@ -287,6 +344,7 @@ function getCustomerName(e: JournalEntry): string {
 export async function fetchJournalEntries(
   entityId: string
 ): Promise<JournalEntry[]> {
+  
   requireEntityId(entityId, "cargar diario");
 
   const col = collection(db, "entities", entityId, "journalEntries");
@@ -529,6 +587,25 @@ export async function saveJournalEntries(
   entries: JournalEntry[],
   document?: AccountingDocument
 ): Promise<JournalEntry[]> {
+  const first = entries[0];
+
+  const invoiceNumber = first?.invoice_number;
+  const ruc =
+    (first as any)?.supplier_ruc ||
+    (first as any)?.customer_ruc ||
+    (first as any)?.issuerRUC ||
+    (first as any)?.buyerRUC;
+
+  if (invoiceNumber) {
+    const exists = await invoiceAlreadyExists(entityId, invoiceNumber, ruc);
+
+    if (exists) {
+      throw new Error(
+        `Factura ${invoiceNumber} ya registrada para este proveedor/cliente`
+      );
+    }
+  }
+
   requireEntityId(entityId, "guardar diario");
 
   if (!userIdSafe?.trim()) {
@@ -549,6 +626,21 @@ export async function saveJournalEntries(
   validateTransactionIntegrity(validEntries);
   validateBalancedTransaction(validEntries);
   validateControlAccounts(validEntries);
+
+  const txId = entries[0]?.transactionId;
+
+  if (!txId) {
+    throw new Error("transactionId is required");
+  }
+
+  const existingTx = await fetchJournalEntriesByTransactionId(
+  entityId,
+  txId
+);
+
+if (existingTx.length > 0) {
+  throw new Error("Esta transacción ya fue registrada.");
+}
 
   for (const e of validEntries) {
     const code = norm(e.account_code);
@@ -587,6 +679,10 @@ export async function saveJournalEntries(
       throw new Error(`Fecha inválida: ${e.date}`);
     }
 
+    const normalizedInvoice = normalizeInvoiceNumber(
+      e.invoice_number ?? `MANUAL-${transactionId}`
+    );
+
     const entry: JournalEntry = {
       ...e,
       id,
@@ -602,9 +698,10 @@ export async function saveJournalEntries(
       account_code: norm(e.account_code),
       account_name: String(e.account_name ?? "").trim(),
 
-      invoice_number:
+      invoice_number: 
         e.invoice_number ??
         (e.source === "manual" ? `MANUAL-${transactionId}` : undefined),
+      invoice_number_normalized: normalizedInvoice,
 
       date: normalizedDate,
       description: resolveDescription(e),
@@ -695,7 +792,9 @@ export async function saveJournalEntries(
     }
   }
 
-  return saved;
+  
+
+return saved;
 }
 
 /* =============================================================================
@@ -822,15 +921,17 @@ export async function createPayablePaymentJournalEntry(
 
   await saveJournalEntries(entityId, userIdSafe, entries);
 
-  const bankMovementId = await createBankMovement({
-    entityId,
-    bankAccountId: bankAccount.id,
-    date: paymentDate,
-    amount: amountPaid,
-    type: "out",
-    description,
-    createdBy: userIdSafe,
-  });
+  const bankMovementId = 
+    options?.bankMovementId ??
+    (await createBankMovement({
+      entityId,
+      bankAccountId: bankAccount.id,
+      date: paymentDate,
+      amount: amountPaid,
+      type: "out",
+      description,
+      createdBy: userIdSafe,
+    }));
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
   await applyPayablePayment(entityId, payable, totalApplied);
@@ -916,7 +1017,15 @@ export async function createReceivableCollectionJournalEntry(
 
   const bankMovementId =
     options?.bankMovementId ??
-    doc(collection(db, "entities", entityId, "bankMovements")).id;
+    (await createBankMovement({
+      entityId,
+      bankAccountId: bankAccount.id,
+      date: collectionDate,
+      amount,
+      type: "in",
+      description,
+      createdBy: userIdSafe,
+    }));
 
   await linkJournalTransaction(entityId, bankMovementId, tx);
   await applyReceivablePayment(entityId, receivable, amount, userIdSafe, tx);

@@ -1,5 +1,5 @@
 // src/pages/BankBookPage.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 
 import { useSelectedEntity } from "../context/SelectedEntityContext";
@@ -8,11 +8,17 @@ import type { BankMovement } from "@/types/bankTypes";
 import type { JournalEntry } from "../types/JournalEntry";
 
 import { fetchBankBookEntries } from "../services/bankBookService";
-import { fetchBankMovements } from "../services/bankMovementService";
+import { fetchBankMovements } from "@/services/bankMovementService";
 import { fetchJournalEntries } from "../services/journalService";
-import { fetchBankAccountsFromCOA, createSubAccountUnderParent, deleteCOAAccount } from "@/services/coaService";
+import { 
+  fetchBankAccountsFromCOA, 
+  createSubAccountUnderParent, 
+  deleteCOAAccount 
+} from "@/services/coaService";
 
 import BankReconciliationTab from "../components/BankReconciliationTab";
+import TransferBetweenBanksModal from "@/components/bank/TransferBetweenBanksModal";
+import { useAuth } from "@/context/AuthContext";
 
 
 // ---------------- Helpers ----------------
@@ -26,16 +32,17 @@ type TabView = "libro" | "conciliacion";
 
 export default function BankBookPage() {
   const { selectedEntity } = useSelectedEntity();
-  const [showTransfer, setShowTransfer] = useState(false);
   
   const entityId = selectedEntity?.id ?? "";
   const entityName = selectedEntity?.name ?? "";
   const entityRuc = selectedEntity?.ruc ?? "";
+  const { user } = useAuth();
+  const userId = user?.uid ?? "";
 
   const [tab, setTab] = useState<TabView>("libro");
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [selectedBankId, setSelectedBankId] = useState("");
+  const [selectedBankCode, setSelectedBankCode] = useState("");
 
   const [entries, setEntries] = useState<BankBookEntry[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
@@ -44,13 +51,35 @@ export default function BankBookPage() {
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
-  
+  const [showTransfer, setShowTransfer] = useState(false);
+
+  /* ================= REFRESH CENTRALIZED ================= */
+
+  const refreshData = useCallback(async () => {
+    if (!entityId || !selectedBankCode) return;
+
+    try {
+      const [movements, book] = await Promise.all([
+        fetchBankMovements(
+          entityId, 
+          selectedBankCode
+        ),
+        fetchBankBookEntries(entityId, selectedBankCode),
+      ]);
+
+      setBankMovements(movements);
+      setEntries(book);
+    } catch (e) {
+      console.error("Error refreshing data", e);
+    }
+  }, [entityId, selectedBankCode]);
+
   /* ---------------- FETCH BANK ACCOUNTS ---------------- */
 
   useEffect(() => {
     if (!entityId) {
       setBankAccounts([]);
-      setSelectedBankId("");
+      setSelectedBankCode("");
       return;
     }
 
@@ -58,15 +87,25 @@ export default function BankBookPage() {
       setLoadingAccounts(true);
       try {
         const data = await fetchBankAccountsFromCOA(entityId);
-        setBankAccounts(data);
+        
+        const mapped: BankAccount[] = data.map((acc: any) => ({
+          id: acc.id ?? acc.code, // fallback if no id
+          entityId,
+          account_code: acc.code,
+          code: String(acc.code),
+          name: String(acc.name ?? ""),
+        }));
+
+        setBankAccounts(mapped);
+
       // Optional UX: auto-select first account if none selected
-        if (!selectedBankId && data.length > 0 && data[0]?.id) {
-          setSelectedBankId(data[0].id);
+        if (!selectedBankCode && mapped.length > 0) {
+          setSelectedBankCode(mapped[0].code);
         }
       } catch (e) {
         console.error("Error loading bank accounts", e);
         setBankAccounts([]);
-        setSelectedBankId("");
+        setSelectedBankCode("");
       } finally {
         setLoadingAccounts(false);
       }
@@ -78,7 +117,7 @@ export default function BankBookPage() {
   /* ---------------- FETCH BOOK ENTRIES ---------------- */
 
   useEffect(() => {
-    if (!entityId || !selectedBankId) {
+    if (!entityId || !selectedBankCode) {
       setEntries([]);
       return;
     }
@@ -88,39 +127,8 @@ export default function BankBookPage() {
       try {
         const data = await fetchBankBookEntries(
           entityId,
-          selectedBankId
+          selectedBankCode
         );
-        setEntries(data);
-      } finally {
-        setLoadingEntries(false);
-      }
-    };
-
-    load();
-  }, [entityId, selectedBankId]);
-
-  // ---------------------------------------------------------------------------
-  // If selectedBankId no longer exists, reset
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!selectedBankId) return;
-    const stillExists = bankAccounts.some((b) => b.id === selectedBankId);
-    if (!stillExists) setSelectedBankId("");
-  }, [bankAccounts, selectedBankId]);
-
-  // ---------------------------------------------------------------------------
-  // Fetch book entries (legacy book view)
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!entityId || !selectedBankId) {
-      setEntries([]);
-      return;
-    }
-
-    const load = async () => {
-      setLoadingEntries(true);
-      try {
-        const data = await fetchBankBookEntries(entityId, selectedBankId);
         setEntries(data);
       } catch (e) {
         console.error("Error loading bank book entries", e);
@@ -131,24 +139,38 @@ export default function BankBookPage() {
     };
 
     load();
-  }, [entityId, selectedBankId]);
+  }, [entityId, selectedBankCode]);
 
+  // ---------------------------------------------------------------------------
+  // Validate Selection
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!selectedBankCode) return;
+
+    const exists = bankAccounts.some(
+      (b) => b.code === selectedBankCode);
+
+    if (!exists) setSelectedBankCode("");
+  }, [bankAccounts, selectedBankCode]);
 
   /* ---------------- FETCH MOVEMENTS ---------------- */
 
   useEffect(() => {
-    if (!entityId || !selectedBankId) {
+    if (!entityId || !selectedBankCode) {
       setBankMovements([]);
       return;
     }
 
-    fetchBankMovements(entityId, selectedBankId)
+    fetchBankMovements(
+      entityId, 
+      selectedBankCode
+    )
       .then(setBankMovements)
       .catch((e) => {
         console.error("Error loading bank movements", e);
         setBankMovements([]);
       });
-  }, [entityId, selectedBankId]);
+  }, [entityId, selectedBankCode]);
 
   /* ---------------- FETCH JOURNAL ---------------- */
 
@@ -170,30 +192,34 @@ export default function BankBookPage() {
   /* ================= CREATE ACCOUNT ================= */
 
   const handleCreateAccount = async () => {
-  if (!entityId) return;
+    if (!entityId) return;
 
-  const name = prompt("Nombre del banco:");
-  if (!name || !name.trim()) return;
+    const name = prompt("Nombre del banco:");
+    if (!name?.trim()) return;
 
-  const accountCode = await createSubAccountUnderParent(
-    entityId,
-    "1010103",
-    name.trim()
-  );
+    const accountCode = await createSubAccountUnderParent(
+      entityId,
+      "1010103",
+      name.trim()
+    );
 
-  const updated = await fetchBankAccountsFromCOA(entityId);
-  setBankAccounts(updated);
+    const updated = await fetchBankAccountsFromCOA(entityId);
+
+    const mapped: BankAccount[] = updated.map((acc: any) => ({
+      id: acc.id ?? acc.code,
+      entityId,
+      account_code: acc.code,
+      code: acc.code,
+      name: acc.name,
+    }))
+
+    setBankAccounts(mapped);
 
   // Select by DOC ID (since select uses value={b.id})
-    const created = updated.find((b) => b.code === accountCode);
-    if (created?.id) setSelectedBankId(created.id);
+    const created = mapped.find((b) => b.code === accountCode);
+    if (created?.code) setSelectedBankCode(created.code);
   };
 
-  useEffect(() => {
-  console.log("===== BANK BOOK DEBUG =====");
-  console.log("selectedEntity:", selectedEntity);
-  console.log("entityId:", entityId);
-}, [selectedEntity]);
   /* ================= NO ENTITY ================= */
 
   if (!entityId) {
@@ -208,7 +234,6 @@ export default function BankBookPage() {
         </p>
       </div>
     );
-    console.log("Entity ID in BankBookPage", entityId);
   }
 
   /* ================= RENDER ================= */
@@ -260,8 +285,8 @@ export default function BankBookPage() {
             <div className="mb-6 flex gap-3 justify-center">
               <select
                 className="border p-2 rounded min-w-[220px]"
-                value={selectedBankId}
-                onChange={(e) => setSelectedBankId(e.target.value)}
+                value={selectedBankCode}
+                onChange={(e) => setSelectedBankCode(e.target.value)}
               >
                 <option value="">
                   {bankAccounts.length
@@ -270,7 +295,7 @@ export default function BankBookPage() {
                 </option>
 
                 {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
+                  <option key={b.code} value={b.code}>
                     {b.code} ({b.name})
                   </option>
                 ))}
@@ -290,17 +315,26 @@ export default function BankBookPage() {
                 🔁 Transferencia
               </button>
 
-              {selectedBankId && (
+              
+
+              {selectedBankCode && (
                 <button
                   onClick={async () => {
-                  const selected = bankAccounts.find(b => b.id === selectedBankId);
+                  const selected = bankAccounts.find(b => b.code === selectedBankCode);
                   if (!selected) return;
 
                   await deleteCOAAccount(entityId, selected.code);
 
-                  setSelectedBankId("");
+                  setSelectedBankCode("");
                   const updated = await fetchBankAccountsFromCOA(entityId);
-                  setBankAccounts(updated);
+                  const mapped: BankAccount[] = updated.map((acc: any) => ({
+                    id: acc.id ?? acc.code,
+                    entityId,
+                    account_code: acc.code,
+                    code: acc.code,
+                    name: acc.name,
+                  }));
+                  setBankAccounts(mapped);
                 }}
                   className="px-3 py-2 bg-red-600 text-white rounded"
                 >
@@ -340,6 +374,17 @@ export default function BankBookPage() {
             )}
           </>
         )}
+        {showTransfer && (
+                <TransferBetweenBanksModal
+                isOpen={showTransfer}
+                  entityId={entityId}
+                  userIdSafe={userId}
+                  bankAccounts={bankAccounts}
+                  onClose={() => setShowTransfer(false)}
+                  onSaved={refreshData}
+                />
+              )}
+              
       </div>
     </div>
   );

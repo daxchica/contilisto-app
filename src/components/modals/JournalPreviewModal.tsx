@@ -43,6 +43,9 @@ interface Props {
 type Row = Omit<JournalEntry, "debit" | "credit"> & {
   debit: number;
   credit: number;
+  _debitRaw?: string;
+  _creditRaw?: string;
+  _isEdited?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,26 +54,8 @@ type Row = Omit<JournalEntry, "debit" | "credit"> & {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-const moneyFormatter = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-const formatMoney = (n: number) =>
-  moneyFormatter.format(Number.isFinite(n) ? n : 0);
-
-const parseMoney = (raw: string) => {
-  if (!raw) return 0;
-
-  const cleaned = raw.replace(/\s/g, "").replace(/,/g, "");
-  const num = Math.abs(Number(cleaned));
-
-  return Number.isFinite(num) ? num : 0;
-};
-
-function toISODate(raw?: string) {
+const toISODate = (raw?: string) => {
   if (!raw) return todayISO();
-
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
 
   const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -80,7 +65,23 @@ function toISODate(raw?: string) {
   }
 
   return todayISO();
-}
+};
+
+const formatMoney = (n: number) =>
+  new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(n) ? n : 0);
+
+const parseMoney = (raw: string) => {
+  const cleaned = raw.replace(/[^\d.-]/g, "");
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const normalizeCode = (c?: string) =>
+  (c || "").replace(/\./g, "").trim();
+
 
 const createEmptyRow = (
   entityId: string,
@@ -93,7 +94,7 @@ const createEmptyRow = (
   transactionId,
   entityId,
   uid,
-  date: toISODate(date),
+  date,
   account_code: "",
   account_name: "",
   debit: 0,
@@ -104,24 +105,15 @@ const createEmptyRow = (
   createdAt: Date.now(),
 });
 
-const normalizeCode = (c?: string) =>
-  (c || "").replace(/\./g, "").trim();
-
 const areAllRowsPostable = (rows: Row[], postableAccounts: Account[]) => {
-  const postableSet = new Set(
-    postableAccounts.map(a =>
-      (a.code || "").replace(/\./g, "").trim()
-    )
+  const set = new Set(
+    postableAccounts.map(a => normalizeCode(a.code))
   );
 
   return rows
     .filter(r => r.account_code || r.debit || r.credit)
-    .every(r => {
-      const code = (r.account_code || "").replace(/\./g, "").trim();
-      return code && postableSet.has(code);
-    });
+    .every(r => set.has(normalizeCode(r.account_code)));
 };
-
 
 // ---------------------------------------------------------------------------
 // COMPONENT
@@ -148,14 +140,8 @@ export default function JournalPreviewModal({
     metadata.invoiceType ?? "expense";
 
   const initialPosition = useRef({
-    x:
-      typeof window !== "undefined"
-        ? Math.max(20, window.innerWidth / 2 - 520)
-        : 100,
-    y:
-      typeof window !== "undefined"
-        ? Math.max(20, window.innerHeight / 2 - 360)
-        : 100,
+    x: window.innerWidth / 2 - 430,
+    y: window.innerHeight / 2 - 320,
   });
 
   const pickerAccounts = useMemo(
@@ -178,26 +164,59 @@ export default function JournalPreviewModal({
     }
 
     const invoiceNumber = metadata.invoice_number ?? "";
+    let prepared: Row[] = [];
 
-    const prepared =
-      entries?.length > 0
-        ? entries.map((e) => ({
+    if (entries?.length > 0) {
+      const map = new Map<string, Row>();
+
+      for (const e of entries) {
+        const code = normalizeCode(e.account_code);
+        const debit = Number(e.debit ?? 0);
+        const credit = Number(e.credit ?? 0);
+
+        const side = debit > 0 ? "D" : "C";
+        const isIVA =
+          code.startsWith("201") ||
+          code.startsWith("12");
+
+        let key = `${code}-${side}`;
+        if (isIVA) key = `IVA-${invoiceType}`;
+
+        if (!map.has(key)) {
+          map.set(key, {
             ...e,
             id: e.id ?? crypto.randomUUID(),
             transactionId: e.transactionId ?? transactionId,
-            debit: Number(e.debit ?? 0),
-            credit: Number(e.credit ?? 0),
+            debit,
+            credit,
             entityId: e.entityId ?? entityId,
             uid: (e as any).uid ?? userIdSafe,
-          }))
-        : [createEmptyRow(
-            entityId, 
-            userIdSafe,
-            transactionId,
-            toISODate(metadata.invoiceDate),
-            invoiceNumber)];
+          });
+        } else {
+          const existing = map.get(key)!;
+
+          if (!key.startsWith("IVA-")) {
+            existing.debit += debit;    
+            existing.credit += credit;
+          }
+        }
+      }
+
+      prepared = Array.from(map.values());
+    } else {
+      prepared = [
+        createEmptyRow(
+          entityId,
+          userIdSafe,
+          transactionId,
+          toISODate(metadata.invoiceDate),
+          invoiceNumber
+        ),
+      ];
+    }
 
     setRows(prepared);
+    setSelectedIdx(null);
 
     const party =
       invoiceType === "sale"
@@ -210,7 +229,6 @@ export default function JournalPreviewModal({
         : ""
     );
 
-    setSelectedIdx(null);
   }, [open, entries, metadata, entityId, userIdSafe, invoiceType, transactionId]);
 
   // -------------------------------------------------------------------------
@@ -291,6 +309,8 @@ export default function JournalPreviewModal({
     next.splice(idx + 1, 0, newRow);
     return next;
   });
+
+  setSelectedIdx(idx + 1);
 };
 
   const removeRow = (idx: number) => {
@@ -324,6 +344,15 @@ export default function JournalPreviewModal({
       return;
     }
 
+    const meaningfulRows = rows.filter(
+      (r) => r.account_code && (r.debit > 0 || r.credit > 0)
+    );
+
+    if (meaningfulRows.length < 2) {
+      alert("El asiento debe tener al menos dos líneas válidas.");
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -341,11 +370,22 @@ export default function JournalPreviewModal({
         credit: Number(r.credit ?? 0),
       }));
 
-      console.log(
-        "POSTABLE ACCOUNTS:",
-        postableAccounts.map(a => a.code)
+      // 🔥 LEARNING PRESERVED
+      await Promise.all(
+        normalized
+          .filter((r) => r.account_code && r.account_name)
+          .map((r) =>  
+            saveContextualAccountHint(
+              userIdSafe,
+              entityId,
+              metadata.issuerName ?? "",
+              r.account_code,
+              r.account_name,
+              invoiceType,
+            )
+          )
       );
-
+      
       await onSave(normalized, note);
 
       onClose();
@@ -361,11 +401,23 @@ export default function JournalPreviewModal({
   console.log("POSTABLE ACCOUNTS", postableAccounts.length);
   console.log("POSTABLE LIST", postableAccounts.map(a => a.code));
 
-  const rowsValid = 
-    rows.length > 0 &&
-    rows
-      .filter((r) => r.account_code || r.debit || r.credit)
-      .every((r) => r.account_code && (r.debit > 0 || r.credit > 0));
+  const rowsValid =
+  rows
+    .filter((r) => {
+      // Only consider rows with real data
+      return (
+        (r.account_code && r.account_code.trim() !== "") ||
+        (r.debit ?? 0) > 0 ||
+        (r.credit ?? 0) > 0
+      );
+    })
+    .every((r) => {
+      return (
+        r.account_code &&
+        r.account_code.trim() !== "" &&
+        ((r.debit ?? 0) > 0 || (r.credit ?? 0) > 0)
+      );
+    });
 
   // -------------------------------------------------------------------------
   // METADATA
@@ -381,11 +433,11 @@ export default function JournalPreviewModal({
     ? metadata.buyerRUC ?? "-"
     : metadata.issuerRUC ?? "-";
 
-  if (!open) return null;
-
   // -------------------------------------------------------------------------
   // RENDER
   // -------------------------------------------------------------------------
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50">
@@ -463,16 +515,24 @@ export default function JournalPreviewModal({
                     <td className="p-2">
                       <AccountPicker
                         accounts={pickerAccounts}
-                        value={{
-                          code: r.account_code,
-                          name: r.account_name,
-                        }}
-                        onChange={(acc) =>
+                        value={
+                          r.account_code
+                            ? { code: r.account_code, name: r.account_name }
+                            : null
+                        }
+                        onChange={(acc) => {
+                          if (!acc) {
+                            patchRow(idx, {
+                              account_code: "",
+                              account_name: "",
+                            });
+                            return;
+                          }
                           patchRow(idx, {
                             account_code: acc.code,
                             account_name: acc.name,
-                          })
-                        }
+                          });
+                        }}
                       />
                     </td>
 
@@ -480,18 +540,33 @@ export default function JournalPreviewModal({
                       <input
                         type="text"
                         className="w-full border rounded px-2 py-1 text-right font-mono"
-                        value={r.debit === 0 ? "" : r.debit}
-                        onChange={(e) =>
+                        value={
+                          r._debitRaw !== undefined
+                            ? r._debitRaw
+                            : r.debit !== 0
+                            ? String(r.debit) 
+                            : ""
+                        }
+
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const num = parseMoney(raw);
+
                           patchRow(idx, {
-                            debit: parseMoney(e.target.value),
+                            _debitRaw: raw,
+                            debit: num,
                             credit: 0,
-                          })
-                        }
-                        onBlur={(e) =>
+                          });
+                        }}
+
+                        onBlur={(e) => {
+                          const num = parseMoney(e.target.value);
+
                           patchRow(idx, {
-                            debit: parseMoney(e.target.value),
-                          })
-                        }
+                            debit: num,
+                            _debitRaw: num ? formatMoney(num) : "",
+                          });
+                        }}
                       />
                     </td>
 
@@ -499,18 +574,33 @@ export default function JournalPreviewModal({
                       <input
                         type="text"
                         className="w-full border rounded px-2 py-1 text-right font-mono"
-                        value={r.credit === 0 ? "" : r.credit}
-                        onChange={(e) =>
+                        value={
+                          r._creditRaw !== undefined 
+                            ? r._creditRaw
+                            : r.credit !== 0
+                            ? String(r.credit) 
+                            : ""
+                        }
+
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const num = parseMoney(raw);
+
                           patchRow(idx, {
-                            credit: parseMoney(e.target.value),
+                            _creditRaw: raw,
+                            credit: num,
                             debit: 0,
-                          })
-                        }
-                        onBlur={(e) =>
+                          });
+                        }}
+
+                        onBlur={(e) => {
+                          const num = parseMoney(e.target.value);
+
                           patchRow(idx, {
-                            credit: parseMoney(e.target.value),
-                          })
-                        }
+                            credit: num,
+                            _creditRaw: num ? formatMoney(num) : "",
+                          });
+                        }}
                       />
                     </td>
 
