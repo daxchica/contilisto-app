@@ -194,6 +194,7 @@ const raw_coa: RawAccount[] = [
   { code: "50202", name: "GASTOS ADMINISTRATIVOS", level: 3, parentCode: "502" },
   { code: "5020201", name: "GASTOS DE OFICINA", level: 4, parentCode: "50202" },
   { code: "502020101", name: "GASTOS DE PAPELERÍA DE OFICINA", level: 5, parentCode: "5020201", postable: true },
+  { code: "502020102", name: "GASTOS DE ENVIOS", level: 5, parentCode: "5020201", postable: true },
 
   { code: "50203", name: "GASTOS FINANCIEROS", level: 3, parentCode: "502" },
   { code: "5020301", name: "INTERESES", level: 4, parentCode: "50203" },

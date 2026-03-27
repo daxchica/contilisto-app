@@ -14,6 +14,7 @@ export default function Landing() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [showCTA, setShowCTA] = useState(false);
 
   const openLogin = useCallback(() => {
     setMobileOpen(false);
@@ -49,20 +50,20 @@ export default function Landing() {
   }, []);
 
   useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") closeDemo();
-  };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeDemo();
+    };
 
-  if (showDemo) {
-    window.addEventListener("keydown", onKey);
-  }
+    if (showDemo) {
+      window.addEventListener("keydown", onKey);
+    }
 
-  return () => window.removeEventListener("keydown", onKey);
-}, [showDemo, closeDemo]);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showDemo, closeDemo]);
 
   useEffect(() => {
   document.body.style.overflow = mobileOpen ? "hidden" : "";
-}, [mobileOpen]);
+  }, [mobileOpen]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -71,7 +72,24 @@ export default function Landing() {
 
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
-}, []);
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      if (video.currentTime / video.duration > 0.8) {
+        setShowCTA(true);
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [showDemo]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
@@ -393,31 +411,70 @@ export default function Landing() {
       </main>
 
       {showDemo && (
+        
         <div
-          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer"
           onClick={closeDemo}
         >
+
+          
           <div
-            className="bg-white rounded-2xl shadow-xl max-w-4xl w-full p-4"
+            className="w-[90vw] h-[80vh] max-w-6xl bg-black rounded-xl overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
+
+            
             <video
               ref={videoRef}
               controls
               autoPlay
-              className="w-full rounded-lg"
+              className="w-full h-full object-contain"
             >
-              <source src="/videos/demo-contilisto.mp4" type="video/mp4" />
+              
+              <source src="/videos/contilisto_vs_others.mp4" type="video/mp4" />
             </video>
 
             <button
               onClick={closeDemo}
-              className="mt-4 text-sm text-gray-600 hover:text-gray-900"
+              className="
+                absolute top-4 right-4 z-50 
+                bg-black/60 backdrop-blur-md
+                hover:bg-black/80 
+                text-white text-lg 
+                w-9 h-9 
+                rounded-full 
+                flex items-center justify-center 
+                transition"
             >
-              Cerrar
+              X
             </button>
+
+            {/* ✅ CTA OVERLAY (THIS IS THE KEY PART) */}
+            {showCTA && (
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 text-center animate-[fadeIn_0.5s_ease]">
+                
+                <p className="text-white text-lg mb-3 font-semibold">
+                  Empieza a ahorrar horas de trabajo hoy
+                </p>
+
+                <button
+                  onClick={() => {
+                    closeDemo();
+                    scrollToPricing();
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-lg font-semibold shadow-lg"
+                >
+                  Crear Cuenta Gratis
+                </button>
+
+                <p className="text-sm text-gray-300 mt-2">
+                  Empieza en menos de 1 minuto
+                </p>
+              </div>
+            )}
           </div>
         </div>
+        
       )}
 
       {/* LOGIN MODAL */}
