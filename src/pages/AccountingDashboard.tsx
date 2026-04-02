@@ -1,21 +1,24 @@
 // ============================================================================
 // AccountingDashboard.tsx
-// CONTILISTO — FINAL PRODUCTION HARDENED VERSION
-// Improvements:
-// • Multi-entity safe hint cache
-// • Race-safe account loading
-// • Strong typing (no any leaks)
-// • Leaf integrity preserved
-// • Defensive normalization
-// • Cleaner guards
+// CONTILISTO — FINAL PRODUCTION HARDENED VERSION (IMPROVED)
+// Improvements applied without changing the UI:
+// • Fixed hook safety (no conditional hook execution)
+// • Fixed JournalTable wrapper structure
+// • Stronger async guards for account/journal loading
+// • Stable callback for selected journal rows
+// • Safer error typing
+// • Naming cleanup: setPostableAccounts
+// • Defensive state reset on entity changes
+// • Safer hint-code normalization without type conflicts
+// • Ensures transactionId exists on preview entries
 // ============================================================================
 
 import React, {
   useEffect,
   useState,
   useCallback,
+  useRef,
   useMemo,
-  useRef
 } from "react";
 
 import { useNavigate } from "react-router-dom";
@@ -38,7 +41,7 @@ import type { AccountHint } from "@/services/firestoreHintsService";
 import {
   fetchJournalEntries,
   saveJournalEntries,
-  annulInvoiceByTransaction
+  annulInvoiceByTransaction,
 } from "@/services/journalService";
 
 import { logProcessedInvoice } from "@/services/firestoreLogService";
@@ -46,7 +49,6 @@ import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
 import { extractInvoiceVision } from "@/services/extractInvoiceVisionService";
 import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
 import { getPdfPageCount } from "@/utils/pdfUtils";
-import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { getContextualAccountHint } from "@/services/firestoreHintsService";
 
@@ -73,6 +75,16 @@ function normalizeString(...values: (string | undefined | null)[]) {
   return "";
 }
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return "desconocido";
+}
+
+function normalizeComparableCode(value?: string | null): string {
+  if (!value) return "";
+  return value.replace(/\s+/g, "").trim();
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -82,22 +94,7 @@ export default function AccountingDashboard() {
   const { user, loading } = useAuth();
   const { selectedEntity } = useSelectedEntity();
 
-  // --------------------------------------------------------------------------
-  // AUTH GUARD
-  // --------------------------------------------------------------------------
-
-  if (loading) return null;
-
-  if (!user?.uid) {
-    return (
-      <div className="p-10 text-center text-red-600">
-        Sesión inválida. Cierra sesión y vuelve a ingresar.
-      </div>
-    );
-  }
-
-  const userIdSafe = useMemo(() => user.uid, [user.uid]);
-
+  const userIdSafe = user?.uid ?? "";
   const entityId = selectedEntity?.id ?? "";
   const entityRUC = selectedEntity?.ruc ?? "";
 
@@ -106,7 +103,7 @@ export default function AccountingDashboard() {
   // --------------------------------------------------------------------------
 
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [postableAccounts, setpostableAccounts] = useState<Account[]>([]);
+  const [postableAccounts, setPostableAccounts] = useState<Account[]>([]);
   const [leafCodeSet, setLeafCodeSet] = useState<Set<string>>(new Set());
   const [accountsLoading, setAccountsLoading] = useState(false);
 
@@ -124,6 +121,52 @@ export default function AccountingDashboard() {
   const hintCache = useRef<Map<string, AccountHint | null>>(new Map());
   const [selectedEntries, setSelectedEntries] = useState<JournalEntry[]>([]);
 
+  const accountsRequestIdRef = useRef(0);
+  const journalRequestIdRef = useRef(0);
+
+  // --------------------------------------------------------------------------
+  // DERIVED
+  // --------------------------------------------------------------------------
+
+  const normalizedAccountCodeSet = useMemo(() => {
+    const next = new Set<string>();
+
+    for (const account of accounts) {
+      next.add(normalizeComparableCode(account.code));
+    }
+
+    return next;
+  }, [accounts]);
+
+  const normalizedLeafCodeSet = useMemo(() => {
+    const next = new Set<string>();
+
+    for (const code of leafCodeSet) {
+      next.add(normalizeComparableCode(code));
+    }
+
+    return next;
+  }, [leafCodeSet]);
+
+
+// ✅ ADD THIS HERE
+const stableJournal = useMemo(() => 
+  sessionJournal, [sessionJournal]);
+
+  // --------------------------------------------------------------------------
+  // AUTH GUARD
+  // --------------------------------------------------------------------------
+
+  if (loading) return null;
+
+  if (!userIdSafe) {
+    return (
+      <div className="p-10 text-center text-red-600">
+        Sesión inválida. Cierra sesión y vuelve a ingresar.
+      </div>
+    );
+  }
+
   // --------------------------------------------------------------------------
   // ENTITY GUARD
   // --------------------------------------------------------------------------
@@ -132,14 +175,44 @@ export default function AccountingDashboard() {
     if (!selectedEntity) navigate("/empresas", { replace: true });
   }, [selectedEntity, navigate]);
 
+  if (!entityId) {
+  return (
+    <div className="p-10 text-center text-gray-500">
+      Selecciona una empresa para continuar
+    </div>
+  );
+}
+
+  // --------------------------------------------------------------------------
+  // RESET TRANSIENT STATE WHEN ENTITY CHANGES
+  // --------------------------------------------------------------------------
+
+  useEffect(() => {
+    setSessionJournal([]);
+    setPreviewEntries([]);
+    setPreviewMetadata(null);
+    setSelectedEntries([]);
+    hintCache.current.clear();
+  }, [entityId]);
+
+  // --------------------------------------------------------------------------
+  // STABLE CALLBACKS
+  // --------------------------------------------------------------------------
+
+  const handleSelectedEntries = useCallback((entries: JournalEntry[]) => {
+    setSelectedEntries(entries);
+  }, []);
+
   // --------------------------------------------------------------------------
   // LOAD ACCOUNT PLAN (RACE SAFE)
   // --------------------------------------------------------------------------
 
   const loadAccounts = useCallback(async () => {
+    const requestId = ++accountsRequestIdRef.current;
+
     if (!entityId) {
       setAccounts([]);
-      setpostableAccounts([]);
+      setPostableAccounts([]);
       setLeafCodeSet(new Set());
       return;
     }
@@ -149,22 +222,30 @@ export default function AccountingDashboard() {
 
       const plan = await getEffectiveAccountPlan(entityId);
 
+      if (requestId !== accountsRequestIdRef.current) return;
+
       const effectiveAccounts: Account[] = plan.effectiveAccounts ?? [];
-      const leafFixed: Account[] = plan.postableAccounts ?? [];
+      const postableFixed: Account[] = plan.postableAccounts ?? [];
       const leafSet: Set<string> = plan.postableCodeSet ?? new Set();
 
       setAccounts(effectiveAccounts);
-      setpostableAccounts(leafFixed);
+      setPostableAccounts(postableFixed);
       setLeafCodeSet(leafSet);
 
       if (IS_DEV) {
         console.log("Accounts loaded:", effectiveAccounts.length);
-        console.log("Leaf accounts:", leafFixed.length);
+        console.log("Leaf accounts:", postableFixed.length);
       }
     } catch (err) {
+      if (requestId !== accountsRequestIdRef.current) return;
       console.error("Account plan failed:", err);
+      setAccounts([]);
+      setPostableAccounts([]);
+      setLeafCodeSet(new Set());
     } finally {
-      setAccountsLoading(false);
+      if (requestId === accountsRequestIdRef.current) {
+        setAccountsLoading(false);
+      }
     }
   }, [entityId]);
 
@@ -173,15 +254,27 @@ export default function AccountingDashboard() {
   }, [loadAccounts]);
 
   // --------------------------------------------------------------------------
-  // LOAD JOURNAL
+  // LOAD JOURNAL (RACE SAFE)
   // --------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!entityId) return;
+    const requestId = ++journalRequestIdRef.current;
+
+    if (!entityId) {
+      setSessionJournal([]);
+      return;
+    }
 
     fetchJournalEntries(entityId)
-      .then(setSessionJournal)
-      .catch(console.error);
+      .then((entries) => {
+        if (requestId !== journalRequestIdRef.current) return;
+        setSessionJournal(entries);
+      })
+      .catch((err) => {
+        if (requestId !== journalRequestIdRef.current) return;
+        console.error(err);
+        setSessionJournal([]);
+      });
   }, [entityId, logRefreshTrigger]);
 
   // --------------------------------------------------------------------------
@@ -213,26 +306,25 @@ export default function AccountingDashboard() {
       }
 
       try {
-        const base64 = await fileToBase64(files[0]);
+        const file = files[0];
+        if (!file) return;
+
+        const base64 = await fileToBase64(file);
 
         let pageCount = 1;
         try {
           pageCount = await getPdfPageCount(base64);
-        } catch {}
+        } catch {
+          pageCount = 1;
+        }
 
         const forceVision = pageCount > 1;
         const ocr = forceVision ? null : await extractInvoiceOCR(base64);
 
-        const incomplete =
-          forceVision || !ocr || isInvoiceIncomplete(ocr);
+        const incomplete = forceVision || !ocr || isInvoiceIncomplete(ocr);
 
         const data = incomplete
-          ? await extractInvoiceVision(
-              base64,
-              entityRUC,
-              authUid,
-              entityId
-            )
+          ? await extractInvoiceVision(base64, entityRUC, authUid, entityId)
           : ocr;
 
         if (!data?.entries?.length) {
@@ -251,22 +343,21 @@ export default function AccountingDashboard() {
           invoiceIdentitySource: data.invoiceIdentitySource,
         };
 
+        const generatedTransactionId = crypto.randomUUID();
+
         let normalized: JournalEntry[] = data.entries.map((e) => ({
           ...e,
           id: e.id ?? crypto.randomUUID(),
+          transactionId: e.transactionId ?? generatedTransactionId,
           entityId,
           uid: authUid,
-          debit: Number.isFinite(Number(e.debit))
-            ? Number(e.debit)
-            : 0,
-          credit: Number.isFinite(Number(e.credit))
-            ? Number(e.credit)
-            : 0,
+          debit: Number.isFinite(Number(e.debit)) ? Number(e.debit) : 0,
+          credit: Number.isFinite(Number(e.credit)) ? Number(e.credit) : 0,
         }));
 
-        // ----------------------------------------------------------------------
+        // --------------------------------------------------------------------
         // CONTEXTUAL LEARNING (EXPENSE ONLY)
-        // ----------------------------------------------------------------------
+        // --------------------------------------------------------------------
 
         if (metadata.invoiceType === "expense" && metadata.issuerRUC) {
           const cacheKey = `${entityId}__${metadata.issuerRUC}`;
@@ -285,24 +376,28 @@ export default function AccountingDashboard() {
             hintCache.current.set(cacheKey, hint ?? null);
           }
 
+          const normalizedHintCode = normalizeComparableCode(
+            hint?.accountCode ?? ""
+          );
+
           if (
             hint &&
             hint.frequency >= 2 &&
-            leafCodeSet.has(normalizeAccountCode(hint)) &&
-            accounts.some((a) => a.code === normalizeAccountCode(hint))
+            normalizedHintCode &&
+            normalizedLeafCodeSet.has(normalizedHintCode) &&
+            normalizedAccountCodeSet.has(normalizedHintCode)
           ) {
             normalized = normalized.map((row) => {
               const debit = Number(row.debit ?? 0);
               const fallback =
                 debit > 0 &&
-                (row.account_code === "510999" ||
-                  row.account_code === "519999");
+                (row.account_code === "510999" || row.account_code === "519999");
 
               if (!fallback) return row;
 
               return {
                 ...row,
-                account_code: normalizeAccountCode(hint),
+                account_code: normalizedHintCode,
                 account_name: hint.accountName,
               };
             });
@@ -312,11 +407,9 @@ export default function AccountingDashboard() {
         setPreviewEntries(normalized);
         setPreviewMetadata(metadata);
         setShowPreviewModal(true);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        alert(
-          `Error procesando PDF: ${err?.message ?? "desconocido"}`
-        );
+        alert(`Error procesando PDF: ${getErrorMessage(err)}`);
       }
     },
     [
@@ -326,12 +419,16 @@ export default function AccountingDashboard() {
       accounts.length,
       accountsLoading,
       loadAccounts,
-      leafCodeSet,
-      accounts,
+      normalizedLeafCodeSet,
+      normalizedAccountCodeSet,
     ]
   );
 
-  const handleDeleteSelected = async () => {
+  // --------------------------------------------------------------------------
+  // DELETE / ANNUL SELECTED
+  // --------------------------------------------------------------------------
+
+  const handleDeleteSelected = useCallback(async () => {
     if (!selectedEntries.length) return;
 
     if (!confirm("¿Anular las facturas seleccionadas?")) return;
@@ -345,18 +442,13 @@ export default function AccountingDashboard() {
     }
 
     for (const [tx, group] of grouped) {
-      const invoiceNumber =
-        group.find(e => e.invoice_number)?.invoice_number;
+      const invoiceNumber = group.find((e) => e.invoice_number)?.invoice_number;
 
-      await annulInvoiceByTransaction(
-        entityId,
-        tx,
-        invoiceNumber
-      );
+      await annulInvoiceByTransaction(entityId, tx, invoiceNumber);
     }
 
-    setLogRefreshTrigger(v => v + 1);
-  };
+    setLogRefreshTrigger((v) => v + 1);
+  }, [selectedEntries, entityId]);
 
   // --------------------------------------------------------------------------
   // RENDER
@@ -364,32 +456,43 @@ export default function AccountingDashboard() {
 
   return (
     <>
-      <div className="pt-20 pb-32 px-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-end gap-3 mb-4">
-            <button
-              onClick={() => setShowManualModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg"
-            >
-              Ingreso manual
-            </button>
+      <div className="pt-4 pb-8 px-6 space-y-4">
+        <div className="flex flex-col gap-3">
+          {/* ACTION BAR */}
+          <div className="flex justify-between items-center">
+            <div className="text-lg font-semibold text-gray-800">
+              Procesamiento Contable
+            </div>
 
-            <button
-              onClick={() => setShowAccountsModal(true)}
-              className="bg-emerald-600 text-white px-4 py-2 rounded-lg"
-            >
-              Ver Plan de Cuentas
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowManualModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700"
+              >
+                Ingreso manual
+              </button>
+
+              <button
+                onClick={() => setShowAccountsModal(true)}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-emerald-700"
+              >
+                Plan de cuentas
+              </button>
+            </div>
           </div>
 
+          {/* UPLOADER */}
           <PDFDropzone onFilesSelected={handlePdfFilesSelected} />
 
-          <JournalTable
-            entries={sessionJournal}
-            entityName={selectedEntity?.name ?? ""}
-            onSelectEntries={setSelectedEntries}
-            onDeleteSelected={handleDeleteSelected}
-          />
+          <div className="bg-white rounded-xl shadow-sm border">
+            
+            <JournalTable
+              entries={stableJournal}
+              entityName={selectedEntity?.name ?? ""}
+              onSelectEntries={handleSelectedEntries}
+              onDeleteSelected={handleDeleteSelected}
+            />
+          </div>
         </div>
       </div>
 
@@ -422,11 +525,11 @@ export default function AccountingDashboard() {
 
               setLogRefreshTrigger((v) => v + 1);
               setShowPreviewModal(false);
-            } catch (err: any) {
+            } catch (err: unknown) {
               console.error("SAVE ERROR", err);
-              alert(err?.message || "Error al guardar");
-            }}
-          }
+              alert(getErrorMessage(err) || "Error al guardar");
+            }
+          }}
         />
       )}
 
@@ -461,19 +564,12 @@ export default function AccountingDashboard() {
             }
 
             try {
-              // 1) Save to Firestore
               await saveJournalEntries(entityId, authUid, entries);
-
-              // 2) Refresh journal table
               setLogRefreshTrigger((v) => v + 1);
-
-              // Optional: optimistic UI (instant)
-              // setSessionJournal((prev) => [...entries, ...prev]);
-
-            } catch (err: any) {
+            } catch (err: unknown) {
               console.error("MANUAL SAVE ERROR", err);
-              alert(err?.message || "Error al guardar asiento manual");
-              throw err; // keeps modal from closing if you handle it there
+              alert(getErrorMessage(err) || "Error al guardar asiento manual");
+              throw err;
             }
           }}
         />

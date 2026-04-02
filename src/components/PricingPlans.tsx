@@ -1,5 +1,6 @@
 // src/components/PricingPlans.tsx
-import { Link } from "react-router-dom";
+
+import { PlanType } from "@/config/plans";
 
 function Wrapper({
   children,
@@ -20,18 +21,20 @@ function Wrapper({
   );
 }
 
-function rememberPlan(plan: "starter" | "pro" | "enterprise") {
-  sessionStorage.setItem("selectedPlan", plan);
+type Props = {
+  onSelectPlan: (plan: PlanType) => void;
 }
 
-export default function PricingPlans() {
+export default function PricingPlans({ onSelectPlan}: Props) {
   return (
     <section className="max-w-6xl mx-auto w-full px-4 sm:px-6 mt-12">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+  
         {/* =======================
             PLAN ESTUDIANTE
         ======================= */}
         <Wrapper className="bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-900 flex flex-col text-center">
+  
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/70 flex items-center justify-center mb-4">
             <span className="text-2xl">🌱</span>
           </div>
@@ -66,14 +69,13 @@ export default function PricingPlans() {
             Ideal para aprender y probar el flujo.
           </p>
 
-          <Link
-            to="/register?plan=starter"
-            onClick={() => rememberPlan("starter")}
+          <button
+            onClick={() => onSelectPlan("estudiante")}
             className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold text-center
                        hover:bg-emerald-700"
           >
             Crear cuenta gratis
-          </Link>
+          </button>
           Sin tarjeta de crédito.
           Puedes cambiar de plan en cualquier momento.
         </Wrapper>
@@ -90,7 +92,7 @@ export default function PricingPlans() {
             <span className="text-2xl">✨</span>
           </div>
 
-          <h3 className="text-xl sm:text-2xl font-bold">
+          <h3 className="transform scale-105 ring-2 ring-blue-500 rounded-2xl shadow-xl">
             Contador
           </h3>
           
@@ -120,14 +122,13 @@ export default function PricingPlans() {
             </div>
           </div>
 
-          <Link
-            to="/register?plan=pro"
-            onClick={() => rememberPlan("pro")}
+          <button
+            onClick={() => onSelectPlan("contador")}
             className="mt-6 w-full rounded-xl border border-white/70 py-3 font-semibold
                        hover:bg-white/10"
           >
             Comenzar con este plan
-          </Link>
+          </button>
         </Wrapper>
 
         {/* =======================
@@ -166,14 +167,13 @@ export default function PricingPlans() {
             </div>
           </div>
 
-          <Link
-            to="/contact?plan=enterprise"
-            onClick={() => rememberPlan("enterprise")}
+          <button
+            onClick={() => onSelectPlan("corporativo")}
             className="mt-6 w-full rounded-xl bg-white text-slate-900 py-3 font-semibold
                        hover:bg-slate-100"
           >
             Hablar con ventas
-          </Link>
+          </button>
         </Wrapper>
       </div>
     </section>

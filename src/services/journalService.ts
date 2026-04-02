@@ -68,8 +68,6 @@ function isParentAccount(code: string) {
   return clean.length <= 7;
 }
 
-
-
 /**
  * STRICT CONTROL RULES
  * These are the important fixes.
@@ -449,6 +447,7 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
     await upsertPayable(entityId, {
       transactionId: tx,
       invoiceNumber,
+      invoiceNumberNormalized: normalizeInvoiceNumber(invoiceNumber),
       issueDate: control.date || new Date().toISOString().slice(0, 10),
 
       supplierName,
@@ -587,6 +586,7 @@ export async function saveJournalEntries(
   entries: JournalEntry[],
   document?: AccountingDocument
 ): Promise<JournalEntry[]> {
+
   const first = entries[0];
 
   const invoiceNumber = first?.invoice_number;
@@ -596,7 +596,9 @@ export async function saveJournalEntries(
     (first as any)?.issuerRUC ||
     (first as any)?.buyerRUC;
 
-  if (invoiceNumber) {
+  const isPayment = entries.some(e => e.transactionType === "payment");
+
+  if (invoiceNumber && !isPayment) {
     const exists = await invoiceAlreadyExists(entityId, invoiceNumber, ruc);
 
     if (exists) {
@@ -690,7 +692,7 @@ if (existingTx.length > 0) {
       uid: userIdSafe,
       transactionId,
 
-      documentId: document?.id,
+      documentId: document?.id ?? undefined,
 
       debit: n2(e.debit),
       credit: n2(e.credit),
@@ -797,9 +799,53 @@ if (existingTx.length > 0) {
 return saved;
 }
 
-/* =============================================================================
-   PAYABLE PAYMENT (AP → BANK)
-============================================================================= */
+// ============================================================================
+// DELETE JOURNAL ENTRIES BY TRANSACTION ID
+// Used for overwriting Initial Balance safely
+// ============================================================================
+
+export async function deleteJournalEntriesByTransactionId(
+  entityId: string,
+  transactionId: string,
+  uid: string
+) {
+  if (!entityId || !transactionId || !uid) {
+    throw new Error("Missing required parameters for deletion.");
+  }
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    col,
+    where("transactionId", "==", transactionId),
+    where("uid", "==", uid)
+  );
+
+  const snapshot = await getDocs(q); // ✅ FIXED
+
+  if (snapshot.empty) {
+    console.warn("No entries found for deletion.");
+    return;
+  }
+
+  const batch = writeBatch(db);
+
+  snapshot.docs.forEach((docSnap) => {
+    batch.delete(docSnap.ref);
+  });
+
+  try {
+    await batch.commit();
+    console.log(`Deleted ${snapshot.size} journal entries.`);
+  } catch (error) {
+    console.error("Error deleting journal entries:", error);
+    throw new Error("No se pudieron eliminar los registros.");
+  }
+}
+
+// ============================================================================
+// FIXED — PAYABLE PAYMENT (AP → JOURNAL ONLY, BANK AUTO LIKE AR)
+// ============================================================================
 
 export async function createPayablePaymentJournalEntry(
   entityId: string,
@@ -809,15 +855,17 @@ export async function createPayablePaymentJournalEntry(
   bankAccount: { id: string; account_code: string; name?: string },
   userIdSafe: string,
   options?: {
-    bankMovementId?: string;
     retentionIR?: number;
     retentionIVA?: number;
-  }
+    certificate?: string;
+  },
 ) {
   requireEntityId(entityId, "registrar pago");
 
   const retentionIR = options?.retentionIR ?? 0;
   const retentionIVA = options?.retentionIVA ?? 0;
+  const certificate = options?.certificate ?? "";
+
   const amount = n2(amountPaid);
   const payableBalance = n2(payable.balance);
 
@@ -825,15 +873,11 @@ export async function createPayablePaymentJournalEntry(
   const bankAccountCode = norm(bankAccount.account_code);
 
   if (!payableAccountCode) {
-    throw new Error("La cuenta bancaria seleccionada no tiene cuenta contable configurada.");
+    throw new Error("Cuenta de proveedor inválida");
   }
 
   if (!bankAccountCode) {
-    throw new Error("La cuenta bancaria seleccionada no tiene cuenta contable configurada.");
-  }
-
-  if (!payable.account_name?.trim()) {
-    throw new Error("La cuenta bancaria seleccionada no tiene cuenta contable configurada.");
+    throw new Error("Cuenta bancaria inválida");
   }
 
   if (!paymentDate?.trim()) {
@@ -847,44 +891,55 @@ export async function createPayablePaymentJournalEntry(
   }
 
   if (totalApplied > payableBalance) {
-    throw new Error("El pago aplicado excede el saldo de la factura");
+    throw new Error("El pago excede el saldo de la factura");
   }
 
-  const tx =
-    options?.bankMovementId ??
-    doc(collection(db, "entities", entityId, "journalEntries")).id;
+  const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
 
   const description = `Pago proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;
 
+  const normalizedInvoice = normalizeInvoiceNumber(payable.invoiceNumber);
+
   const entries: JournalEntry[] = [
+    
+    // 🔹 DEBIT CxP (reduce liability)
     {
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: norm(payable.account_code),
+      account_code: payableAccountCode,
       account_name: payable.account_name,
       debit: totalApplied,
       credit: 0,
+      
       invoice_number: payable.invoiceNumber,
+      invoice_number_normalized: normalizedInvoice,
+
       supplier_name: payable.supplierName as any,
       description,
       source: "manual",
+      transactionType: "payment",
     },
+
+    // 🔹 CREDIT BANK (cash out)
     {
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: bankAccount.account_code,
+      account_code: bankAccountCode,
       account_name: bankAccount.name ?? "Banco",
       debit: 0,
-      credit: amountPaid,
+      credit: amount,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName as any,
       description,
       source: "manual",
+      transactionType: "payment",
     },
+    
   ];
 
+  // 🔹 IR RETENTION
   if (retentionIR > 0) {
     entries.push({
       entityId,
@@ -895,12 +950,15 @@ export async function createPayablePaymentJournalEntry(
       debit: 0,
       credit: retentionIR,
       invoice_number: payable.invoiceNumber,
+      invoice_number_normalized: normalizedInvoice,
       supplier_name: payable.supplierName as any,
       description: `Retención IR — Factura ${payable.invoiceNumber}`,
       source: "manual",
+      transactionType: "payment",
     });
   }
 
+  // 🔹 IVA RETENTION
   if (retentionIVA > 0) {
     entries.push({
       entityId,
@@ -911,30 +969,20 @@ export async function createPayablePaymentJournalEntry(
       debit: 0,
       credit: retentionIVA,
       invoice_number: payable.invoiceNumber,
+      invoice_number_normalized: normalizedInvoice,
       supplier_name: payable.supplierName as any,
       description: `Retención IVA — Factura ${payable.invoiceNumber}`,
       source: "manual",
+      transactionType: "payment",
     });
+    
   }
 
-  console.log("PAYABLE ACCOUNT", payable.account_code);
-
+  // 🔹 SAVE JOURNAL
   await saveJournalEntries(entityId, userIdSafe, entries);
 
-  const bankMovementId = 
-    options?.bankMovementId ??
-    (await createBankMovement({
-      entityId,
-      bankAccountId: bankAccount.id,
-      date: paymentDate,
-      amount: amountPaid,
-      type: "out",
-      description,
-      createdBy: userIdSafe,
-    }));
-
-  await linkJournalTransaction(entityId, bankMovementId, tx);
-  await applyPayablePayment(entityId, payable, totalApplied);
+  // 🔥 IMPORTANT: DO NOT CREATE BANK MOVEMENT HERE
+  // It should be generated automatically from journal entries (same as AR)
 
   return tx;
 }
@@ -946,6 +994,7 @@ export async function createPayablePaymentJournalEntry(
 export async function createReceivableCollectionJournalEntry(
   entityId: string,
   receivable: Receivable,
+  transactionType: "payment",
   amount: number,
   collectionDate: string,
   bankAccount: { id: string; account_code: string; name?: string },
@@ -1094,7 +1143,7 @@ export async function createTransferJournalEntry(
   date: string,
   userId: string,
   fromAccountName?: string,
-  toAccountName?: string
+  toAccountName?: string,
 ): Promise<string> {
   requireEntityId(entityId, "transferencia");
   if (!userId?.trim()) {
@@ -1119,6 +1168,7 @@ export async function createTransferJournalEntry(
       credit: 0,
       description,
       source: "manual",
+      transactionType: "payment",
     },
     {
       entityId,

@@ -1,15 +1,19 @@
 // ============================================================================
 // src/components/ManualBalanceForm.tsx
-// Carga manual del Balance Inicial — stable UX + leaf-only + money formatting
+// CONTILISTO — Manual Initial Balance Form (FINAL STABLE VERSION)
+// FIXES:
+// - React hooks rule violation FIXED
+// - Account picker stable
+// - Editable debit/credit inputs FIXED
+// - Better suggestions ranking
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 
 import type { Account } from "../types/AccountTypes";
-import { saveInitialBalances } from "../services/initialBalanceService";
 import CreateSubaccountModal from "@/components/accounts/CreateSubaccountModal";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
-
+import { JournalEntry } from "@/types/JournalEntry";
 
 export interface Entry {
   id: string;
@@ -17,10 +21,8 @@ export interface Entry {
   account_name: string;
   debit: number;
   credit: number;
-
   _debitInput?: string;
   _creditInput?: string;
-
   date: string;
 }
 
@@ -31,114 +33,115 @@ interface Props {
   initialBalanceDate: string;
   setInitialBalanceDate: (date: string) => void;
   existingInitialBalanceTx: boolean;
+  initialData?: JournalEntry[];
 }
 
-// -------- text helpers ----------
+// ---------------- TEXT HELPERS ----------------
 const normalize = (t: string) =>
   t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 function scoreMatch(target: string, query: string): number {
+  const t = normalize(target || "");
   const q = normalize(query || "").trim();
+
   if (!q) return 0;
 
-  const t = normalize(target || "");
-  if (!t) return 0;
+  const words = q.split(/\s+/);
 
-  if (t === q) return 120;
-  if (t.startsWith(q)) return 100;
-  if (t.includes(` ${q}`)) return 80;
-  if (t.includes(q)) return 60;
-  return 0;
+  let score = 0;
+
+  for (const w of words) {
+    if (t.includes(w)) score += 50;
+    else if (t.startsWith(w)) score += 80;
+  }
+
+  if (t === q) score += 100;
+
+  return score;
 }
 
-// -------- money helpers ----------
+// ---------------- MONEY HELPERS ----------------
 const moneyFmt = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
 function formatMoneyDisplay(n: number): string {
-  if (!n) return ""; // ✅ show empty instead of 0.00
+  if (!n) return "";
   return moneyFmt.format(n);
 }
 
-// allow typing "200000", "200,000", "200000.5"
 function parseMoneyInput(raw: string): number {
   const cleaned = (raw || "")
-    .replace(/[^\d.,-]/g, "")  // keep digits , . -
-    .replace(/,/g, "");        // en-US: commas are thousands
+    .replace(/[^\d.,-]/g, "")
+    .replace(/,/g, "");
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
 
-// best parent guess for "Crear subcuenta"
-function findBestParent(code: string, all: Account[]): Account | null {
-  const c = (code || "").trim();
-  if (!c) return null;
-
-  // try exact match first (user selected an existing parent)
-  const exact = all.find(a => a.code === c);
-  if (exact) return exact;
-
-  // try stripping last 2 digits repeatedly
-  for (let len = c.length - 2; len >= 1; len -= 2) {
-    const candidate = c.slice(0, len);
-    const found = all.find(a => a.code === candidate);
-    if (found) return found;
-  }
-
-  // fallback: longest prefix match
-  let best: Account | null = null;
-  for (const a of all) {
-    if (c.startsWith(a.code)) {
-      if (!best || a.code.length > best.code.length) best = a;
-    }
-  }
-  return best;
-}
-
-export default function ManualBalanceForm({ 
-  onSubmit, 
-  entityId, 
+// ---------------- COMPONENT ----------------
+export default function ManualBalanceForm({
+  onSubmit,
+  entityId,
   accounts,
   initialBalanceDate,
   setInitialBalanceDate,
   existingInitialBalanceTx,
+  initialData,
 }: Props) {
   const [rows, setRows] = useState<Entry[]>([]);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [parentForCreation, setParentForCreation] = useState<Account | null>(null);
-
   const [effectiveAccounts, setEffectiveAccounts] = useState<Account[]>(accounts);
 
-  // dropdown click-outside
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
+  // ✅ FIX: Memo OUTSIDE map (CRITICAL)
+  const accountIndex = useMemo(() => effectiveAccounts, [effectiveAccounts]);
+
+  // ---------------- LOAD ACCOUNTS ----------------
   const refreshAccounts = async () => {
-    let active = true;
     const plan = await getEffectiveAccountPlan(entityId);
-    if (active) setEffectiveAccounts(plan.effectiveAccounts);
-    return () => { active = false };
+    setEffectiveAccounts(plan.effectiveAccounts);
   };
 
   useEffect(() => {
     refreshAccounts();
 
-    function handleClickOutside(ev: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(ev.target as Node)) {
+    const handleClickOutside = (ev: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(ev.target as Node)
+      ) {
         setOpenIndex(null);
       }
-    }
+    };
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside);
   }, [entityId]);
 
-  // add row
+  // ---------------- LOAD INITIAL DATA ----------------
+  useEffect(() => {
+    if (!initialData || initialData.length === 0) return;
+
+    setRows(
+      initialData.map((e) => ({
+        id: crypto.randomUUID(),
+        account_code: e.account_code,
+        account_name: e.account_name,
+        debit: Number(e.debit || 0),
+        credit: Number(e.credit || 0),
+        date: e.date || new Date().toISOString().slice(0, 10),
+      }))
+    );
+  }, [initialData]);
+
+  // ---------------- ADD / REMOVE ----------------
   const addEmptyLine = () => {
-    setRows(prev => {
+    setRows((prev) => {
       const next = [
         ...prev,
         {
@@ -147,7 +150,7 @@ export default function ManualBalanceForm({
           account_name: "",
           debit: 0,
           credit: 0,
-          date: new Date().toISOString().slice(0, 10),
+          date: initialBalanceDate,
         },
       ];
       setOpenIndex(next.length - 1);
@@ -155,27 +158,24 @@ export default function ManualBalanceForm({
     });
   };
 
-  const removeLine = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
+  const removeLine = (id: string) => {
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  };
 
-  const updateField = (index: number, field: keyof Entry, value: string | number) => {
-    setRows(prev => {
+  // ---------------- UPDATE ----------------
+  const updateField = (
+    index: number,
+    field: keyof Entry,
+    value: string | number
+  ) => {
+    setRows((prev) => {
       const next = [...prev];
-
-      // ⛔ Block manual editing of account_code once selected
-      if (
-        field === "account_code" &&
-        next[index].account_code &&
-        value !== next[index].account_code
-      ) {
-        return prev;
-      }
-
       next[index] = { ...next[index], [field]: value };
       return next;
     });
   };
 
-  // totals
+  // ---------------- TOTALS ----------------
   const { totalDebit, totalCredit, isBalanced, diff } = useMemo(() => {
     const d = rows.reduce((s, r) => s + (Number(r.debit) || 0), 0);
     const c = rows.reduce((s, r) => s + (Number(r.credit) || 0), 0);
@@ -187,317 +187,240 @@ export default function ManualBalanceForm({
     };
   }, [rows]);
 
-  // save
-  const handleSave = async () => {
+  // ---------------- SAVE ----------------
+  const handleSave = () => {
+    if (rows.length < 2) {
+      alert("El Balance Inicial debe tener al menos 2 líneas.");
+      return;
+    }
+
     if (!isBalanced) {
-      alert(`⚠ El Balance Inicial NO cuadra (D - C = ${diff.toFixed(2)})`);
+      alert(`⚠ No cuadra (D - C = ${diff.toFixed(2)})`);
       return;
     }
 
-    if (rows.length === 0) {
-      alert("No hay lineas en el Balance Inicial.");
+    const invalid = rows.find(
+      (r) =>
+        !r.account_code ||
+        ((Number(r.debit) || 0) === 0 &&
+          (Number(r.credit) || 0) === 0)
+    );
+
+    if (invalid) {
+      alert("⚠ Todas las líneas deben tener cuenta y valor.");
       return;
     }
 
-    try {
-      const invalidRow = rows.find(
-        r => !r.account_code || ((Number(r.debit) || 0) === 0 && (Number(r.credit) || 0) === 0)
-      );
-      if (invalidRow) {
-        alert("⚠ Existen líneas sin cuenta o sin valores.");
-        return;
-      }
-
-      // ✅ IMPORTANT: if Firestore rules require uid/userIdSafe, your service MUST store it.
-      // If your saveInitialBalances() currently doesn't include userIdSafe, you'll get
-      // "Missing or insufficient permissions".
-      await saveInitialBalances(
-        entityId,
-        rows.map(r => ({
-          account_code: r.account_code,
-          account_name: r.account_name,
-          initial_balance: (Number(r.debit) || 0) - (Number(r.credit) || 0),
-          // userIdSafe: uid, // ✅ uncomment IF your service supports it
-        }))
-      );
-
-      alert("✔ Balance Inicial guardado.");
-      onSubmit(rows);
-    } catch (err) {
-      console.error(err);
-      alert("❌ Error guardando Balance Inicial.");
-    }
+    onSubmit(rows);
   };
 
-
+  // ---------------- RENDER ----------------
   return (
-    
-    <div className="p-4 border rounded mb-4 relative">
-      <h3 className="font-semibold mb-2">Carga Manual del Balance Inicial</h3>
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-medium text-gray-700">
-          Fecha del Balance Inicial
-        </label>
+    <div className="p-4 border rounded mb-4">
+      <h3 className="font-semibold mb-2">
+        Carga Manual del Balance Inicial
+      </h3>
 
+      {/* DATE */}
+      <div className="flex items-center gap-3 mb-3">
+        <label className="text-sm font-medium">Fecha</label>
         <input
           type="date"
           value={initialBalanceDate}
-          disabled={existingInitialBalanceTx}
+          disabled={existingInitialBalanceTx && !initialData}
           onChange={(e) => setInitialBalanceDate(e.target.value)}
           className="border rounded px-2 py-1 text-sm"
         />
-
-        {existingInitialBalanceTx && (
-          <span className="text-xs text-gray-500">
-            🔒 Fecha bloqueada
-          </span>
-        )}
       </div>
 
+      {/* ADD */}
       <button
-        type="button"
-        className="mb-4 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        className="mb-4 px-3 py-2 bg-blue-600 text-white rounded"
         onClick={addEmptyLine}
       >
         ➕ Agregar Línea
       </button>
 
-      <div className="border rounded-lg relative">
-        <table className="w-full text-xs md:text-sm">
-          <thead className="bg-gray-200">
-            <tr>
-              <th className="p-2 border">Código</th>
-              <th className="p-2 border">Cuenta</th>
-              <th className="p-2 border text-right w-28">Débito</th>
-              <th className="p-2 border text-right w-28">Crédito</th>
-              <th className="p-2 border w-8">✂</th>
-            </tr>
-          </thead>
+      {/* TABLE */}
+      <table className="w-full text-sm border">
+        <thead className="bg-gray-200 text-xs uppercase">
+          <tr>
+            <th className="px-3 py-2 w-[140px]">Código</th>
+            <th className="px-3 py-2">Cuenta</th>
+            <th className="px-3 py-2 w-[140px]">Débito</th>
+            <th className="px-3 py-2 w-[140px]">Crédito</th>
+            <th />
+          </tr>
+        </thead>
 
-          <tbody>
-            {rows.map((row, i) => {
-              const query = (row.account_name || row.account_code || "").trim();
+        <tbody>
+          {rows.map((row, i) => {
+            const query = (row.account_name || row.account_code || "").trim();
 
-              const selectableAccounts = effectiveAccounts.filter(
-                acc => !rows.some(r => r.account_code === acc.code)
-              );
+            const suggestions = accountIndex
+              .map((acc) => ({
+                ...acc,
+                score:
+                  scoreMatch(acc.code, query) +
+                  scoreMatch(acc.name, query) * 2,
+              }))
+              .filter((acc) => (query ? acc.score > 0 : true))
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 20);
 
-              const suggestions =
-                query.length === 0
-                  ? selectableAccounts.slice(0, 20)
-                  : selectableAccounts
-                      .map((acc: Account) => ({
-                        ...acc,
-                        score:
-                          scoreMatch(acc.code, query) +
-                          scoreMatch(acc.name, query),
-                      }))
-                      .filter(acc => acc.score > 0)
-                      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-                      .slice(0, 20);
+            return (
+              <tr key={row.id} className="border-t">
+                <td className="px-3 py-2 font-mono">{row.account_code}</td>
 
-              return (
-                <tr key={row.id} className="odd:bg-white even:bg-gray-50">
-                  {/* Código */}
-                  <td className="border p-1">
-                    <input
-                      type="text"
-                      value={row.account_code}
-                      readOnly
-                      tabIndex={-1}
-                      className="w-full border rounded px-1 py-0.5 bg-gray-100 cursor-not-allowed"
-                    />
-                  </td>
+                {/* ACCOUNT PICKER */}
+                <td className="relative px-3 py-2">
+                  <input
+                    className="w-full border rounded px-2 py-1"
+                    value={row.account_name}
+                    onFocus={() => setOpenIndex(i)}
+                    onChange={(e) => {
+                      updateField(i, "account_name", e.target.value);
+                      setOpenIndex(i);
+                    }}
+                  />
 
-                  {/* Cuenta */}
-                  <td className="border p-1 relative">
-                    <input
-                      type="text"
-                      placeholder="Buscar cuenta contable…"
-                      value={row.account_name} // ✅ always show selected name
-                      className="w-full border rounded px-1 py-0.5"
-                      onFocus={() => setOpenIndex(i)}
-                      onChange={e => updateField(i, "account_name", e.target.value)}
-                    />
-
-                    {openIndex === i && (
-                      <div
-                        ref={dropdownRef}
-                        className="absolute left-0 right-0 mt-1 bg-white border rounded shadow-xl z-50 max-h-56 overflow-y-auto text-xs"
-                      >
-                        {suggestions.map(acc => (
-                          <div
-                            key={acc.code}
-                            className="px-3 py-2 cursor-pointer hover:bg-blue-100"
-                            onMouseDown={() => {
-                              updateField(i, "account_code", acc.code);
-                              updateField(i, "account_name", acc.name);
-                              setOpenIndex(null);
-                            }}
-                          >
-                            <strong>{acc.code}</strong> — {acc.name}
-                          </div>
-                        ))}
-
-                        {/* CREATE SUBACCOUNT */}
+                  {openIndex === i && suggestions.length > 0 && (
+                    <div
+                      ref={dropdownRef}
+                      className="absolute z-50 bg-white border w-full max-h-60 overflow-auto shadow-lg"
+                    >
+                      {suggestions.map((acc) => (
                         <div
-                          className="px-3 py-2 cursor-pointer text-blue-600 hover:bg-blue-50 border-t"
+                          key={acc.code}
+                          className="px-3 py-2 hover:bg-blue-100 cursor-pointer"
                           onMouseDown={() => {
-                            // choose parent based on current selected code or typed account_code
-                            const parent = findBestParent(row.account_code, effectiveAccounts);
-                            if (!parent) {
-                              alert("Seleccione primero una cuenta padre (ej: 302, 1010103, etc.).");
-                              return;
-                            }
-                            setParentForCreation(parent);
-                            setShowCreateModal(true);
+                            updateField(i, "account_code", acc.code);
+                            updateField(i, "account_name", acc.name);
+                            setOpenIndex(null);
                           }}
                         >
-                          ➕ Crear subcuenta
+                          {acc.code} - {acc.name}
                         </div>
-                      </div>
-                    )}
-                  </td>
+                      ))}
+                    </div>
+                  )}
+                </td>
 
-                  {/* Débito */}
-                  <td className="border p-1 text-right">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full border rounded px-1 py-0.5 text-right"
-                      value={
-                        row._debitInput !== undefined 
-                          ? row._debitInput 
-                          : formatMoneyDisplay(row.debit)}
-                      onFocus={() => {
-                        updateField(i, "_debitInput", row.debit ? String(row.debit) : "");
-                      }}
-                      onChange={e => {
-                        updateField(i, "_debitInput", e.target.value);
-                      }}
-                      onBlur={() => {
-                      const parsed = parseMoneyInput(row._debitInput || "");
-                      setRows(prev => {
+                {/* DEBIT */}
+                <td className="px-3 py-2 text-right">
+                  <input
+                    className="text-right w-full"
+                    value={
+                      row._debitInput !== undefined
+                        ? row._debitInput
+                        : row.debit
+                        ? formatMoneyDisplay(row.debit)
+                        : ""
+                    }
+                    onFocus={() => {
+                      updateField(
+                        i,
+                        "_debitInput",
+                        row.debit ? String(row.debit) : ""
+                      );
+                    }}
+                    onChange={(e) =>
+                      updateField(i, "_debitInput", e.target.value)
+                    }
+                    onBlur={() => {
+                      const val = parseMoneyInput(row._debitInput || "");
+                      setRows((prev) => {
                         const next = [...prev];
                         next[i] = {
                           ...next[i],
-                          debit: parsed,
-                          _debitInput: undefined, // 🔥 clear buffer
+                          debit: val,
+                          credit: 0,
+                          _debitInput: undefined,
                         };
                         return next;
                       });
                     }}
-                    />
-                  </td>
-
-                  {/* Crédito */}
-                  <td className="border p-1 text-right">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full border rounded px-1 py-0.5 text-right"
-                      value={
-                        row._creditInput !== undefined
-                          ? row._creditInput
-                          : formatMoneyDisplay(row.credit)
-                      }
-                      onFocus={() => {
-                        updateField(i, "_creditInput", row.credit ? String(row.credit) : "");
-                      }}
-                      onChange={e => {
-                        updateField(i, "_creditInput", e.target.value);
-                      }}
-                      onBlur={() => {
-                        const parsed = parseMoneyInput(row._creditInput || "");
-                        setRows(prev => {
-                          const next = [...prev];
-                          next[i] = {
-                            ...next[i],
-                            credit: parsed,
-                            _creditInput: undefined,
-                          };
-                          return next;
-                        });
-                      }}
-                    />
-                  </td>
-
-                  {/* Delete */}
-                  <td className="border p-1 text-center">
-                    <button className="text-red-600 hover:text-red-800" onClick={() => removeLine(row.id)}>
-                      ✖
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {/* Totals */}
-            {rows.length > 0 && (
-              <tr className="bg-gray-100 font-semibold">
-                <td className="border p-2 text-right" colSpan={2}>
-                  Totales:
+                  />
                 </td>
-                <td className="border p-2 text-right">{moneyFmt.format(totalDebit)}</td>
-                <td className="border p-2 text-right">{moneyFmt.format(totalCredit)}</td>
-                <td className="border" />
+
+                {/* CREDIT */}
+                <td className="px-3 py-2 text-right">
+                  <input
+                    className="text-right w-full"
+                    value={
+                      row._creditInput !== undefined
+                        ? row._creditInput
+                        : row.credit
+                        ? formatMoneyDisplay(row.credit)
+                        : ""
+                    }
+                    onFocus={() => {
+                      updateField(
+                        i,
+                        "_creditInput",
+                        row.credit ? String(row.credit) : ""
+                      );
+                    }}
+                    onChange={(e) =>
+                      updateField(i, "_creditInput", e.target.value)
+                    }
+                    onBlur={() => {
+                      const val = parseMoneyInput(row._creditInput || "");
+                      setRows((prev) => {
+                        const next = [...prev];
+                        next[i] = {
+                          ...next[i],
+                          credit: val,
+                          debit: 0,
+                          _creditInput: undefined,
+                        };
+                        return next;
+                      });
+                    }}
+                  />
+                </td>
+
+                <td className="text-center">
+                  <button onClick={() => removeLine(row.id)}>✖</button>
+                </td>
               </tr>
-            )}
-          </tbody>
-        </table>
+            );
+          })}
+
+          {/* TOTALS */}
+          {rows.length > 0 && (
+            <tr className="bg-gray-100 font-semibold border-t-2">
+              <td />
+              <td className="text-center">Totales:</td>
+              <td className="text-right">{moneyFmt.format(totalDebit)}</td>
+              <td className="text-right">{moneyFmt.format(totalCredit)}</td>
+              <td />
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* STATUS */}
+      <div className="mt-2">
+        {isBalanced ? (
+          <span className="text-green-600">✔ Balanceado</span>
+        ) : (
+          <span className="text-red-600">
+            ⚠ Diferencia: {diff.toFixed(2)}
+          </span>
+        )}
       </div>
 
-
-      <div className="mt-4 flex justify-end">
+      {/* SAVE */}
+      <div className="mt-4 text-right">
         <button
-          className={`px-4 py-2 rounded text-white ${
-            isBalanced ? "bg-green-600 hover:bg-green-700" : "bg-green-600/40 cursor-not-allowed"
-          }`}
           disabled={!isBalanced}
           onClick={handleSave}
+          className="bg-green-600 text-white px-4 py-2 rounded"
         >
           Confirmar Balance Inicial
         </button>
       </div>
-
-
-      <div className="mt-2 text-sm">
-        {isBalanced ? (
-          <span className="text-green-700">✔ Balanceado</span>
-        ) : (
-          <span className="text-red-600">⚠ No balanceado (D - C = {diff.toFixed(2)})</span>
-        )}
-      </div>
-
-      {parentForCreation && (
-        <CreateSubaccountModal
-          entityId={entityId}
-          parentAccount={parentForCreation}
-          existingAccounts={effectiveAccounts}
-          isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={async (newAccount) => {
-            await refreshAccounts();
-
-            // Auto-select newly created leaf on the open row
-            setRows(prev => {
-              const next = [...prev];
-              const idx = openIndex;
-              if (idx !== null) {
-                next[idx] = {
-                  ...next[idx],
-                  account_code: newAccount.code,
-                  account_name: newAccount.name,
-                };
-              }
-              return next;
-            });
-
-            setShowCreateModal(false);
-            setOpenIndex(null);
-          }}
-        />
-      )}
     </div>
   );
 }

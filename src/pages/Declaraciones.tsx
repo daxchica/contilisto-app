@@ -1,29 +1,38 @@
 // ============================================================================
 // src/pages/Declaraciones.tsx
-// CONTILISTO — SRI Declarations Dashboard
+// CONTILISTO — SRI Declarations Dashboard (PRODUCTION FIXED)
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
+
 import { getDeclarationStatuses } from "@/services/sri/declarationStatusService";
 import { runTaxEngine, TaxEngineResult } from "@/services/sri/taxEngineService";
+
 import Iva104PreviewModal from "@/components/sri/Iva104PreviewModal";
 import AtsPreviewModal from "@/components/sri/AtsPreviewModal";
+
 import { generateIva104 } from "@/services/sri/generateIva104";
 import { generateAtsXml } from "@/services/sri/generateAtsXml";
 
-import type { JournalEntry } from "@/types/JournalEntry";
+import { fetchJournalEntries } from "@/services/journalService";
 import { buildAtsDocuments } from "@/services/sri/atsDocumentAggregator";
+
+import type { JournalEntry } from "@/types/JournalEntry";
 import type { AtsDocument } from "@/types/atsDocument";
 
-type Props = {
-  entries: JournalEntry[];
-};
+// ============================================================================
+// TYPES
+// ============================================================================
 
 type DeclarationStatus = {
   module: "iva104" | "ret103" | "ats";
   status: "pending" | "ready" | "generated";
 };
+
+// ============================================================================
+// UI CARD
+// ============================================================================
 
 interface DeclarationCardProps {
   title: string;
@@ -42,7 +51,6 @@ function DeclarationCard({
   secondaryLabel,
   onPrimaryClick,
 }: DeclarationCardProps) {
-
   const statusColor =
     status === "ready"
       ? "text-green-600"
@@ -69,8 +77,9 @@ function DeclarationCard({
 
       <div className="mt-4 flex gap-2">
         <button
-          onClick={onPrimaryClick} 
-          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">
+          onClick={onPrimaryClick}
+          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
           {primaryLabel}
         </button>
 
@@ -82,56 +91,73 @@ function DeclarationCard({
   );
 }
 
-export default function Declaraciones({ entries }: Props) {
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
+export default function Declaraciones() {
   const { selectedEntity } = useSelectedEntity();
+  const entityId = selectedEntity?.id ?? null;
 
   const now = new Date();
 
   const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
 
-  const [showIvaPreview, setShowIvaPreview] = useState(false);
-  const [ivaSummary, setIvaSummary] = useState<any | null>(null);
-  
-  const [atsXml, setAtsXml] = useState("");
-
-  const [month, setMonth] = useState(
-    String(now.getMonth() + 1).padStart(2, "0")
-  );
-
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [taxEngineResult, setTaxEngineResult] =
     useState<TaxEngineResult | null>(null);
+
+  const [ivaSummary, setIvaSummary] = useState<any | null>(null);
+  const [showIvaPreview, setShowIvaPreview] = useState(false);
 
   const [atsDocuments, setAtsDocuments] = useState<AtsDocument[]>([]);
   const [showAtsPreview, setShowAtsPreview] = useState(false);
 
+  const [atsXml, setAtsXml] = useState("");
+
   const period = useMemo(() => `${year}-${month}`, [year, month]);
 
-  const entityId: string | null = selectedEntity?.id ?? null;
-
-  // --------------------------------------------------------------------------
-  // RUN TAX ENGINE
-  // --------------------------------------------------------------------------
+  // ==========================================================================
+  // LOAD JOURNAL ENTRIES
+  // ==========================================================================
 
   useEffect(() => {
+    if (!entityId) return;
 
-    if (entityId === null) return;
+    const safeEntityId = entityId;
+    let cancelled = false;
 
-    const safeEntityId: string = entityId;
+    async function loadEntries() {
+      try {
+        const data = await fetchJournalEntries(safeEntityId);
+        if (!cancelled) setEntries(data);
+      } catch (err) {
+        console.error("Error loading journal entries:", err);
+        if (!cancelled) setEntries([]);
+      }
+    }
 
+    loadEntries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entityId]);
+
+  // ==========================================================================
+  // TAX ENGINE
+  // ==========================================================================
+
+  useEffect(() => {
+    if (!entityId) return;
+
+    const safeEntityId = entityId;
     let cancelled = false;
 
     async function runEngine() {
-
-      const result = await runTaxEngine(
-        entries,
-        safeEntityId,
-        period
-      );
-
-      if (!cancelled) {
-        setTaxEngineResult(result);
-      }
+      const result = await runTaxEngine(entries, safeEntityId, period);
+      if (!cancelled) setTaxEngineResult(result);
     }
 
     runEngine();
@@ -139,127 +165,103 @@ export default function Declaraciones({ entries }: Props) {
     return () => {
       cancelled = true;
     };
-
   }, [entries, entityId, period]);
 
-  // --------------------------------------------------------------------------
+  // ==========================================================================
   // DECLARATION STATUS
-  // --------------------------------------------------------------------------
+  // ==========================================================================
 
   const statuses: DeclarationStatus[] = useMemo(() => {
+    if (!entityId) return [];
 
-    if (entityId === null ) return [];
+    const safeEntityId = entityId;
 
-    const safeEntityId: string = entityId;
-
-    return getDeclarationStatuses(
-      entries,
-      safeEntityId,
-      period
-    );
-
+    return getDeclarationStatuses(entries, safeEntityId, period);
   }, [entries, entityId, period]);
 
-  const ivaStatus = statuses.find(s => s.module === "iva104");
-  const retStatus = statuses.find(s => s.module === "ret103");
-  const atsStatus = statuses.find(s => s.module === "ats");
+  const ivaStatus = statuses.find((s) => s.module === "iva104");
+  const retStatus = statuses.find((s) => s.module === "ret103");
+  const atsStatus = statuses.find((s) => s.module === "ats");
 
-  // --------------------------------------------------------------------------
-// IVA GENERATOR
-// --------------------------------------------------------------------------
+  // ==========================================================================
+  // ACTIONS
+  // ==========================================================================
 
-async function handleGenerateIva() {
+  async function handleGenerateIva() {
+    if (!entityId) return;
 
-  if (!entityId) return;
+    const safeEntityId = entityId;
 
-  const safeEntries = Array.isArray(entries) ? entries : [];
+    const periodEntries = entries.filter(
+      (e) => e.date && e.date.slice(0, 7) === period
+    );
 
-  const periodEntries = safeEntries.filter(e =>
-    e.date && e.date.slice(0, 7) === period
-  );
+    if (periodEntries.length === 0) {
+      alert("No existen transacciones contables en este periodo.");
+      return;
+    }
 
-  if (periodEntries.length === 0) {
-    alert("No existen transacciones contables en este periodo.");
-    return;
+    const summary = await generateIva104(entries, safeEntityId, period);
+
+    setIvaSummary(summary);
+    setShowIvaPreview(true);
   }
 
-  const summary = await generateIva104(
-    safeEntries,
-    entityId,
-    period
-  );
+  async function handleGenerateAtsXml() {
+    if (!entityId || !selectedEntity) return;
 
-  setIvaSummary(summary);
-  setShowIvaPreview(true);
-}
+    const safeEntityId = entityId;
 
-async function handleGenerateAtsXml() {
+    const docs = buildAtsDocuments(entries, safeEntityId, period);
 
-  if (!entityId || !selectedEntity) return;
+    if (!docs.length) {
+      alert("No existen documentos para generar ATS en este periodo.");
+      return;
+    }
 
-  const docs = buildAtsDocuments(entries ?? [], entityId, period);
-
-  if (!docs.length) {
-    alert("No existen documentos para generar ATS en este periodo.");
-    return;
+    setAtsDocuments(docs);
+    setShowAtsPreview(true);
   }
 
-  setAtsDocuments(docs);
-  setShowAtsPreview(true);
+  async function handleExportAtsXml() {
+    if (!entityId || !selectedEntity) return;
 
-}
+    const safeEntityId = entityId;
 
-async function handleExportAtsXml() {
+    const xml = await generateAtsXml({
+      entries,
+      entityId: safeEntityId,
+      period,
+      ruc: selectedEntity.ruc ?? "",
+      razonSocial: selectedEntity.name ?? "",
+    });
 
-  if (!entityId || !selectedEntity) return;
+    setAtsXml(xml);
 
-  const xml = await generateAtsXml({
-    entries: entries ?? [],
-    entityId,
-    period,
-    ruc: selectedEntity.ruc ?? "",
-    razonSocial: selectedEntity.name ?? "",
-  });
+    const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
 
-  setAtsXml(xml);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ATS-${period}.xml`;
+    link.click();
 
-  const blob = new Blob([xml], { type: "application/xml;charset=utf-8" });
+    URL.revokeObjectURL(url);
+  }
 
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-
-  link.href = url;
-
-  link.download = `ATS-${period}.xml`;
-
-  link.click();
-
-  URL.revokeObjectURL(url);
-
-}
+  // ==========================================================================
+  // UI
+  // ==========================================================================
 
   return (
     <div className="space-y-6">
 
-      {/* HEADER */}
-
       <div className="bg-white p-6 rounded-xl shadow">
-
         <h1 className="text-2xl font-bold text-[#0A3558]">
           Declaraciones SRI
         </h1>
 
-        <p className="text-gray-600 mt-2">
-          Generación automática de formularios tributarios del SRI usando la
-          información contable registrada.
-        </p>
-
         <div className="mt-4 flex items-center gap-2">
-
-          <label className="text-sm font-semibold text-gray-700">
-            Periodo:
-          </label>
 
           <select
             value={month}
@@ -286,15 +288,8 @@ async function handleExportAtsXml() {
             })}
           </select>
 
-          <div className="ml-3 text-xs text-gray-500">
-            Periodo fiscal: <span className="font-mono">{period}</span>
-          </div>
-
         </div>
-
       </div>
-
-      {/* DECLARATION MODULES */}
 
       <div className="grid md:grid-cols-3 gap-4">
 
@@ -331,6 +326,7 @@ async function handleExportAtsXml() {
         onClose={() => setShowIvaPreview(false)}
         summary={ivaSummary}
       />
+
       <AtsPreviewModal
         open={showAtsPreview}
         documents={atsDocuments}

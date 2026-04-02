@@ -13,8 +13,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, "src"),
     },
+    dedupe: ["react", "react-dom"],
   },
   server: {
     port: 5173,
@@ -22,18 +23,16 @@ export default defineConfig({
     fs: { allow: ['..'] },
   },
   optimizeDeps: {
-    exclude: [
-      "pdfjs-dist/legacy/build/pdf.worker.js",
-      "pdfjs-dist/legacy/build/pdf.js"
-    ],
+    exclude: ["pdfjs-dist"],
   },
 
   build: {
     rollupOptions: {
-      external: [
-        "pdfjs-dist/legacy/build/pdf.worker.js",
-        "pdfjs-dist/legacy/build/pdf.js"
-      ]
-    }
-  }
+      external: ["pdfjs-dist"],
+    },
+  },
+
+  define: {
+    global: "window",
+  },
 });

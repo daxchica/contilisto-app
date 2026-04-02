@@ -1,4 +1,6 @@
 // src/types/payable.ts
+
+import { Timestamp } from "firebase-admin/firestore";
 export type PayableStatus = "pending" | "partial" | "paid" | "inactive";
 
 export type InstallmentStatus = "pending" | "partial" | "paid";
@@ -17,19 +19,24 @@ export interface Payable {
   entityId: string;
   
   transactionId?: string;
-  invoiceNumber: string;
 
+  invoiceNumber: string;
+  invoiceNumberNormalized: string;
+  
+  supplierId?: string;
   supplierName?: string;
   supplierRUC?: string;
-
+  
   account_code: string;
   account_name: string;
 
   issueDate: string;     // "YYYY-MM-DD"
   dueDate?: string;
 
-  termsDays: number;
+  termsDays?: number;
   installments: number;
+
+  currency?: string;
 
   total: number;
   paid: number;
@@ -41,7 +48,7 @@ export interface Payable {
 
   createdFrom: "ai_journal" | "manual_journal" | "sri_invoice" | "journal_rebuild";
 
-  createdAt?: any; // serverTimestamp
-  updatedAt?: any;
+  createdAt?: Timestamp; // serverTimestamp
+  updatedAt?: Timestamp;
 
 }

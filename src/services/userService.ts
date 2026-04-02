@@ -39,6 +39,7 @@ export interface AppUser {
 
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+  plan?: "estudiante" | "contador" | "corporativo";
 }
 
 /* ============================================================

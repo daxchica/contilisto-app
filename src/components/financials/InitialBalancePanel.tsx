@@ -4,12 +4,14 @@
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 import ManualBalanceForm, { Entry as ManualBalanceEntry } from "../ManualBalanceForm";
 import BalancePDFUploader from "../BalancePDFUploader";
 import BalanceSheet from "../BalanceSheet";
 
 import type { JournalEntry, EntrySource } from "../../types/JournalEntry";
 import type { Account } from "../../types/AccountTypes";
+import { deleteJournalEntriesByTransactionId } from "@/services/journalService";
 
 import {
   saveJournalEntries,
@@ -17,6 +19,7 @@ import {
 } from "@/services/journalService";
 import { getDefaultInitialBalanceDate } from "@/utils/dateUtils";
 import { BalanceEntry } from "@/types/BalanceTypes";
+
 
 /* ========================================================================== */
 /* CONFIG                                                                     */
@@ -26,6 +29,9 @@ interface Props {
   entityId: string;
   userIdSafe: string;
   accounts: Account[];
+  disabled?: boolean;
+  initialEntries?: JournalEntry[];
+  editMode?: boolean;
 }
 
 const INITIAL_BALANCE_TX = (entityId: string) =>
@@ -86,6 +92,7 @@ export default function InitialBalancePanel({
   entityId,
   userIdSafe,
   accounts,
+  editMode = false,
 }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [balanceEntries, setBalanceEntries] = useState<JournalEntry[]>([]);
@@ -96,6 +103,7 @@ export default function InitialBalancePanel({
   const [initialBalanceDate, setInitialBalanceDate] = useState<string>(
     getDefaultInitialBalanceDate()
   );
+  const { user } = useAuth();
 
   /* ------------------------------------------------------------------------ */
   /* Detect if Initial Balance exists                                         */
@@ -128,6 +136,24 @@ export default function InitialBalancePanel({
       cancelled = true;
     };
   }, [entityId]);
+
+  useEffect(() => {
+    if (!editMode) return;
+
+    (async () => {
+      const all = await fetchJournalEntries(entityId);
+      const txId = INITIAL_BALANCE_TX(entityId);
+
+      const initial = all.filter(
+        (e) =>
+          e.source === "initial" &&
+          e.transactionId === txId
+      );
+
+      setBalanceEntries(initial);
+      setShowPanel(true); // 👈 force open when editing
+    })();
+  }, [editMode, entityId]);
 
   /* ------------------------------------------------------------------------ */
   /* VALIDATION                                                               */
@@ -182,8 +208,21 @@ export default function InitialBalancePanel({
       (e) => e.source === "initial" && e.transactionId === txId
   );
  
-  if (exists) {
+  if (exists && !editMode) {
     throw new Error("Esta entidad ya tiene un Balance Inicial guardado.");
+  }
+
+  // 🔥 DELETE OLD IF EDITING
+  if (exists && editMode) {
+    if (!user?.uid) {
+      throw new Error("Usuario no autenticado");
+    }
+
+    await deleteJournalEntriesByTransactionId(
+      entityId,
+      txId,
+      user.uid
+    );
   }
 
   const payload: JournalEntry[] = entries.map((e) => ({
@@ -235,11 +274,19 @@ export default function InitialBalancePanel({
         };
       });
 
+
+
       validateInitialBalance(normalized);
 
-      setBalanceEntries(normalized);
+      const enriched = normalized.map((e) => ({
+          ...e,
+          entityId,
+          uid: userIdSafe,
+      }));
 
-      await persistInitialBalance(normalized);
+      setBalanceEntries(enriched);
+
+      await persistInitialBalance(enriched);
 
       setShowSavedMessage(true);
       setTimeout(() => setShowSavedMessage(false), 3000);
@@ -301,12 +348,14 @@ export default function InitialBalancePanel({
   return (
     <div className="mt-8 border rounded shadow p-4 bg-white">
       <div className="flex justify-between items-center">
-        <button
-          onClick={() => setShowPanel((p) => !p)}
-          className="px-4 py-2 bg-blue-700 text-white rounded"
-        >
+        {!editMode && (
+          <button
+            onClick={() => setShowPanel((p) => !p)}
+            className="px-4 py-2 bg-blue-700 text-white rounded"
+          >
           🧾 {showPanel ? "Ocultar" : "Carga el Balance Inicial"}
         </button>
+        )}
 
         {showSavedMessage && (
           <span className="text-green-600 font-semibold">
@@ -315,24 +364,44 @@ export default function InitialBalancePanel({
         )}
       </div>
 
-      {existingInitialBalanceTx && (
-        <div className="mt-3 text-amber-700 bg-amber-50 border rounded p-2">
-          ⚠ Ya existe un Balance Inicial para esta entidad.
-        </div>
-      )}
-
-      {showPanel && !existingInitialBalanceTx && (
+      {showPanel && (
         <div className="mt-4 space-y-6">
-          <ManualBalanceForm
-            entityId={entityId}
-            accounts={accounts}
-            onSubmit={handleManualSubmit}
-            initialBalanceDate={initialBalanceDate}
-            setInitialBalanceDate={setInitialBalanceDate}
-            existingInitialBalanceTx={existingInitialBalanceTx}
-          />
 
-          <BalancePDFUploader onUploadComplete={handleUpload} />
+          {!existingInitialBalanceTx && !editMode && (
+            <>
+              <ManualBalanceForm
+                entityId={entityId}
+                accounts={accounts}
+                onSubmit={handleManualSubmit}
+                initialBalanceDate={initialBalanceDate}
+                setInitialBalanceDate={setInitialBalanceDate}
+                existingInitialBalanceTx={existingInitialBalanceTx}
+              />
+
+              <BalancePDFUploader onUploadComplete={handleUpload} />
+            </>
+          )}
+
+          {/* ========================= */}
+          {/* EDIT MODE (🔥 KEY FIX)    */}
+          {/* ========================= */}
+          {editMode && (
+            <>
+              <ManualBalanceForm
+                entityId={entityId}
+                accounts={accounts}
+                onSubmit={handleManualSubmit}
+                initialBalanceDate={initialBalanceDate}
+                setInitialBalanceDate={setInitialBalanceDate}
+                existingInitialBalanceTx={existingInitialBalanceTx}
+                initialData={balanceEntries} // 👈 REQUIRED
+              />
+            </>
+          )}
+
+          {/* ========================= */}
+          {/* PREVIEW                   */}
+          {/* ========================= */}
 
           {balanceEntries.length > 0 && (
             <div className="border rounded-lg p-4 bg-gray-50">

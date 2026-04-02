@@ -37,6 +37,7 @@ const COLUMNS = [
 interface Props {
   entries: JournalEntry[];
   entityId: string;
+  resultadoDelEjercicio: number;
   startDate?: string;
   endDate?: string;
   showHeader?: boolean;
@@ -131,6 +132,7 @@ function ensureParents(
 export default function BalanceSheet({
   entries,
   entityId,
+  resultadoDelEjercicio,
   startDate,
   endDate,
   showHeader = true,
@@ -140,6 +142,7 @@ export default function BalanceSheet({
   const effectiveStart = startDate ?? getDefaultInitialBalanceDate();
   const fromISO = toISO(effectiveStart);
   const toISODate = toISO(endDate);
+  const resultado = resultadoDelEjercicio ?? 0;
 
   /* ------------------------------------------------------------------------ */
   /* FILTER ENTRIES                                                           */
@@ -169,17 +172,7 @@ export default function BalanceSheet({
   /* CALCULATE RESULTADO DEL EJERCICIO                                       */
   /* ------------------------------------------------------------------------ */
 
-  const resultado = useMemo(() => {
-    const ingresos = filteredEntries
-      .filter((e) => String(e.account_code || "").startsWith("4"))
-      .reduce((acc, e) => acc + safe(e.credit) - safe(e.debit), 0);
-
-    const gastos = filteredEntries
-      .filter((e) => String(e.account_code || "").startsWith("5"))
-      .reduce((acc, e) => acc + safe(e.debit) - safe(e.credit), 0);
-
-    return round2(ingresos - gastos);
-  }, [filteredEntries]);
+ 
 
   /* ------------------------------------------------------------------------ */
   /* BUILD BALANCE SHEET                                                      */

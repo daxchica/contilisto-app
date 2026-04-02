@@ -29,6 +29,8 @@ export interface JournalEntry {
   // NEW: link journal entry to normalized business document
   documentId?: string;
 
+  transactionType?: "invoice" | "payment" | "transfer";
+
   // Compatibility aliases (do not rely on these in new code)
   transaction_id?: string;
 
@@ -73,6 +75,11 @@ export interface JournalEntry {
 
   customer_name?: string;
   customerRUC?: string;
+  
+  supplier_ruc?: string;
+  customer_ruc?: string;
+
+  buyerRUC?: string;
 
   // --------------------------------------------------------------------------
   // TAX INFORMATION (SRI / ATS / IVA)

@@ -4,6 +4,7 @@ import React, { useMemo, useEffect } from "react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { JournalEntry } from "../types/JournalEntry";
+import { useFilteredEntries } from "@/hooks/useFilteredEntries";
 
 interface Props {
   entries: JournalEntry[];
@@ -23,27 +24,19 @@ export default function PnLSummary({
   /* DATE FILTER                                           */
   /* ----------------------------------------------------- */
 
-  const filteredEntries = useMemo(() => {
+  const filteredEntries = useFilteredEntries(entries, {
+    startDate,
+    endDate,
+    excludeInitial: true,
+  });
 
-    if (!startDate && !endDate) return entries;
-
-    const from = startDate ? new Date(startDate) : null;
-    const to = endDate ? new Date(endDate) : null;
-
-    return entries.filter((e) => {
-
-      if (!e.date) return false;
-
-      const d = new Date(e.date);
-
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-
-      return true;
-
-    });
-
-  }, [entries, startDate, endDate]);
+  console.log("PnL DEBUG", {
+  startDate,
+  endDate,
+  totalEntries: entries.length,
+  filteredEntries: filteredEntries.length,
+  sample: entries.slice(0, 3),
+});
 
   /* ----------------------------------------------------- */
   /* FINANCIAL ENGINE                                      */

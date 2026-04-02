@@ -14,6 +14,7 @@ import {
 import AddEntityModal from "@/components/modals/AddEntityModal";
 import EditEntityModal from "@/components/entity/EditEntityModal";
 import { initializeEntityCOA } from "@/services/coaService";
+import { usePlan } from "@/hooks/usePlan";
 
 type CreateEntityPayload = {
   ruc: string;
@@ -27,12 +28,14 @@ type CreateEntityPayload = {
 export default function CompaniesPage() {
   const { user, loading } = useAuth();
   const { selectedEntity, setEntity } = useSelectedEntity();
+  const { plan } = usePlan();
 
   const [entities, setEntities] = useState<Entity[]>([]);
   const [loadingEntities, setLoadingEntities] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntity, setEditingEntity] = useState<Entity | null>(null);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const navigate = useNavigate();
 
@@ -59,25 +62,8 @@ export default function CompaniesPage() {
       return;
     }
 
-    let active = true;
-
-    (async () => {
-      try {
-        setLoadingEntities(true);
-        const data = await fetchEntities();
-        if (!active) return;
-        setEntities(data);
-      } catch (err) {
-        console.error("FETCH ENTITIES ERROR", err);
-      } finally {
-        if (active) setLoadingEntities(false);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [loading, user]);
+    loadEntities();
+  }, [loading, user, loadEntities]);
 
   /* -------------------------------------------------------------------------- */
   /* DELETE ENTITY                                                              */
@@ -90,17 +76,18 @@ export default function CompaniesPage() {
     if (!confirmed) return;
 
     try {
+      setError(null);
+
       await deleteEntity(entity.id!);
 
-      const refreshed = await fetchEntities();
-      setEntities(refreshed);
+      await loadEntities();
 
       if (selectedEntity?.id === entity.id) {
         setEntity(null);
       }
     } catch (err) {
       console.error("DELETE ENTITY ERROR", err);
-      alert("❌ No se pudo eliminar la empresa.");
+      setError("No se pudo eliminar la empresa");
     }
   };
 
@@ -108,57 +95,57 @@ export default function CompaniesPage() {
   /* CREATE ENTITY FLOW                                                         */
   /* -------------------------------------------------------------------------- */
 
-  const handleCreateEntity = async ({
-    ruc,
-    name,
-    entityType,
-    address,
-    phone,
-    email,
-  }: CreateEntityPayload) => {
+  const handleCreateEntity = async (payload: CreateEntityPayload) => {
     if (creating) return;
+
+    // 🚨 PLAN LIMIT
+    if (entities.length >= plan.maxEntities) {
+      alert("Has alcanzado el límite de empresas de tu plan");
+      return;
+    }
+
     setCreating(true);
 
     try {
+      setError(null);
+
       // 1️⃣ Create entity
       const newEntityId = await createEntity({
-        ruc: ruc.trim(),
-        name: name.trim(),
-        type: entityType,
-        address,
-        phone,
-        email,
+        ruc: payload.ruc.trim(),
+        name: payload.name.trim(),
+        type: payload.entityType,
+        address: payload.address,
+        phone: payload.phone,
+        email: payload.email,
       });
 
       // 2️⃣ Initialize COA
       try {
-        await initializeEntityCOA(newEntityId);
-      } catch (err) {
-        console.error("COA INIT FAILED", err);
-        alert(
-          "Empresa creada pero el plan de cuentas no se pudo inicializar."
-        );
-      }
-
-      // 3️⃣ Refresh entities
-      const data = await fetchEntities();
-      setEntities(data);
-
-      const created = data.find((e) => e.id === newEntityId);
-
-      if (created) {
-        setEntity(created);
-        navigate("/dashboard");
-      }
-
-      setShowAddModal(false);
+      await initializeEntityCOA(newEntityId);
     } catch (err) {
-      console.error("CREATE ENTITY ERROR", err);
-      alert("❌ No se pudo crear la empresa.");
-    } finally {
-      setCreating(false);
+      console.error("COA INIT FAILED", err);
+      alert("Empresa creada pero el plan de cuentas no se pudo inicializar.");
     }
-  };
+
+    // 3️⃣ Refresh entities
+    const data = await fetchEntities();
+    setEntities(data);
+
+    const created = data.find((e) => e.id === newEntityId);
+
+    if (created) {
+      setEntity(created);
+      navigate("/dashboard");
+    }
+
+    setShowAddModal(false);
+  } catch (err) {
+    console.error("CREATE ENTITY ERROR", err);
+    alert("❌ No se pudo crear la empresa.");
+  } finally {
+    setCreating(false);
+  }
+};
 
   /* -------------------------------------------------------------------------- */
   /* LOADING UI                                                                 */
@@ -184,10 +171,28 @@ export default function CompaniesPage() {
 
       <button
         onClick={() => setShowAddModal(true)}
-        className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        disabled={entities.length >= plan.maxEntities}
+        className={`mb-4 px-4 py-2 rounded ${
+          entities.length >= plan.maxEntities
+            ? "bg-gray-300 cursor-not-allowed" 
+            : "bg-blue-600 text-white hover:bg-blue-700"
+        }`}
       >
         ➕ Agregar Empresa
       </button>
+
+      {entities.length >= plan.maxEntities && (
+        <p className="text-sm text-red-600 mb-4">
+          Has alcanzado el límite de tu plan. Mejora tu plan para agregar más empresas.
+        </p>
+      )}
+
+      {/* OPTIONAL ERROR DISPLAY (non-intrusive, does not affect UI layout) */}
+      {error && (
+        <div className="mb-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       <table className="w-full border rounded shadow bg-white">
         <thead className="bg-gray-200 text-gray-700">

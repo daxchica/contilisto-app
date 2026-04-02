@@ -4,10 +4,12 @@
 // ============================================================================
 import { Link } from "react-router-dom";
 import { useCallback, useState, useRef, useEffect } from "react";
+import { PlanType } from "@/config/plans";
 import PricingPlans from "../components/PricingPlans";
 import Footer from "../components/footer/Footer";
 import FeatureCards from "../components/FeatureCards";
 import LoginModal from "@/components/modals/LoginModal";
+import CheckoutModal from "@/components/modals/CheckoutModal";
 
 export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -15,6 +17,7 @@ export default function Landing() {
   const [showDemo, setShowDemo] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [showCTA, setShowCTA] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PlanType | null>(null);
 
   const openLogin = useCallback(() => {
     setMobileOpen(false);
@@ -28,10 +31,16 @@ export default function Landing() {
   const scrollToPricing = useCallback(() => {
   setMobileOpen(false);
 
-  const el = document.getElementById("precios");
+  const el = document.getElementById("pricing-cards");
 
   if (el) {
-    const y = el.getBoundingClientRect().top + window.scrollY - 80;
+    const rect = el.getBoundingClientRect();
+
+    const y = 
+      rect.top + 
+      window.scrollY - 
+      window.innerHeight / 2 +
+      rect.height / 2;
 
     window.scrollTo({
       top: y,
@@ -405,9 +414,19 @@ export default function Landing() {
           </p>
           <p className="text-gray-600 text-center mb-16">
           Un contador puede ahorrar mas de 10 horas al mes automatizando el registro de facturas.</p>
-          <PricingPlans />
-
+          <div id="pricing-cards">
+            <PricingPlans onSelectPlan={setSelectedPlan}/>    
+                 
+          </div>
+          {selectedPlan && (
+          <CheckoutModal
+            planType={selectedPlan}
+            onClose={() => setSelectedPlan(null)}
+          />
+        )}
+          
         </section>
+        
       </main>
 
       {showDemo && (
@@ -464,7 +483,7 @@ export default function Landing() {
                   }}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-lg font-semibold shadow-lg"
                 >
-                  Crear Cuenta Gratis
+                  Activa tu Cuenta
                 </button>
 
                 <p className="text-sm text-gray-300 mt-2">

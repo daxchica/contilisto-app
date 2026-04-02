@@ -17,6 +17,8 @@ export default function FinancialsPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [initialEntries, setInitialEntries] = useState<JournalEntry[]>([]);
   const [resultadoDelEjercicio, setResultadoDelEjercicio] = useState(0);
+  const [startDate, setStartDate] = useState("2025-01-01");
+  const [endDate, setEndDate] = useState("2025-12-31");
   
   /* ----------------------- Load Journal Entries ----------------------- */
   useEffect(() => {
@@ -105,7 +107,12 @@ export default function FinancialsPage() {
         <h2 className="text-lg font-bold text-blue-800 mb-2">
           Estado de Resultados
         </h2>
-        <PnLSummary entries={entries} onResultChange={handleResultChange} />
+        <PnLSummary 
+          entries={entries} 
+          startDate={startDate}
+          endDate={endDate}
+          onResultChange={handleResultChange} 
+        />
       </div>
 
       {/* Balance General */}

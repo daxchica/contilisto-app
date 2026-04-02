@@ -27,10 +27,10 @@ import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";
 import AccountsReceivablePage from "@/pages/receivables/AccountReceivables";
 import AccountsReceivableAgingPage from "@/pages/receivables/AccountsReceivableAgingPage";
-import AccountsPayablePage from "@/pages/payables/AccountsPayable";
 import AccountingDashboard from "@/pages/AccountingDashboard";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
+import AccountsPayablePage from "@/pages/AccountsPayablePage";
 
 // Admin
 import AdminLayout from "@/pages/admin/AdminLayout";
@@ -38,6 +38,7 @@ import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
+import AccountsPayableAging from "@/pages/payables/AccountsPayableAging";
 
 export default function AppRoutes() {
   return (
@@ -60,13 +61,14 @@ export default function AppRoutes() {
           <Route path="/facturacion" element={<InvoicePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/configuracion" element={<SettingsPage />} />
+          <Route path="/accountspayable" element={<AccountsPayablePage />} />
           <Route path="/accountsreceivable" element={<AccountsReceivablePage />} />
           <Route path="/accountsreceivables/aging" element={<AccountsReceivableAgingPage />} />
-          <Route path="/accountspayable" element={<AccountsPayablePage />} />
           <Route path="/impuestos" element={<Declaraciones />} />
           <Route path="/flujo-caja" element={<FlujoCaja />} />
           <Route path="/empresas" element={<CompaniesPage />} />
           <Route path="/configuracionSri" element={<SriSettingsPage />} />
+          <Route path="/ap-aging" element={<AccountsPayableAging />} />
         </Route>
       </Route>
 

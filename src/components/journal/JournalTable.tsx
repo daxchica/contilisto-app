@@ -1,11 +1,10 @@
 // src/components/journal/JournalTable.tsx
 // ============================================================================
-// JournalTable — Libro Diario
-// - Responsive (mobile scroll)
-// - Stable row identity
-// - Map-based selection (fast & safe)
-// - Column sorting
-// - PDF export ready
+// JournalTable — Libro Diario (IMPROVED)
+// - Fixed grouping logic
+// - Fixed JSX issues
+// - Added transaction shading
+// - Added visual grouping cues
 // ============================================================================
 
 import React, {
@@ -44,11 +43,6 @@ function fmtMoney(n?: number) {
   });
 }
 
-/**
- * Stable, deterministic row ID
- * - Uses Firestore id if present
- * - Fallback avoids collisions
- */
 function buildRowId(e: JournalEntry, idx: number): string {
   if (e.id && typeof e.id === "string") return e.id;
 
@@ -68,9 +62,6 @@ export default function JournalTable({
   onSelectEntries,
   onDeleteSelected,
 }: Props) {
-  // ---------------------------------------------------------------------------
-  // Sorting state
-  // ---------------------------------------------------------------------------
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDirection, setSortDirection] =
     useState<SortDirection>("desc");
@@ -87,72 +78,93 @@ export default function JournalTable({
   const sortIcon = (key: SortKey) =>
     sortKey === key ? (sortDirection === "asc" ? " 🔼" : " 🔽") : "";
 
-  // ---------------------------------------------------------------------------
-  // Build rows with stable IDs
-  // ---------------------------------------------------------------------------
   const rows = useMemo(
     () => entries.map((e, idx) => ({ e, rowId: buildRowId(e, idx) })),
     [entries]
   );
 
-  // ---------------------------------------------------------------------------
-  // Sorting logic
-  // ---------------------------------------------------------------------------
+  // ✅ FIXED SORT + GROUPING
   const sortedRows = useMemo(() => {
-    if (!sortKey) return rows;
+    let sorted = [...rows];
 
-    return [...rows].sort((a, b) => {
-      const ea = a.e;
-      const eb = b.e;
+    if (sortKey) {
+      sorted.sort((a, b) => {
+        const ea = a.e;
+        const eb = b.e;
 
-      let aVal: any;
-      let bVal: any;
+        let aVal: any;
+        let bVal: any;
 
-      switch (sortKey) {
-        case "date":
-          aVal = Date.parse(ea.date) || 0;
-          bVal = Date.parse(eb.date) || 0;
-          break;
-        case "invoice":
-          aVal = ea.invoice_number ?? ea.documentRef ?? ea.invoice_number ?? "";
-          bVal = eb.invoice_number ?? eb.documentRef ?? eb.invoice_number ?? "";
-          break;
-        case "account_code":
-          aVal = ea.account_code ?? "";
-          bVal = eb.account_code ?? "";
-          break;
-        case "account_name":
-          aVal = ea.account_name ?? "";
-          bVal = eb.account_name ?? "";
-          break;
-        case "debit":
-          aVal = ea.debit ?? 0;
-          bVal = eb.debit ?? 0;
-          break;
-        case "credit":
-          aVal = ea.credit ?? 0;
-          bVal = eb.credit ?? 0;
-          break;
-        default:
-          return 0;
+        switch (sortKey) {
+          case "date":
+            aVal = Date.parse(ea.date) || 0;
+            bVal = Date.parse(eb.date) || 0;
+            break;
+          case "invoice":
+            aVal = ea.invoice_number ?? ea.documentRef ?? "";
+            bVal = eb.invoice_number ?? eb.documentRef ?? "";
+            break;
+          case "account_code":
+            aVal = ea.account_code ?? "";
+            bVal = eb.account_code ?? "";
+            break;
+          case "account_name":
+            aVal = ea.account_name ?? "";
+            bVal = eb.account_name ?? "";
+            break;
+          case "debit":
+            aVal = ea.debit ?? 0;
+            bVal = eb.debit ?? 0;
+            break;
+          case "credit":
+            aVal = ea.credit ?? 0;
+            bVal = eb.credit ?? 0;
+            break;
+          default:
+            return 0;
+        }
+
+        if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    // ✅ GROUPING FIXED
+    let lastKey = "";
+    let groupIndex = -1;
+
+    return sorted.map((row) => {
+      const e = row.e;
+
+      const key =
+        (e as any).transactionId ||
+        e.invoice_number ||
+        e.documentRef ||
+        "no-group";
+
+      const isFirst = key !== lastKey;
+
+      if (isFirst) {
+        groupIndex++;
+        lastKey = key;
       }
 
-      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-      return 0;
+      return {
+        ...row,
+        groupIndex,
+        isFirst,
+      };
     });
   }, [rows, sortKey, sortDirection]);
 
-  // ---------------------------------------------------------------------------
-  // Selection (map-based)
-  // ---------------------------------------------------------------------------
   const [selectedMap, setSelectedMap] =
     useState<Record<string, boolean>>({});
 
   const selectedCount = useMemo(
-  () => Object.keys(selectedMap).length,
-  [selectedMap]
-);
+    () => Object.keys(selectedMap).length,
+    [selectedMap]
+  );
 
   const selectedEntries = useMemo(
     () => sortedRows.filter((r) => selectedMap[r.rowId]).map((r) => r.e),
@@ -163,7 +175,6 @@ export default function JournalTable({
     onSelectEntries?.(selectedEntries);
   }, [selectedEntries, onSelectEntries]);
 
-  // Cleanup selections when data refreshes
   useEffect(() => {
     setSelectedMap((prev) => {
       const next: Record<string, boolean> = {};
@@ -194,9 +205,6 @@ export default function JournalTable({
   const allChecked =
     sortedRows.length > 0 && selectedCount === sortedRows.length;
 
-  // ---------------------------------------------------------------------------
-  // Export PDF
-  // ---------------------------------------------------------------------------
   const exportToPDF = () => {
     const data =
       selectedCount > 0 ? selectedEntries : sortedRows.map((r) => r.e);
@@ -225,141 +233,116 @@ export default function JournalTable({
     doc.save("registros-diario.pdf");
   };
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
   return (
     <div className="w-full">
-      {/* HEADER */}
       <div className="bg-white border-b border-gray-200 rounded-t-xl shadow-sm">
-        <div className="px-3 sm:px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-gray-700">
-            Seleccionados:{" "}
-            <span className="font-semibold">{selectedCount}</span> /{" "}
-            <span className="font-semibold">{sortedRows.length}</span>
+        <div className="px-3 py-3 flex justify-between">
+          <div className="text-sm">
+            Seleccionados: <b>{selectedCount}</b> / {sortedRows.length}
           </div>
 
           <div className="flex gap-2">
-            <button
-              onClick={exportToPDF}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-              type="button"
-            >
-              📄 Exportar PDF
+            <button onClick={exportToPDF} className="bg-blue-600 text-white px-4 py-2 rounded-lg">
+              Exportar PDF
             </button>
 
             {onDeleteSelected && (
               <button
                 onClick={onDeleteSelected}
                 disabled={selectedCount === 0}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-30"
-                type="button"
+                className="bg-red-600 text-white px-4 py-2 rounded-lg disabled:opacity-30"
               >
-                🗑 Eliminar
+                Eliminar
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* TABLE */}
-      <div className="bg-white rounded-b-xl shadow-sm border border-gray-200 border-t-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-[950px] w-full text-xs sm:text-sm">
-            <thead className="sticky top-0 bg-gray-50 z-10">
-              <tr className="border-b text-gray-600 uppercase">
-                <th className="px-3 py-2 w-[40px]">
-                  <input
-                    type="checkbox"
-                    checked={allChecked}
-                    onChange={toggleAll}
-                  />
-                </th>
+      <div className="bg-white border rounded-b-xl overflow-x-auto">
+        <table className="min-w-[950px] w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+              <th onClick={() => handleSort("date")}>Fecha{sortIcon("date")}</th>
+              <th onClick={() => handleSort("invoice")}>Factura{sortIcon("invoice")}</th>
+              <th>Código</th>
+              <th>Cuenta</th>
+              <th className="text-right">Débito</th>
+              <th className="text-right">Crédito</th>
+            </tr>
+          </thead>
 
-                <th
-                  className="px-3 py-2 w-[110px] cursor-pointer"
-                  onClick={() => handleSort("date")}
-                >
-                  Fecha{sortIcon("date")}
-                </th>
-                <th
-                  className="px-3 py-2 w-[140px] cursor-pointer"
-                  onClick={() => handleSort("invoice")}
-                >
-                  Factura{sortIcon("invoice")}
-                </th>
-                <th
-                  className="px-3 py-2 w-[120px] cursor-pointer"
-                  onClick={() => handleSort("account_code")}
-                >
-                  Código{sortIcon("account_code")}
-                </th>
-                <th
-                  className="px-3 py-2 min-w-[260px] cursor-pointer"
-                  onClick={() => handleSort("account_name")}
-                >
-                  Cuenta{sortIcon("account_name")}
-                </th>
-                <th
-                  className="px-3 py-2 w-[140px] text-right cursor-pointer"
-                  onClick={() => handleSort("debit")}
-                >
-                  Débito{sortIcon("debit")}
-                </th>
-                <th
-                  className="px-3 py-2 w-[140px] text-right cursor-pointer"
-                  onClick={() => handleSort("credit")}
-                >
-                  Crédito{sortIcon("credit")}
-                </th>
-              </tr>
-            </thead>
+          <tbody>
+            {sortedRows.map((row, index) => {
+              const { e, rowId, groupIndex, isFirst } = row;
 
-            <tbody>
-              {sortedRows.map(({ e, rowId }) => (
-                <tr
-                  key={rowId}
-                  className="border-b hover:bg-gray-50 transition"
-                >
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={!!selectedMap[rowId]}
-                      onChange={() => toggleRow(rowId)}
-                    />
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{e.date}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {e.invoice_number || e.documentRef || e.description || "-"}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {e.account_code}
-                  </td>
-                  <td className="px-3 py-2 truncate max-w-[360px]">
-                    {e.account_name}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {fmtMoney(e.debit)}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {fmtMoney(e.credit)}
-                  </td>
-                </tr>
-              ))}
+              const isDebit = (e.debit ?? 0) > 0;
+              const isCredit = (e.credit ?? 0) > 0;
 
-              {sortedRows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="text-center py-8 text-gray-500"
+              return (
+                <React.Fragment key={rowId}>
+                  
+                  {/* ✅ TRANSACTION HEADER (only first row of group) */}
+                  {isFirst && (
+                    <tr className="bg-blue-50 border-t-2 border-blue-300">
+                      <td colSpan={7} className="px-3 py-2 text-xs font-semibold text-blue-900">
+                        📄 {e.invoice_number || e.documentRef || "Sin documento"} 
+                        &nbsp;|&nbsp; 📅 {e.date} 
+                        &nbsp;|&nbsp; 🔁 {(e as any).transactionId || "TX"}
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* ✅ DATA ROW */}
+                  <tr
+                    className={`
+                      border-b
+                      transition-colors
+
+                      ${groupIndex % 2 === 0 ? "bg-gray-50" : "bg-white"}
+
+                      ${isDebit ? "bg-green-50" : ""}
+                      ${isCredit ? "bg-red-50" : ""}
+
+                      hover:bg-blue-100
+                    `}
                   >
-                    No hay registros todavía.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={!!selectedMap[rowId]}
+                        onChange={() => toggleRow(rowId)}
+                      />
+                    </td>
+
+                    <td>{e.date}</td>
+
+                    <td className="font-medium">
+                      {e.invoice_number || e.documentRef || "-"}
+                    </td>
+
+                    <td className="text-gray-700">{e.account_code}</td>
+
+                    <td className="font-medium text-gray-900">
+                      {e.account_name}
+                    </td>
+
+                    {/* ✅ DEBIT */}
+                    <td className="text-right font-semibold text-green-700">
+                      {isDebit ? fmtMoney(e.debit) : ""}
+                    </td>
+
+                    {/* ✅ CREDIT */}
+                    <td className="text-right font-semibold text-red-700">
+                      {isCredit ? fmtMoney(e.credit) : ""}
+                    </td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
