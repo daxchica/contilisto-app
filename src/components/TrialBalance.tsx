@@ -11,8 +11,7 @@ import { hasInitial, getInitialBalanceDate } from "@/utils/journalGuards";
 type Props = {
   entityId: string;
   entries: JournalEntry[];
-  startDate?: string;
-  endDate?: string;
+  
 };
 
 type Amounts = {
@@ -104,8 +103,6 @@ const computeSaldo = (initial: number, debit: number, credit: number) =>
 export default function TrialBalance({
   entityId,
   entries,
-  startDate,
-  endDate,
 }: Props) {
   const [level, setLevel] = useState(5);
   const [expanded, setExpanded] = useState<Set<string>>(
@@ -121,10 +118,7 @@ export default function TrialBalance({
     []
   );
 
-  const entityEntries = useMemo(
-    () => entries.filter((e) => e.entityId === entityId),
-    [entries, entityId]
-  );
+  const entityEntries = entries;
 
   const hasInitialBalance = useMemo(
     () => hasInitial(entityEntries),
@@ -136,8 +130,6 @@ export default function TrialBalance({
     [entries, entityId]
   );
 
-  const fromISO = startDate ? iso(startDate) : initialBalanceDate ?? "";
-  const toISO = endDate ? iso(endDate) : "";
 
   const toggleExpand = (code: string) => {
     setExpanded((prev) => {
@@ -148,24 +140,6 @@ export default function TrialBalance({
     });
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* FILTER ENTRIES                                                           */
-  /* ------------------------------------------------------------------------ */
-
-  const filteredEntries = useMemo(() => {
-    return entries.filter((e) => {
-      if (e.entityId !== entityId) return false;
-
-      if (e.source !== "initial") {
-        const d = iso(e.date);
-        if (!d) return false;
-        if (fromISO && d < fromISO) return false;
-        if (toISO && d > toISO) return false;
-      }
-
-      return true;
-    });
-  }, [entries, entityId, fromISO, toISO]);
 
   /* ------------------------------------------------------------------------ */
   /* EXACT AMOUNTS BY POSTED ACCOUNT                                          */
@@ -174,9 +148,8 @@ export default function TrialBalance({
   const exactAmountsByCode = useMemo(() => {
     const map = new Map<string, Amounts>();
 
-    for (const e of entries) {
-      if (e.entityId !== entityId) continue;
-
+    for (const e of entityEntries) {
+      
       const code = String(e.account_code ?? "").trim();
       if (!code) continue;
 
@@ -191,12 +164,7 @@ export default function TrialBalance({
       if (e.source === "initial") {
         existing.initial += debit - credit;
       }
-      else if (fromISO && d < fromISO) {
-        // movements before the range become opening balance
-        existing.initial += debit - credit;
-      } else {
-        if (toISO && d > toISO) continue;
-
+      else {
         existing.debit += debit;
         existing.credit += credit;
       }
@@ -205,7 +173,7 @@ export default function TrialBalance({
     }
 
     return map;
-  }, [entries, entityId, fromISO, toISO]);
+  }, [entries, entityId]);
 
   /* ------------------------------------------------------------------------ */
   /* ACCOUNT UNIVERSE + TREE                                                  */

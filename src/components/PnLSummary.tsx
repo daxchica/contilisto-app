@@ -8,15 +8,11 @@ import { useFilteredEntries } from "@/hooks/useFilteredEntries";
 
 interface Props {
   entries: JournalEntry[];
-  startDate?: string;
-  endDate?: string;
   onResultChange?: (result: number) => void;
 }
 
 export default function PnLSummary({
   entries,
-  startDate,
-  endDate,
   onResultChange,
 }: Props) {
 
@@ -24,15 +20,9 @@ export default function PnLSummary({
   /* DATE FILTER                                           */
   /* ----------------------------------------------------- */
 
-  const filteredEntries = useFilteredEntries(entries, {
-    startDate,
-    endDate,
-    excludeInitial: true,
-  });
+  const filteredEntries = entries;
 
   console.log("PnL DEBUG", {
-  startDate,
-  endDate,
   totalEntries: entries.length,
   filteredEntries: filteredEntries.length,
   sample: entries.slice(0, 3),
@@ -45,7 +35,7 @@ export default function PnLSummary({
   const summary = useMemo(() => {
 
     const ingresos = filteredEntries
-      .filter((e) => (e.account_code || "").startsWith("4"))
+      .filter((e) => (e.account_code || "").startsWith("7"))
       .reduce(
         (sum, e) => sum + Number(e.credit || 0) - Number(e.debit || 0),
         0

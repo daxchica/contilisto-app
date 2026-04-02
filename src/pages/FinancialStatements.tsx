@@ -223,8 +223,6 @@ const filteredPnLEntries = useMemo(() => {
       <TrialBalance
         entityId={entityId}
         entries={filteredAllEntries}
-        startDate={startDate}
-        endDate={endDate}
       />
     );
   }
@@ -233,8 +231,6 @@ const filteredPnLEntries = useMemo(() => {
     return (
       <PnLSummary
         entries={filteredPnLEntries}
-        startDate={startDate}
-        endDate={endDate}
       />
     );
   }
@@ -244,8 +240,6 @@ const filteredPnLEntries = useMemo(() => {
       <BalanceSheet
         entries={filteredAllEntries}
         entityId={entityId}
-        startDate={startDate}
-        endDate={endDate}
         resultadoDelEjercicio={resultadoDelEjercicio}
       />
     );
