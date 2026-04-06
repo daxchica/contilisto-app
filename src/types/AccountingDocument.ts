@@ -27,6 +27,7 @@ export interface AccountingDocumentTaxRetention {
 export interface AccountingDocument {
   id: string;
   entityId: string;
+  transactionId?: string;
 
   type: AccountingDocumentType;
   source: AccountingDocumentSource;

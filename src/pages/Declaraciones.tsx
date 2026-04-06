@@ -311,9 +311,15 @@ export default function Declaraciones() {
     setActiveAction("ret103");
     
     try {
+
+      if (!taxEngineResult?.ledger?.length) {
+        alert("El motor tributario aún no está listo.");
+        return;
+      }
+
       const summary = generateRet103Summary(
-        taxEngineResult!.ledger, 
-        safeEntityId, 
+        taxEngineResult.ledger,
+        safeEntityId,
         period
       );
 
@@ -329,6 +335,12 @@ export default function Declaraciones() {
 
   function handleViewRet103() {
     if (retSummary) {
+      setShowRetPreview(true);
+      return;
+    }
+
+    if (taxEngineResult?.ret103Summary) {
+      setRetSummary(taxEngineResult.ret103Summary);
       setShowRetPreview(true);
       return;
     }
@@ -351,9 +363,14 @@ export default function Declaraciones() {
 
     setActiveAction("atsPreview");
     try {
+      if (!taxEngineResult?.ledger?.length) {
+        alert("El motor tributario aún no está listo.");
+        return;
+      }
+
       const docs = buildAtsDocuments(
-        taxEngineResult!.ledger, 
-        safeEntityId, 
+        taxEngineResult.ledger,
+        safeEntityId,
         period
       );
 
@@ -378,13 +395,18 @@ export default function Declaraciones() {
       return;
     }
 
+    if (!taxEngineResult?.ledger?.length) {
+          alert("No hay datos para generar el ATS.");
+          return;
+        }
+
     const safeEntityId = entityId;
 
     setActiveAction("atsDownload");
     
     try {
       const xml = await generateAtsXml({
-        ledger: taxEngineResult!.ledger,
+        ledger: taxEngineResult.ledger,
         entityId: safeEntityId,
         period,
         ruc: selectedEntity.ruc ?? "",
@@ -515,7 +537,10 @@ export default function Declaraciones() {
           onPrimaryClick={handleGenerateRet103}
           onSecondaryClick={handleViewRet103}
           primaryDisabled={loadingEntries || activeAction !== null}
-          secondaryDisabled={loadingEntries || !retSummary}
+          secondaryDisabled={
+            loadingEntries || 
+            (!retSummary && !taxEngineResult?.ret103Summary)
+          }
         />
 
         <DeclarationCard
