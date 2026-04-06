@@ -1,4 +1,5 @@
 // src/types/Entity.ts
+
 export type EntityType =
   | "comercial"
   | "primario"
@@ -10,12 +11,43 @@ export type EntityType =
   | "farmacia"
   | "otro";
 
+/* -------------------------------------------------------------------------- */
+/* MEMBERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
 export interface EntityMember {
   uid: string;
   role: "owner" | "accountant";
   invitedBy: string;
   createdAt: number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* TAX CONFIG (🔥 NEW)                                                        */
+/* -------------------------------------------------------------------------- */
+
+export type TaxAccountMap = {
+  // SALES
+  ventas12?: string[];
+  ventas0?: string[];
+  ivaVentas?: string[];
+
+  // PURCHASES
+  compras12?: string[];
+  compras0?: string[];
+  ivaCompras?: string[];
+
+  // IVA RETENTIONS
+  retIvaRecibidas?: string[];
+
+  // FUTURE EXPANSION
+  retRentaRecibidas?: string[];
+  saldoCreditoAnterior?: string[];
+};
+
+/* -------------------------------------------------------------------------- */
+/* ENTITY                                                                     */
+/* -------------------------------------------------------------------------- */
 
 export interface Entity {
   id?: string;            // Firestore document ID
@@ -34,6 +66,9 @@ export interface Entity {
   estab?: string;
   ptoEmi?: string;
   ambienteSri?: 1 | 2;
+
+  /* TAX CONFIG */
+  taxConfig?: TaxAccountMap;
 
   createdAt: number;      // timestamp en milisegundos
   updatedAt?: number;

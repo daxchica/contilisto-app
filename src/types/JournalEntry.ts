@@ -1,115 +1,180 @@
 // ============================================================================
 // src/types/JournalEntry.ts
-// Central accounting entry type — CONTILISTO v1.0
+// Central accounting entry type — CONTILISTO v2.0 (PRODUCTION SAFE)
 // ============================================================================
 
-
-export type EntrySource = 
+export type EntrySource =
   | "vision"
   | "ocr"
-  | "ai" 
-  | "manual" 
+  | "ai"
+  | "manual"
   | "learned"
-  | "edited" 
+  | "edited"
   | "initial"
   | "normalized-sale"
   | "normalized-expense"
   | "placeholder";
-  
-export type JournalType = "expense" | "income" | "liability";
+
+// ============================================================================
+// CORE TRANSACTION TYPES (MANDATORY)
+// ============================================================================
+
+export type TransactionType = "invoice" | "payment" | "transfer";
+
+export type DocumentNature = "sale" | "purchase";
+
+// ============================================================================
+// JOURNAL ENTRY
+// ============================================================================
 
 export interface JournalEntry {
-  // Identifiers
+  // --------------------------------------------------------------------------
+  // IDENTIFIERS
+  // --------------------------------------------------------------------------
   id?: string;
   entityId: string;
+
   uid?: string;
   userIdSafe?: string;
-  transactionId?: string;
 
-  // NEW: link journal entry to normalized business document
+  // 🔴 REQUIRED — backbone of accounting system
+  transactionId: string;
+
+  // 🔴 REQUIRED — defines behavior (AP / AR / BANK)
+  transactionType: TransactionType;
+
+  // 🔴 REQUIRED — defines business meaning (SALE vs PURCHASE)
+  documentNature: DocumentNature;
+
+  // Optional: link to normalized document registry
   documentId?: string;
 
-  transactionType?: "invoice" | "payment" | "transfer";
-
-  // Compatibility aliases (do not rely on these in new code)
+  // Compatibility alias (legacy)
   transaction_id?: string;
 
-  // Core fields
+  // --------------------------------------------------------------------------
+  // CORE DATA
+  // --------------------------------------------------------------------------
   date: string; // YYYY-MM-DD
   description: string;
 
-  // Chart of accounts
+  // --------------------------------------------------------------------------
+  // CHART OF ACCOUNTS
+  // --------------------------------------------------------------------------
   account_code: string;
   account_name: string;
 
-  // Amounts
+  // --------------------------------------------------------------------------
+  // AMOUNTS
+  // --------------------------------------------------------------------------
   debit?: number;
   credit?: number;
 
-  // Optional classification
-  type?: JournalType;
-
-  // Invoice metadata (optional)
+  // --------------------------------------------------------------------------
+  // DOCUMENT / INVOICE METADATA
+  // --------------------------------------------------------------------------
   invoice_number?: string;
   invoice_number_normalized?: string;
   documentRef?: string;
-  
+
   issuerRUC?: string;
   issuerName?: string;
+
   supplier_name?: string;
-  invoiceDate?: string;
-  entityRUC?: string;
-  
-  // Traceability (Bank Book -> Journal)
-  bankMovementId?: string; // links to entities/{entityId}/bankMovements/{bankMovementId}
-
-  // Notes / UI
-  comment?: string;
-
-  // Source
-  source?: EntrySource;
-  isManual?: boolean;
-
-  createdAt?: number;
-  updatedAt?: number;
+  supplier_ruc?: string;
 
   customer_name?: string;
   customerRUC?: string;
-  
-  supplier_ruc?: string;
   customer_ruc?: string;
 
   buyerRUC?: string;
+  entityRUC?: string;
+
+  invoiceDate?: string;
+
+  // --------------------------------------------------------------------------
+  // BANK TRACEABILITY
+  // --------------------------------------------------------------------------
+  bankMovementId?: string;
+
+  // --------------------------------------------------------------------------
+  // UI / NOTES
+  // --------------------------------------------------------------------------
+  comment?: string;
+
+  // --------------------------------------------------------------------------
+  // SOURCE
+  // --------------------------------------------------------------------------
+  source?: EntrySource;
+  isManual?: boolean;
+
+  // --------------------------------------------------------------------------
+  // TIMESTAMPS
+  // --------------------------------------------------------------------------
+  createdAt?: number;
+  updatedAt?: number;
 
   // --------------------------------------------------------------------------
   // TAX INFORMATION (SRI / ATS / IVA)
   // --------------------------------------------------------------------------
-
   tax?: {
+    // ================================
+    // DOCUMENT (SRI CORE)
+    // ================================
+    document?: {
+      type?: string;              // "01" invoice, "04" credit note
+      authorization?: string;     // clave de acceso (49 digits)
+      establishment?: string;     // 001
+      emissionPoint?: string;     // 002
+      sequential?: string;        // 000000123
+    };
 
-    // VAT classification
-    taxCode?: string;          // IVA12, IVA0, ICE, etc.
+    // ================================
+    // SUPPLIER / CUSTOMER (ATS)
+    // ================================
+    supplier?: {
+      ruc?: string;
+      name?: string;
+      identificationType?: string; // "04" RUC, "05" cedula
+    };
 
-    // SRI document info
-    documentType?: string;     // 01 invoice, 04 credit note, etc.
-    authorizationNumber?: string;
+    // ================================
+    // PAYMENT (ATS)
+    // ================================
+    payment?: {
+      method?: string; // formaPago SRI
+    };
 
-    // Payment information
-    paymentMethod?: string;    // ATS formaPago
+    // ================================
+    // TAX BASES
+    // ================================
+    bases?: Array<{
+      rate: number;   // 0, 12, 15
+      base: number;
+      iva?: number;
+    }>;
 
-    // Tax bases
-    base12?: number;
-    base0?: number;
-    iva?: number;
+    // ================================
+    // ICE
+    // ================================
     ice?: number;
 
-    // Retentions
+    // ================================
+    // TOTAL
+    // ================================
+    total?: number;
+
+    // ================================
+    // RETENTIONS (SRI STRUCTURE)
+    // ================================
     retenciones?: Array<{
       taxType: "IVA" | "RENTA";
-      code: string;
-      percentage: number;
-      base: number;
-      amount: number;
+
+      code: string;        // codRetencion
+      percentage: number;  // porcentajeRetener
+
+      base: number;        // baseImponible
+      amount: number;      // valorRetenido
     }>;
   };
 }

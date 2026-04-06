@@ -98,9 +98,15 @@ const raw_coa: RawAccount[] = [
 
   { code: "2", name: "PASIVO", level: 1, parentCode: null },
   { code: "201", name: "PASIVO CORRIENTE", level: 2, parentCode: "2" },
+  
   { code: "20102", name: "IMPUESTOS POR PAGAR", level: 3, parentCode: "201" },
   { code: "2010201", name: "IVA POR PAGAR", level: 4, parentCode: "20102" },
   { code: "201020101", name: "IVA DEBITO EN VENTAS", level: 5, parentCode: "2010201", postable: true },
+  
+  { code: "2010202", name: "RETENCIONES POR PAGAR", level: 4, parentCode: "20102" },
+  { code: "201020201", name: "RETENCIONES IR POR PAGAR", level: 5, parentCode: "2010202", postable: true },
+  { code: "201020202", name: "RETENCIONES IVA POR PAGAR", level: 5, parentCode: "2010202", postable: true },
+  
   { code: "20103", name: "CUENTAS Y DOCUMENTOS POR PAGAR", level: 3, parentCode: "201" },
   { code: "2010301", name: "LOCALES", level: 4, parentCode: "20103" },
   { code: "201030101", name: "PRÉSTAMOS", level: 5, parentCode: "2010301", postable: true },

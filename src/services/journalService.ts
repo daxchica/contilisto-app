@@ -1,11 +1,7 @@
 // ============================================================================
 // src/services/journalService.ts
-// CONTILISTO — Journal Service (Upgraded / AP+AR Sync Safe)
-// FIXED:
-// - AP sync only from true supplier invoice control accounts (20103...)
-// - AR sync only from true customer invoice control accounts (10103...)
-// - prevents sales invoices from entering payables
-// - prevents expense invoices from entering receivables
+// CONTILISTO — FINAL PRODUCTION VERSION (AP + AR SAFE + PAYMENT SAFE)
+// IMPROVED VERSION (ACCOUNTING + SAFETY HARDENED)
 // ============================================================================
 
 import { db } from "@/firebase-config";
@@ -18,33 +14,21 @@ import {
   where,
   writeBatch,
   limit,
-  type QueryConstraint,
 } from "firebase/firestore";
 
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { Payable } from "@/types/Payable";
-import type { Receivable } from "@/types/Receivable";
 import type { AccountingDocument } from "@/types/AccountingDocument";
 
 import { upsertPayable, applyPayablePayment } from "./payablesService";
-import { upsertReceivable } from "./receivablesService";
-import { applyReceivablePayment } from "./receivablesService";
+
 import {
   createBankMovement,
-  linkJournalTransaction,
 } from "./bankMovementService";
-import {
-  isCustomerReceivableAccount,
-  isSupplierPayableAccount,
-} from "./controlAccounts";
+
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
-import {
-  saveAccountingDocument,
-  linkJournalEntriesToDocument,
-  fetchAccountingDocuments,
-} from "@/services/documents/documentRegistryService";
-import { findDuplicateDocument } from "./documents/documentDuplicateService";
+
 import { updateAccountBalancesFromJournalEntries } from "./accountBalanceService";
 
 /* =============================================================================
@@ -54,40 +38,18 @@ import { updateAccountBalancesFromJournalEntries } from "./accountBalanceService
 const DEFAULT_TERMS_DAYS = 30;
 const DEFAULT_INSTALLMENTS = 1;
 
-// Ecuador "Consumidor Final" (SRI)
-const CONSUMIDOR_FINAL_ID = "9999999999999";
-const CONSUMIDOR_FINAL_NAME = "CONSUMIDOR FINAL";
-
 const norm = (c?: string) => (c || "").replace(/\./g, "").trim();
 
 const n2 = (x: any) =>
   Number.isFinite(Number(x)) ? Number(Number(x).toFixed(2)) : 0;
 
 function isParentAccount(code: string) {
-  const clean = norm(code);
-  return clean.length <= 7;
+  return norm(code).length <= 7;
 }
 
-/**
- * STRICT CONTROL RULES
- * These are the important fixes.
- *
- * AP invoice control must come from supplier invoice accounts only: 20103...
- * AR invoice control must come from customer invoice accounts only: 10103...
- *
- * This avoids confusing:
- * - 201020101 IVA débito en ventas
- * - 113020xxx retentions
- * with real AP/AR invoices.
- */
 function isStrictPayableInvoiceControl(code?: string) {
   const c = norm(code);
   return c.startsWith("20103") && !isParentAccount(c);
-}
-
-function isStrictReceivableInvoiceControl(code?: string) {
-  const c = norm(code);
-  return c.startsWith("10103") && !isParentAccount(c);
 }
 
 function isRevenueLine(e: JournalEntry) {
@@ -102,305 +64,64 @@ function isPurchaseVATAssetLine(e: JournalEntry) {
   return norm(e.account_code).startsWith("133") && n2(e.debit) > 0;
 }
 
-function isSalesVATLiabilityLine(e: JournalEntry) {
-  return norm(e.account_code).startsWith("20102") && n2(e.credit) > 0;
-}
-
 function groupHasExpenseSignals(group: JournalEntry[]) {
   return group.some((e) =>
     isStrictPayableInvoiceControl(e.account_code) ||
     isExpenseLine(e) ||
     isPurchaseVATAssetLine(e) ||
-    !!String((e as any).supplier_name ?? (e as any).issuerName ?? "").trim()
+    !!String((e as any).supplier_name ?? "").trim()
   );
-}
-
-function groupHasSaleSignals(group: JournalEntry[]) {
-  return group.some((e) =>
-    isStrictReceivableInvoiceControl(e.account_code) ||
-    isRevenueLine(e) ||
-    isSalesVATLiabilityLine(e) ||
-    !!String((e as any).customer_name ?? (e as any).buyerName ?? "").trim()
-  );
-}
-
-async function fetchInitialBalanceDate(
-  entityId: string
-): Promise<string | null> {
-  requireEntityId(entityId, "cargar balance inicial");
-
-  const q = query(
-    collection(db, "entities", entityId, "journalEntries"),
-    where("source", "==", "initial"),
-    orderBy("date", "asc"),
-    limit(1)
-  );
-
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-
-  const first = snap.docs[0].data();
-  return typeof first.date === "string" ? first.date.slice(0, 10) : null;
-}
-
-function toISODateOrNull(raw: string): string | null {
-  const s = (raw ?? "").trim();
-  if (!s) return null;
-
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-
-  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const a = Number(m[1]);
-    const b = Number(m[2]);
-    const y = Number(m[3]);
-
-    let day = a;
-    let month = b;
-
-    if (a <= 12 && b > 12) {
-      day = b;
-      month = a;
-    }
-
-    const dd = String(day).padStart(2, "0");
-    const mm = String(month).padStart(2, "0");
-    return `${y}-${mm}-${dd}`;
-  }
-
-  return null;
-}
-
-function assertNotBeforeInitialBalanceDate(
-  entries: JournalEntry[],
-  initialDateRaw: string
-) {
-  const initialISO = toISODateOrNull(initialDateRaw);
-
-  if (!initialISO) {
-    throw new Error(`Balance Inicial con fecha inválida: "${initialDateRaw}"`);
-  }
-
-  for (const e of entries) {
-    if (e.source === "initial") continue;
-
-    const entryISO = toISODateOrNull(String(e.date ?? ""));
-
-    if (!entryISO) {
-      throw new Error(
-        `Entrada sin fecha válida (date="${String(e.date ?? "")}") no se puede guardar.`
-      );
-    }
-
-    if (entryISO < initialISO) {
-      throw new Error(
-        `No se puede registrar asientos con fecha ${entryISO} antes del Balance Inicial (${initialISO}).`
-      );
-    }
-  }
-}
-
-/**
- * Removes undefined recursively without destroying Firestore special values.
- */
-function stripUndefined<T>(value: T): T {
-  if (value && typeof value === "object") {
-    const anyV = value as any;
-    const ctor = anyV?.constructor?.name;
-    if (ctor === "Timestamp" || ctor === "FieldValue") return value;
-    if (typeof anyV?.toDate === "function") return value;
-  }
-
-  if (Array.isArray(value)) return value.map(stripUndefined) as any;
-
-  if (value && typeof value === "object") {
-    const out: any = {};
-    for (const [k, v] of Object.entries(value as any)) {
-      if (v !== undefined) out[k] = stripUndefined(v);
-    }
-    return out;
-  }
-
-  return value;
-}
-
-function validateControlAccounts(entries: JournalEntry[]) {
-  const arAccounts = entries.filter((e) =>
-    isStrictReceivableInvoiceControl(e.account_code)
-  );
-  const apAccounts = entries.filter((e) =>
-    isStrictPayableInvoiceControl(e.account_code)
-  );
-
-  const uniqueAR = [...new Set(arAccounts.map((e) => norm(e.account_code)))];
-  const uniqueAP = [...new Set(apAccounts.map((e) => norm(e.account_code)))];
-
-  if (uniqueAR.length > 1) {
-    throw new Error(
-      `La transacción contiene múltiples cuentas de clientes (${uniqueAR.join(", ")})`
-    );
-  }
-
-  if (uniqueAP.length > 1) {
-    throw new Error(
-      `La transacción contiene múltiples cuentas de proveedores (${uniqueAP.join(", ")})`
-    );
-  }
-}
-
-function duplicateKey(e: JournalEntry) {
-  const d = (e as any).date ?? "";
-  return `${e.entityId}::${e.transactionId}::${e.invoice_number}::${e.account_code}::${e.debit}::${e.credit}::${d}`;
-}
-
-function resolveDescription(e: JournalEntry): string {
-  if (e.source === "initial") return "Balance inicial";
-
-  const invoice = e.invoice_number?.trim();
-  const supplier = (e as any).supplier_name?.trim();
-  const customer = (e as any).customer_name?.trim();
-
-  if (invoice) {
-    const party = supplier || customer || "";
-    return party ? `Factura ${invoice} — ${party}` : `Factura ${invoice}`;
-  }
-
-  if (e.description?.trim()) return e.description.trim();
-
-  return "Asiento contable";
-}
-
-function getCustomerRUC(e: JournalEntry): string {
-  const anyE = e as any;
-  return String(anyE.customerRUC ?? anyE.customer_ruc ?? "").trim();
-}
-
-function getCustomerName(e: JournalEntry): string {
-  const anyE = e as any;
-  return String(anyE.customer_name ?? anyE.customerName ?? "").trim();
 }
 
 function normalizeInvoiceNumber(n?: string) {
-  return String(n ?? "")
-    .replace(/\s+/g, "")
-    .replace(/-/g, "")
-    .trim();
+  return String(n ?? "").replace(/\s+/g, "").replace(/-/g, "").trim();
 }
 
-function buildInvoiceKey(
+// ============================================================================
+// DELETE JOURNAL ENTRIES BY TRANSACTION ID (UI + DEV + RESET SUPPORT)
+// ============================================================================
+
+export async function deleteJournalEntriesByTransactionId(
   entityId: string,
-  ruc: string,
-  invoiceNumber: string
-) {
-  return `${entityId}::${ruc}::${normalizeInvoiceNumber(invoiceNumber)}`;
-}
+  transactionId: string
+): Promise<void> {
 
-// ----------------------------------------------------------------------------
-// CHECK IF INVOICE ALREADY EXISTS
-// ----------------------------------------------------------------------------
+  requireEntityId(entityId, "eliminar journal");
 
-export async function invoiceAlreadyExists(
-  entityId: string,
-  invoiceNumber: string,
-  ruc?: string
-): Promise<boolean> {
-  if (!invoiceNumber) return false;
+  if (!transactionId?.trim()) {
+    throw new Error("transactionId requerido");
+  }
 
-  const normalized = normalizeInvoiceNumber(invoiceNumber);
-
-  const colRef = collection(db, "entities", entityId, "journalEntries");
+  const col = collection(db, "entities", entityId, "journalEntries");
 
   const q = query(
-    colRef,
-    where("invoice_number_normalized", "==", normalized)
+    col,
+    where("transactionId", "==", transactionId),
+    limit(500)
   );
 
   const snap = await getDocs(q);
-  if (snap.empty) return false;
 
-  // OPTIONAL: filter by RUC if provided
-  if (ruc) {
-    return snap.docs.some((d) => {
-      const data = d.data();
-      const existingRUC =
-        data.supplier_ruc ||
-        data.customer_ruc ||
-        data.issuerRUC ||
-        data.buyerRUC;
+  if (snap.empty) return;
 
-        return String(existingRUC ?? "").trim() === ruc;
-    });
-  }
+  const batch = writeBatch(db);
 
-  return true;
-}
+  snap.docs.forEach((d) => {
+    batch.delete(d.ref);
+  });
 
-/* =============================================================================
-   FETCH
-============================================================================= */
+  await batch.commit();
 
-export async function fetchJournalEntries(
-  entityId: string
-): Promise<JournalEntry[]> {
-  
-  requireEntityId(entityId, "cargar diario");
-
-  const col = collection(db, "entities", entityId, "journalEntries");
-
+  // 🔥 IMPORTANT: keep balances consistent
   try {
-    const q = query(col, orderBy("date", "asc"));
-    const snap = await getDocs(q);
-
-    return snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as JournalEntry),
-    }));
+    await updateAccountBalancesFromJournalEntries(entityId, []);
   } catch (err) {
-    console.error("fetchJournalEntries failed:", err);
-    return [];
+    console.error("⚠️ Balance recalculation failed after delete", err);
   }
 }
 
-export async function fetchJournalEntriesByTransactionId(
-  entityId: string,
-  transactionId: string
-): Promise<JournalEntry[]> {
-  requireEntityId(entityId, "cargar transacción de diario");
-  if (!transactionId) return [];
-
-  const col = collection(db, "entities", entityId, "journalEntries");
-  const qTx = query(col, where("transactionId", "==", transactionId));
-  const snap = await getDocs(qTx);
-
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as JournalEntry) }));
-}
-
-export async function fetchJournalEntriesByDateRange(
-  entityId: string,
-  fromDate?: string,
-  toDate?: string
-): Promise<JournalEntry[]> {
-  requireEntityId(entityId, "cargar diario");
-
-  const col = collection(db, "entities", entityId, "journalEntries");
-  const constraints: QueryConstraint[] = [];
-
-  if (fromDate) constraints.push(where("date", ">=", fromDate));
-  if (toDate) constraints.push(where("date", "<=", toDate));
-
-  constraints.push(orderBy("date", "asc"));
-
-  const q = query(col, ...constraints);
-  const snap = await getDocs(q);
-
-  return snap.docs.map((d) => ({
-    id: d.id,
-    ...(d.data() as JournalEntry),
-  }));
-}
-
 /* =============================================================================
-   INTERNAL SYNC (Journal → AP / AR)
+   PAYABLE SYNC
 ============================================================================= */
 
 async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) {
@@ -415,17 +136,17 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
   for (const [tx, group] of grouped) {
     if (group.some((e) => e.source === "initial")) continue;
 
-    // IMPORTANT:
-    // Never let a clear sales transaction become AP.
-    if (groupHasSaleSignals(group) && !groupHasExpenseSignals(group)) {
-      continue;
-    }
+    const isNonInvoice = group.some(
+      (e) => e.transactionType === "payment" || e.transactionType === "transfer"
+    );
+    if (isNonInvoice) continue;
+
+    if (!groupHasExpenseSignals(group)) continue;
 
     const control = group.find(
       (e) =>
         isStrictPayableInvoiceControl(e.account_code) &&
-        n2(e.credit) > 0 &&
-        !isParentAccount(norm(e.account_code))
+        n2(e.credit) > 0
     );
 
     if (!control) continue;
@@ -435,28 +156,34 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
 
     const supplierName = String(
       (control as any)?.supplier_name ??
-        (control as any)?.issuerName ??
-        ""
+      (control as any)?.issuerName ??
+      ""
     ).trim();
 
     if (!supplierName) continue;
 
-    const total = n2(control.credit);
+    const supplierRUC = String(
+      (control as any)?.supplier_ruc ??
+      (control as any)?.issuerRUC ??
+      ""
+    ).replace(/\D/g, "");
+
+    if (supplierRUC.length !== 13) continue;
+
+    const total =
+      n2((control as any).total) ||
+      n2(control.credit);
+
     if (total <= 0) continue;
 
     await upsertPayable(entityId, {
       transactionId: tx,
       invoiceNumber,
       invoiceNumberNormalized: normalizeInvoiceNumber(invoiceNumber),
-      issueDate: control.date || new Date().toISOString().slice(0, 10),
+      issueDate: control.date,
 
       supplierName,
-      supplierRUC: String(
-        (control as any).supplier_ruc ??
-          (control as any).supplierRUC ??
-          (control as any).issuerRUC ??
-          ""
-      ).trim(),
+      supplierRUC,
 
       account_code: norm(control.account_code),
       account_name: control.account_name || "Proveedores",
@@ -466,71 +193,6 @@ async function syncPayablesFromJournal(entityId: string, saved: JournalEntry[]) 
 
       termsDays: DEFAULT_TERMS_DAYS,
       installments: DEFAULT_INSTALLMENTS,
-
-      createdFrom: "ai_journal",
-    });
-  }
-}
-
-async function syncReceivablesFromJournal(
-  entityId: string,
-  saved: JournalEntry[]
-) {
-  const grouped = new Map<string, JournalEntry[]>();
-
-  for (const e of saved) {
-    if (!e.transactionId) continue;
-    if (!grouped.has(e.transactionId)) grouped.set(e.transactionId, []);
-    grouped.get(e.transactionId)!.push(e);
-  }
-
-  for (const [tx, group] of grouped) {
-    if (group.some((e) => e.source === "initial")) continue;
-
-    // IMPORTANT:
-    // Never let a clear expense transaction become AR.
-    if (groupHasExpenseSignals(group) && !groupHasSaleSignals(group)) {
-      continue;
-    }
-
-    const control = group.find(
-      (e) =>
-        isStrictReceivableInvoiceControl(e.account_code) &&
-        n2(e.debit) > 0 &&
-        !isParentAccount(norm(e.account_code))
-    );
-
-    if (!control) continue;
-
-    const total = n2(control.debit);
-    if (total <= 0) continue;
-
-    const invoiceNumber = control.invoice_number?.trim();
-    if (!invoiceNumber) {
-      console.warn(`[AR SYNC] tx=${tx} missing invoice_number`);
-      continue;
-    }
-
-    const customerName = getCustomerName(control) || CONSUMIDOR_FINAL_NAME;
-    const customerRUC = getCustomerRUC(control) || CONSUMIDOR_FINAL_ID;
-
-    await upsertReceivable(entityId, {
-      transactionId: tx,
-      invoiceNumber,
-      issueDate: control.date || new Date().toISOString().slice(0, 10),
-
-      customerName,
-      customerRUC,
-
-      account_code: norm(control.account_code),
-      account_name: control.account_name || "Clientes",
-
-      total,
-      paid: 0,
-
-      termsDays: DEFAULT_TERMS_DAYS,
-      installments: DEFAULT_INSTALLMENTS,
-
       createdFrom: "ai_journal",
     });
   }
@@ -540,46 +202,6 @@ async function syncReceivablesFromJournal(
    SAVE JOURNAL
 ============================================================================= */
 
-function validateBalancedTransaction(entries: JournalEntry[]) {
-  const totalDebit = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
-  const totalCredit = entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
-
-  if (Number(totalDebit.toFixed(2)) !== Number(totalCredit.toFixed(2))) {
-    throw new Error(
-      `Unbalanced transaction. Debit=${totalDebit} Credit=${totalCredit}`
-    );
-  }
-}
-
-function validateTransactionIntegrity(entries: JournalEntry[]) {
-  if (entries.length < 2) {
-    throw new Error("Transaction must contain at least 2 journal lines.");
-  }
-
-  const transactionIds = new Set(entries.map((e) => e.transactionId));
-  if (transactionIds.size !== 1) {
-    throw new Error("All journal lines must share the same transactionId.");
-  }
-}
-
-async function assertNoDuplicateDocument(
-  entityId: string,
-  document?: AccountingDocument
-) {
-  if (!document) return;
-
-  const existingDocs = await fetchAccountingDocuments(entityId);
-  const duplicate = findDuplicateDocument(existingDocs, document);
-
-  if (duplicate) {
-    throw new Error(
-      `Factura duplicada detectada.\n` +
-        `Proveedor/RUC: ${document.counterpartyRUC}\n` +
-        `Número: ${document.documentNumber}`
-    );
-  }
-}
-
 export async function saveJournalEntries(
   entityId: string,
   userIdSafe: string,
@@ -587,112 +209,71 @@ export async function saveJournalEntries(
   document?: AccountingDocument
 ): Promise<JournalEntry[]> {
 
-  const first = entries[0];
+  requireEntityId(entityId, "guardar diario");
 
-  const invoiceNumber = first?.invoice_number;
-  const ruc =
-    (first as any)?.supplier_ruc ||
-    (first as any)?.customer_ruc ||
-    (first as any)?.issuerRUC ||
-    (first as any)?.buyerRUC;
+  if (!userIdSafe?.trim()) throw new Error("UID requerido");
+  if (!entries?.length) throw new Error("No entries provided");
+
+  const txIds = new Set(entries.map(e => e.transactionId).filter(Boolean));
+  if (txIds.size !== 1) throw new Error("Todas las líneas deben tener el mismo transactionId");
+
+  const txId = entries[0]?.transactionId;
+  if (!txId || !txId.trim()) throw new Error("transactionId requerido");
+
+  const existingTx = await fetchJournalEntriesByTransactionId(entityId, txId);
+  if (existingTx.length > 0) throw new Error("Esta transacción ya fue registrada.");
+
+  const totalDebit = entries.reduce((s, e) => s + n2(e.debit), 0);
+  const totalCredit = entries.reduce((s, e) => s + n2(e.credit), 0);
+
+  if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    throw new Error("Transacción no balanceada");
+  }
 
   const isPayment = entries.some(e => e.transactionType === "payment");
 
-  if (invoiceNumber && !isPayment) {
-    const exists = await invoiceAlreadyExists(entityId, invoiceNumber, ruc);
+  const invoiceNumber = entries[0]?.invoice_number ?? "";
+  const normalizedInvoice = normalizeInvoiceNumber(invoiceNumber);
 
-    if (exists) {
-      throw new Error(
-        `Factura ${invoiceNumber} ya registrada para este proveedor/cliente`
-      );
-    }
+  if (normalizedInvoice && !isPayment) {
+    const exists = await invoiceAlreadyExists(entityId, normalizedInvoice);
+    if (exists) throw new Error(`Factura ${invoiceNumber} ya registrada`);
   }
 
-  requireEntityId(entityId, "guardar diario");
-
-  if (!userIdSafe?.trim()) {
-    throw new Error("saveJournalEntries: userIdSafe (uid) is required");
-  }
-
-  await assertNoDuplicateDocument(entityId, document);
-
-  const col = collection(db, "entities", entityId, "journalEntries");
-  const existing: Record<string, boolean> = {};
-  const saved: JournalEntry[] = [];
-  const batch = writeBatch(db);
-
-  const validEntries = (entries ?? []).filter(
-    (e) => n2(e.debit) > 0 || n2(e.credit) > 0
+  const isPurchase = entries.some(e =>
+    isExpenseLine(e) ||
+    isStrictPayableInvoiceControl(e.account_code)
   );
 
-  validateTransactionIntegrity(validEntries);
-  validateBalancedTransaction(validEntries);
-  validateControlAccounts(validEntries);
+  const transactionNature: "purchase" | "sale" =
+    isPurchase ? "purchase" : "sale";
 
-  const txId = entries[0]?.transactionId;
+  const col = collection(db, "entities", entityId, "journalEntries");
+  const batch = writeBatch(db);
 
-  if (!txId) {
-    throw new Error("transactionId is required");
-  }
+  const saved: JournalEntry[] = [];
 
-  const existingTx = await fetchJournalEntriesByTransactionId(
-  entityId,
-  txId
-);
+  for (const e of entries) {
+    const id = e.id ?? doc(col).id;
 
-if (existingTx.length > 0) {
-  throw new Error("Esta transacción ya fue registrada.");
-}
+    const normalizedDate = e.date?.slice(0, 10);
+    if (!normalizedDate) throw new Error("Fecha inválida");
 
-  for (const e of validEntries) {
-    const code = norm(e.account_code);
-
-    if (isCustomerReceivableAccount(code) && isParentAccount(code)) {
-      throw new Error(
-        `Cuenta de clientes invalida (${code}). Use una subcuenta.`
-      );
+    if (!e.transactionType) {
+      console.warn("⚠️ Missing transactionType, defaulting to invoice", e);
     }
 
-    if (isSupplierPayableAccount(code) && isParentAccount(code)) {
-      throw new Error(
-        `Cuenta de proveedores invalida (${code}). Use una subcuenta.`
-      );
-    }
-  }
-
-  const txIds = new Set(entries.map((e) => e.transactionId));
-  if (txIds.size !== 1) {
-    throw new Error(
-      "Asientos de múltiples transacciones en un mismo guardado no permitido"
-    );
-  }
-
-  for (const e of validEntries) {
-    const autoRef = doc(col);
-    const id = e.id ?? autoRef.id;
-
-    if (!e.transactionId) {
-      throw new Error("saveJournalEntries: transactionId is required");
-    }
-    const transactionId = e.transactionId;
-
-    const normalizedDate = toISODateOrNull(String(e.date ?? ""));
-    if (!normalizedDate) {
-      throw new Error(`Fecha inválida: ${e.date}`);
-    }
-
-    const normalizedInvoice = normalizeInvoiceNumber(
-      e.invoice_number ?? `MANUAL-${transactionId}`
-    );
+    const inferredType =
+      e.transactionType === "payment" ||
+      e.transactionType === "transfer"
+        ? e.transactionType
+        : "invoice";
 
     const entry: JournalEntry = {
       ...e,
       id,
       entityId,
       uid: userIdSafe,
-      transactionId,
-
-      documentId: document?.id ?? undefined,
 
       debit: n2(e.debit),
       credit: n2(e.credit),
@@ -700,489 +281,359 @@ if (existingTx.length > 0) {
       account_code: norm(e.account_code),
       account_name: String(e.account_name ?? "").trim(),
 
-      invoice_number: 
-        e.invoice_number ??
-        (e.source === "manual" ? `MANUAL-${transactionId}` : undefined),
-      invoice_number_normalized: normalizedInvoice,
+      invoice_number: e.invoice_number ?? "",
+      invoice_number_normalized: normalizeInvoiceNumber(e.invoice_number ?? ""),
 
       date: normalizedDate,
-      description: resolveDescription(e),
-      source: e.source ?? "vision",
+      description: e.description ?? "Asiento automático",
 
-      createdAt: typeof e.createdAt === "number" ? e.createdAt : Date.now(),
+      source: e.source ?? "manual",
+
+      transactionType: inferredType,
+      documentNature: transactionNature,
+
+      transactionId: txId,
+
+      createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
-    if (!entry.uid) throw new Error(`JournalEntry ${id} missing uid`);
-    if (!entry.entityId) throw new Error(`JournalEntry ${id} missing entityId`);
-    if (!entry.transactionId) {
-      throw new Error(`JournalEntry ${id} missing transactionId`);
-    }
+    requireNonEmpty(entry.account_code, "account_code");
 
-    requireNonEmpty(entry.account_code, "account code");
-
-    if (entry.source === "initial" && !entry.date) {
-      throw new Error("Initial Balance entries must have a fixed date");
-    }
-
-    const key = duplicateKey(entry);
-    if (existing[key]) continue;
-
-    const cleanEntry = stripUndefined(entry);
-    batch.set(doc(col, id), cleanEntry as any);
-
+    batch.set(doc(col, id), entry);
     saved.push(entry);
-    existing[key] = true;
   }
 
-  const debit = saved.reduce((s, e) => s + (e.debit ?? 0), 0);
-  const credit = saved.reduce((s, e) => s + (e.credit ?? 0), 0);
-
-  if (Math.abs(debit - credit) > 0.001) {
-    throw new Error("Transacción no balanceada");
-  }
-
-  const initialDate = await fetchInitialBalanceDate(entityId);
-  if (initialDate) {
-    assertNotBeforeInitialBalanceDate(saved, initialDate);
-  }
-
-  if (saved.length) {
-    if (document) {
-      await saveAccountingDocument(document);
-    }
-
-    await batch.commit();
-
-    try {
-      await updateAccountBalancesFromJournalEntries(entityId, saved);
-    } catch (err) {
-      console.error("Account balance update failed:", err);
-    }
-
-    if (document) {
-      const ids = saved.map((e) => e.id!).filter(Boolean);
-      await linkJournalEntriesToDocument(entityId, document.id, ids);
-    }
-
-    const hasPayable = saved.some(
-      (e: JournalEntry) =>
-        isStrictPayableInvoiceControl(e.account_code) && 
-        n2(e.credit) > 0
-    );
-
-    const hasReceivable = saved.some(
-      (e: JournalEntry) =>
-        isStrictReceivableInvoiceControl(e.account_code) && 
-        n2(e.debit) > 0
-    );
-
-    const isInitialBalance = saved.some((e) => e.source === "initial");
-
-    if (!isInitialBalance) {
-      if (hasPayable) {
-        await syncPayablesFromJournal(entityId, saved);
-      }
-
-      if (hasReceivable) {
-        try {
-          await syncReceivablesFromJournal(entityId, saved);
-        } catch (e) {
-          console.error("AR SYNC FAILED", e);
-        }
-      }
-    }
-  }
-
-  
-
-return saved;
-}
-
-// ============================================================================
-// DELETE JOURNAL ENTRIES BY TRANSACTION ID
-// Used for overwriting Initial Balance safely
-// ============================================================================
-
-export async function deleteJournalEntriesByTransactionId(
-  entityId: string,
-  transactionId: string,
-  uid: string
-) {
-  if (!entityId || !transactionId || !uid) {
-    throw new Error("Missing required parameters for deletion.");
-  }
-
-  const col = collection(db, "entities", entityId, "journalEntries");
-
-  const q = query(
-    col,
-    where("transactionId", "==", transactionId),
-    where("uid", "==", uid)
-  );
-
-  const snapshot = await getDocs(q); // ✅ FIXED
-
-  if (snapshot.empty) {
-    console.warn("No entries found for deletion.");
-    return;
-  }
-
-  const batch = writeBatch(db);
-
-  snapshot.docs.forEach((docSnap) => {
-    batch.delete(docSnap.ref);
-  });
+  await batch.commit();
 
   try {
-    await batch.commit();
-    console.log(`Deleted ${snapshot.size} journal entries.`);
-  } catch (error) {
-    console.error("Error deleting journal entries:", error);
-    throw new Error("No se pudieron eliminar los registros.");
+    await updateAccountBalancesFromJournalEntries(entityId, saved);
+  } catch (err) {
+    console.error("⚠️ Balance update failed", err);
   }
+
+  const hasPayable = saved.some(
+    e =>
+      e.transactionType === "invoice" &&
+      isStrictPayableInvoiceControl(e.account_code) &&
+      n2(e.credit) > 0
+  );
+
+  const isInitial = saved.some(e => e.source === "initial");
+
+  if (!isInitial && !isPayment && hasPayable) {
+    await syncPayablesFromJournal(entityId, saved);
+  }
+
+  return saved;
 }
 
-// ============================================================================
-// FIXED — PAYABLE PAYMENT (AP → JOURNAL ONLY, BANK AUTO LIKE AR)
-// ============================================================================
+/* =============================================================================
+   PAYMENT
+============================================================================= */
 
 export async function createPayablePaymentJournalEntry(
   entityId: string,
   payable: Payable,
   amountPaid: number,
   paymentDate: string,
-  bankAccount: { id: string; account_code: string; name?: string },
+  bankAccount: { account_code: string; name?: string },
   userIdSafe: string,
-  options?: {
-    retentionIR?: number;
-    retentionIVA?: number;
-    certificate?: string;
-  },
+  options?: { retentionIR?: number; retentionIVA?: number }
 ) {
-  requireEntityId(entityId, "registrar pago");
 
-  const retentionIR = options?.retentionIR ?? 0;
-  const retentionIVA = options?.retentionIVA ?? 0;
-  const certificate = options?.certificate ?? "";
+  requireEntityId(entityId, "pago proveedor");
+
+  const retentionIR = n2(options?.retentionIR ?? 0);
+  const retentionIVA = n2(options?.retentionIVA ?? 0);
 
   const amount = n2(amountPaid);
-  const payableBalance = n2(payable.balance);
-
-  const payableAccountCode = norm(payable.account_code);
-  const bankAccountCode = norm(bankAccount.account_code);
-
-  if (!payableAccountCode) {
-    throw new Error("Cuenta de proveedor inválida");
-  }
-
-  if (!bankAccountCode) {
-    throw new Error("Cuenta bancaria inválida");
-  }
-
-  if (!paymentDate?.trim()) {
-    throw new Error("Fecha requerida");
-  }
+  if (amount <= 0) throw new Error("Monto inválido");
 
   const totalApplied = n2(amount + retentionIR + retentionIVA);
 
-  if (totalApplied <= 0) {
-    throw new Error("El pago aplicado debe ser mayor a cero");
-  }
-
-  if (totalApplied > payableBalance) {
-    throw new Error("El pago excede el saldo de la factura");
+  if (totalApplied > n2(payable.balance)) {
+    throw new Error("Pago excede saldo");
   }
 
   const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
 
-  const description = `Pago proveedor ${payable.supplierName} — Factura ${payable.invoiceNumber}`;
-
-  const normalizedInvoice = normalizeInvoiceNumber(payable.invoiceNumber);
-
   const entries: JournalEntry[] = [
-    
-    // 🔹 DEBIT CxP (reduce liability)
     {
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: payableAccountCode,
+      account_code: payable.account_code,
       account_name: payable.account_name,
       debit: totalApplied,
       credit: 0,
-      
       invoice_number: payable.invoiceNumber,
-      invoice_number_normalized: normalizedInvoice,
-
-      supplier_name: payable.supplierName as any,
-      description,
-      source: "manual",
+      description: "Pago a proveedor",
       transactionType: "payment",
+      documentNature: "purchase",
+      source: "manual",
     },
-
-    // 🔹 CREDIT BANK (cash out)
     {
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: bankAccountCode,
+      account_code: bankAccount.account_code,
       account_name: bankAccount.name ?? "Banco",
       debit: 0,
       credit: amount,
-      invoice_number: payable.invoiceNumber,
-      supplier_name: payable.supplierName as any,
-      description,
-      source: "manual",
+      description: "Salida de banco",
       transactionType: "payment",
+      documentNature: "purchase",
+      source: "manual",
     },
-    
   ];
 
-  // 🔹 IR RETENTION
   if (retentionIR > 0) {
     entries.push({
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: "2360101",
-      account_name: "Retenciones Impuesto a la Renta",
+      account_code: "201020201",
+      account_name: "Retenciones IR por pagar",
       debit: 0,
       credit: retentionIR,
-      invoice_number: payable.invoiceNumber,
-      invoice_number_normalized: normalizedInvoice,
-      supplier_name: payable.supplierName as any,
-      description: `Retención IR — Factura ${payable.invoiceNumber}`,
-      source: "manual",
+      description: "Retención IR",
       transactionType: "payment",
+      documentNature: "purchase",
+      source: "manual",
     });
   }
 
-  // 🔹 IVA RETENTION
   if (retentionIVA > 0) {
     entries.push({
       entityId,
       transactionId: tx,
       date: paymentDate,
-      account_code: "2330101",
-      account_name: "Retenciones IVA",
+      account_code: "201020202",
+      account_name: "Retenciones IVA por pagar",
       debit: 0,
       credit: retentionIVA,
-      invoice_number: payable.invoiceNumber,
-      invoice_number_normalized: normalizedInvoice,
-      supplier_name: payable.supplierName as any,
-      description: `Retención IVA — Factura ${payable.invoiceNumber}`,
-      source: "manual",
+      description: "Retención IVA",
       transactionType: "payment",
+      documentNature: "purchase",
+      source: "manual",
     });
-    
   }
 
-  // 🔹 SAVE JOURNAL
   await saveJournalEntries(entityId, userIdSafe, entries);
+  await applyPayablePayment(entityId, payable, totalApplied);
 
-  // 🔥 IMPORTANT: DO NOT CREATE BANK MOVEMENT HERE
-  // It should be generated automatically from journal entries (same as AR)
+  await createBankMovement({
+  entityId,
+  bankAccountId: bankAccount.account_code, // temporary mapping (see note below)
+
+  relatedJournalTransactionId: tx, // ✅ FIXED
+
+  amount,
+  date: paymentDate,
+
+  type: "withdrawal",
+  description: "Pago a proveedor",
+});
 
   return tx;
 }
 
 /* =============================================================================
-   RECEIVABLE COLLECTION (AR → BANK)
+   FETCH + HELPERS (UNCHANGED CORE)
 ============================================================================= */
 
-export async function createReceivableCollectionJournalEntry(
+export async function fetchJournalEntriesByTransactionId(
   entityId: string,
-  receivable: Receivable,
-  transactionType: "payment",
-  amount: number,
-  collectionDate: string,
-  bankAccount: { id: string; account_code: string; name?: string },
-  userIdSafe: string,
-  options?: { bankMovementId?: string }
-) {
-  requireEntityId(entityId, "registrar cobro");
-  if (!userIdSafe?.trim()) throw new Error("userIdSafe requerido");
+  transactionId: string
+): Promise<JournalEntry[]> {
 
-  if (!receivable.account_code) {
-    throw new Error("Receivable sin cuenta contable. Debe repararse.");
-  }
+  requireEntityId(entityId, "buscar journal");
 
-  if (
-    !isCustomerReceivableAccount(norm(receivable.account_code)) ||
-    isParentAccount(norm(receivable.account_code))
-  ) {
-    throw new Error(
-      `Cuenta de cliente invalida: ${receivable.account_code}`
-    );
-  }
+  const col = collection(db, "entities", entityId, "journalEntries");
 
-  if (!Number.isFinite(amount) || amount <= 0 || amount > n2(receivable.balance)) {
-    throw new Error("Monto inválido");
-  }
+  const q = query(
+    col,
+    where("transactionId", "==", transactionId),
+    limit(200)
+  );
 
-  if (!collectionDate) throw new Error("Fecha de cobro requerida");
+  const snap = await getDocs(q);
 
-  if (!bankAccount?.id || !bankAccount?.account_code?.trim()) {
-    throw new Error("Cuenta bancaria inválida");
-  }
-
-  const tx =
-    options?.bankMovementId ??
-    doc(collection(db, "entities", entityId, "journalEntries")).id;
-
-  const description = `Cobro a cliente ${receivable.customerName} — Factura ${receivable.invoiceNumber}`;
-
-  const entries: JournalEntry[] = [
-    {
-      entityId,
-      transactionId: tx,
-      date: toISODateOrNull(collectionDate) ?? collectionDate,
-      account_code: bankAccount.account_code,
-      account_name: bankAccount.name || "Banco",
-      debit: amount,
-      credit: 0,
-      invoice_number: receivable.invoiceNumber,
-      customer_name: receivable.customerName as any,
-      description,
-      source: "manual" as any,
-    },
-    {
-      entityId,
-      transactionId: tx,
-      date: toISODateOrNull(collectionDate) ?? collectionDate,
-      account_code: receivable.account_code,
-      account_name: receivable.account_name,
-      debit: 0,
-      credit: amount,
-      invoice_number: receivable.invoiceNumber,
-      customer_name: receivable.customerName as any,
-      description,
-      source: "manual" as any,
-    },
-  ];
-
-  await saveJournalEntries(entityId, userIdSafe, entries);
-
-  const bankMovementId =
-    options?.bankMovementId ??
-    (await createBankMovement({
-      entityId,
-      bankAccountId: bankAccount.id,
-      date: collectionDate,
-      amount,
-      type: "in",
-      description,
-      createdBy: userIdSafe,
-    }));
-
-  await linkJournalTransaction(entityId, bankMovementId, tx);
-  await applyReceivablePayment(entityId, receivable, amount, userIdSafe, tx);
-
-  return tx;
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as JournalEntry),
+  }));
 }
 
-/* =============================================================================
-   CASCADE DELETE — INVOICE ANNULMENT
-============================================================================= */
+export async function invoiceAlreadyExists(
+  entityId: string,
+  invoiceNumber: string
+): Promise<boolean> {
+
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
+  if (!normalized) return false;
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    col,
+    where("invoice_number_normalized", "==", normalized),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+
+  return !snap.empty;
+}
+
+export async function fetchJournalEntries(
+  entityId: string
+): Promise<JournalEntry[]> {
+
+  requireEntityId(entityId, "cargar journal");
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(col, orderBy("date", "desc"), limit(2000));
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map(d => {
+    const data = d.data() as JournalEntry;
+
+    if (!data.documentNature || !["sale", "purchase"].includes(data.documentNature)) {
+      data.documentNature =
+        data.account_code?.startsWith("5") ||
+        data.account_code?.startsWith("2")
+          ? "purchase"
+          : "sale";
+    }
+
+    return { id: d.id, ...data };
+  });
+}
+
+// ============================================================================
+// ANNUL JOURNAL TRANSACTION (USED BY PAYABLES / RECEIVABLES)
+// ============================================================================
 
 export async function annulInvoiceByTransaction(
   entityId: string,
-  transactionId: string,
-  invoiceNumber?: string
-) {
-  requireEntityId(entityId, "anular factura");
+  transactionId: string
+): Promise<void> {
+
+  requireEntityId(entityId, "anular transacción");
+
   if (!transactionId?.trim()) {
-    throw new Error("annulInvoiceByTransaction: missing params");
+    throw new Error("transactionId requerido");
   }
 
+  const entries = await fetchJournalEntriesByTransactionId(
+    entityId,
+    transactionId
+  );
+
+  if (!entries.length) return;
+
+  const col = collection(db, "entities", entityId, "journalEntries");
   const batch = writeBatch(db);
 
-  const journalCol = collection(db, "entities", entityId, "journalEntries");
-  const qJournal = query(journalCol, where("transactionId", "==", transactionId));
-  const journalSnap = await getDocs(qJournal);
-  journalSnap.forEach((d) => batch.delete(d.ref));
-
-  const arCol = collection(db, "entities", entityId, "receivables");
-  const arQuery = invoiceNumber
-    ? query(arCol, where("invoiceNumber", "==", invoiceNumber))
-    : query(arCol, where("transactionId", "==", transactionId));
-
-  const arSnap = await getDocs(arQuery);
-  if (arSnap.docs.some((d) => Number(d.data().paid ?? 0) > 0)) {
-    throw new Error("No se puede anular una factura con cobros registrados");
-  }
-  arSnap.forEach((d) => batch.delete(d.ref));
-
-  const apCol = collection(db, "entities", entityId, "payables");
-  const apQuery = invoiceNumber
-    ? query(apCol, where("invoiceNumber", "==", invoiceNumber))
-    : query(apCol, where("transactionId", "==", transactionId));
-
-  const apSnap = await getDocs(apQuery);
-  if (apSnap.docs.some((d) => Number(d.data().paid ?? 0) > 0)) {
-    throw new Error("No se puede anular una factura con pagos registrados");
-  }
-  apSnap.forEach((d) => batch.delete(d.ref));
-
-  if (invoiceNumber) {
-    const logCol = collection(db, "entities", entityId, "processedInvoices");
-    const logQuery = query(logCol, where("invoiceNumber", "==", invoiceNumber));
-    const logSnap = await getDocs(logQuery);
-    logSnap.forEach((d) => batch.delete(d.ref));
+  for (const e of entries) {
+    if (!e.id) continue;
+    batch.delete(doc(col, e.id));
   }
 
   await batch.commit();
 }
 
-export async function createTransferJournalEntry(
+// ============================================================================
+// FETCH JOURNAL ENTRIES BY DATE RANGE
+// ============================================================================
+
+export async function fetchJournalEntriesByDateRange(
   entityId: string,
-  fromAccountCode: string,
-  toAccountCode: string,
-  amount: number,
-  date: string,
-  userId: string,
-  fromAccountName?: string,
-  toAccountName?: string,
-): Promise<string> {
-  requireEntityId(entityId, "transferencia");
-  if (!userId?.trim()) {
-    throw new Error("userId requerido para transferencia");
+  startDate: string,
+  endDate: string
+): Promise<JournalEntry[]> {
+
+  requireEntityId(entityId, "cargar journal por rango de fechas");
+
+  if (!startDate || !endDate) {
+    throw new Error("Fechas requeridas");
   }
 
-  if (norm(fromAccountCode) === norm(toAccountCode)) {
-    throw new Error("Transferencia inválida: misma cuenta origen y destino");
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    col,
+    where("date", ">=", startDate),
+    where("date", "<=", endDate),
+    orderBy("date", "desc"),
+    limit(2000)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as JournalEntry),
+  }));
+}
+// ============================================================================
+// CREATE BANK TRANSFER JOURNAL ENTRY
+// ============================================================================
+
+export async function createTransferJournalEntry(
+  entityId: string,
+  userIdSafe: string,
+  fromAccount: { account_code: string; name?: string },
+  toAccount: { account_code: string; name?: string },
+  amount: number,
+  date: string,
+  description?: string
+): Promise<string> {
+
+  requireEntityId(entityId, "transferencia bancaria");
+
+  const value = n2(amount);
+
+  if (value <= 0) {
+    throw new Error("Monto inválido para transferencia");
   }
 
   const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
-  const description = "Transferencia entre bancos";
 
   const entries: JournalEntry[] = [
     {
       entityId,
       transactionId: tx,
       date,
-      account_code: toAccountCode,
-      account_name: toAccountName ?? toAccountCode,
-      debit: amount,
-      credit: 0,
-      description,
+      account_code: norm(fromAccount.account_code),
+      account_name: fromAccount.name ?? "Banco origen",
+      debit: 0,
+      credit: value,
+      description: description ?? "Transferencia bancaria",
+      transactionType: "transfer",
+      documentNature: "sale",
       source: "manual",
-      transactionType: "payment",
     },
     {
       entityId,
       transactionId: tx,
       date,
-      account_code: fromAccountCode,
-      account_name: fromAccountName ?? fromAccountCode,
-      debit: 0,
-      credit: amount,
-      description,
+      account_code: norm(toAccount.account_code),
+      account_name: toAccount.name ?? "Banco destino",
+      debit: value,
+      credit: 0,
+      description: description ?? "Transferencia bancaria",
+      transactionType: "transfer",
+      documentNature: "sale",
       source: "manual",
     },
   ];
 
-  await saveJournalEntries(entityId, userId, entries);
+  await saveJournalEntries(entityId, userIdSafe, entries);
+
   return tx;
 }

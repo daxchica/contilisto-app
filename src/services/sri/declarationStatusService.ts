@@ -37,7 +37,7 @@ export function getDeclarationStatuses(
   // ----------------------------------------------------
 
   const periodEntries = entries.filter(e =>
-    e.entityId === entityId &&
+    true &&
     e.date &&
     e.date.startsWith(period)
   );

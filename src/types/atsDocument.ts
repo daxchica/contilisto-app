@@ -1,3 +1,5 @@
+// src/types/atsDocument.ts
+
 export interface AtsDocument {
 
   id: string;

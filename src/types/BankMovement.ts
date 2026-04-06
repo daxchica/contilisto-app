@@ -1,20 +1,40 @@
+// ============================================================================
+// src/types/BankMovement.ts
+// CONTILISTO — BANK MOVEMENT TYPE (PRODUCTION READY)
+// ============================================================================
+
 export interface BankMovement {
 
   id?: string;
 
   entityId: string;
 
+  // 🔹 ACCOUNTING LINK (CRITICAL)
+  account_code: string;           // 🔥 REQUIRED for reconciliation
+
   bankAccountId: string;
+
+  // 🔹 JOURNAL LINK (UNIFIED)
+  transactionId: string;          // 🔥 MUST match JournalEntry.transactionId
 
   date: string;
 
-  amount: number;
+  amount: number;                 // always positive
 
-  type: "deposit" | "withdrawal" | "transfer" | "out";
+  // 🔹 DIRECTION (ACCOUNTING SAFE)
+  direction: "in" | "out";
+
+  // 🔹 TYPE (BUSINESS CONTEXT)
+  type: 
+    | "deposit"
+    | "withdrawal"
+    | "transfer"
+    | "payment"
+    | "collection";
 
   description?: string;
 
-  // 🔹 reconciliation layer
+  // 🔹 RECONCILIATION LAYER
   statementId?: string;
 
   reconciliationStatus?: 
@@ -22,7 +42,8 @@ export interface BankMovement {
     | "matched"
     | "manual";
 
-  relatedJournalTransactionId?: string;
+  // 🔹 OPTIONAL FUTURE-PROOFING
+  currency?: string;              // default: USD
 
   createdAt?: number;
 }

@@ -87,6 +87,7 @@ type FunctionResponse = {
 
   invoiceDate?: string;
   invoice_number?: string;
+  invoice_number_normalized?: string;
 
   taxableBase?: number;
   taxRate?: 12 | 15 | 0;
@@ -743,7 +744,7 @@ const ACCOUNT_MAP: AccountMap = {
     iva: "201020101",
   },
   expense: {
-    expenseDefault: "502010101",
+    expenseDefault: "502020101",
     iva: "1330101",
     ap: "201030102",
   },
@@ -1027,7 +1028,10 @@ export const handler: Handler = async (event) => {
     }
 
     // Fallback for concept
-    parsed.concepto = parsed.concepto || parsed.invoice_number || "Expense (no description)";
+    parsed.concepto = 
+      parsed.concepto || 
+      `Compra a ${parsed.issuerName}` || 
+      "Gasto sin descripcion";
 
     // ------------------------------------------------------------------
     // ACCOUNTING
@@ -1067,11 +1071,15 @@ export const handler: Handler = async (event) => {
       body: JSON.stringify({
         success: true,
         invoiceType,
+
         __extraction: {
           pageCount,
           source: pageCount > 1 ? "ocr" : "layout",
         },
 
+        // =========================
+        // HEADER DATA
+        // =========================
         issuerRUC: parsed.issuerRUC,
         issuerName: parsed.issuerName,
 
@@ -1079,8 +1087,13 @@ export const handler: Handler = async (event) => {
         buyerRUC: parsed.buyerRUC,
 
         invoice_number: parsed.invoice_number,
+        invoice_number_normalized: parsed.invoice_number?.replace(/\D/g, "") || "",
+
         invoiceDate: parsed.invoiceDate,
 
+        // =========================
+        // TAX STRUCTURE (GLOBAL)
+        // =========================
         taxableBase: parsed.taxableBase,
         taxRate: parsed.taxRate,
         subtotal0: parsed.subtotal0,
@@ -1095,11 +1108,17 @@ export const handler: Handler = async (event) => {
         warnings: allWarnings,
         balance,
 
+        // =========================
+        // JOURNAL ENTRIES
+        // =========================
         entries: lines.map((l) => {
           const base = {
             id: randomUUID(),
             transactionId,
 
+            // -------------------------
+            // ACCOUNTING CORE
+            // -------------------------
             account_code: l.accountCode,
             account_name: l.accountName,
             debit: Number(safeNumber(l.debit).toFixed(2)),
@@ -1109,10 +1128,38 @@ export const handler: Handler = async (event) => {
             issuerName: parsed.issuerName,
             entityRUC: userRUC,
 
+            // -------------------------
+            // DOCUMENT CONTEXT
+            // -------------------------
             invoice_number: parsed.invoice_number,
+            invoice_number_normalized: parsed.invoice_number?.replace(/\D/g, "") || "",
             date: parsed.invoiceDate,
 
+            transactionType: "invoice",
+            documentType: "invoice",
+
+            // -------------------------
+            // TAX DATA (CRITICAL)
+            // -------------------------
+            taxableBase: parsed.taxableBase,
+            taxRate: parsed.taxRate,
+            subtotal0: parsed.subtotal0,
+            nonTaxable: parsed.nonTaxable,
+            iva: parsed.iva,
+            ice: parsed.ice,
+            total: parsed.total,
+
+            // -------------------------
+            // SYSTEM FLAGS (CRITICAL)
+            // -------------------------
+            isPayable: invoiceType === "expense" && l.credit > 0,
+            isReceivable: invoiceType === "sale" && l.debit > 0,
+
+            // -------------------------
+            // TRACEABILITY
+            // -------------------------
             source: "vision",
+            createdAt: new Date().toISOString(),
           };
 
           if (invoiceType === "sale") {

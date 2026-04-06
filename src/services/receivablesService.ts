@@ -203,8 +203,8 @@ export async function upsertReceivable(
       buildInstallmentSchedule(
         total,
         receivable.issueDate,
-        receivable.termsDays,
-        receivable.installments
+        receivable.termsDays ?? 30,
+        receivable.installments ?? 1
       ),
 
     updatedAt: serverTimestamp(),
@@ -426,9 +426,11 @@ export async function annulReceivableInvoice(
     account_name: e.account_name,
     debit: n2(e.credit),
     credit: n2(e.debit),
-    invoice_number: e.invoice_number,
+    invoice_number: e.invoice_number ?? "",
     description: `ANULACIÓN — ${e.description ?? "Factura"}`,
-    source: "manual" as any,
+    source: "manual",
+    transactionType: "invoice",
+    documentNature: "sale",
   }));
 
   await saveJournalEntries(entityId, userIdSafe, reversal);

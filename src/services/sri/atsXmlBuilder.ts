@@ -14,6 +14,10 @@ export interface AtsXmlParams {
   mes?: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
 const escapeXml = (value?: string) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -21,6 +25,16 @@ const escapeXml = (value?: string) =>
     .replace(/>/g, "&gt;");
 
 const num = (v?: number) => Number(v ?? 0).toFixed(2);
+
+const getTpId = (ruc: string) => {
+  if (ruc?.length === 13) return "01"; // RUC
+  if (ruc?.length === 10) return "05"; // Cédula
+  return "06"; // Otros
+};
+
+/* -------------------------------------------------------------------------- */
+/* MAIN                                                                       */
+/* -------------------------------------------------------------------------- */
 
 export function buildAtsXml({
   documents,
@@ -74,11 +88,11 @@ export function buildAtsXml({
     xml += `
     <detalleCompras>
 
-      <tpIdProv>01</tpIdProv>
+      <tpIdProv>${getTpId(doc.ruc)}</tpIdProv>
 
       <idProv>${escapeXml(doc.ruc)}</idProv>
 
-      <tipoComprobante>${escapeXml(doc.documentType)}</tipoComprobante>
+      <tipoComprobante>01</tipoComprobante>
 
       <parteRel>NO</parteRel>
 
@@ -107,16 +121,33 @@ export function buildAtsXml({
       <valorRetencionIva>0.00</valorRetencionIva>
 
       <formasDePago>
-
         <formaPago>20</formaPago>
-
       </formasDePago>
+`;
 
-    </detalleCompras>
-    `;
+    /* 🔥 AIR RETENTIONS (CORRECT LOOP) */
+    if (doc.retenciones?.length) {
+      xml += `<air>`;
+
+      for (const r of doc.retenciones) {
+        xml += `
+        <detalleAir>
+          <codRetAir>${escapeXml(r.code)}</codRetAir>
+          <baseImpAir>${num(r.base)}</baseImpAir>
+          <porcentajeAir>${num(r.percentage)}</porcentajeAir>
+          <valRetAir>${num(r.amount)}</valRetAir>
+        </detalleAir>
+        `;
+      }
+
+      xml += `</air>`;
+    }
+
+    xml += `</detalleCompras>`;
   }
 
   xml += `</compras>`;
+  
 
   /* ===============================
      VENTAS
@@ -129,13 +160,13 @@ export function buildAtsXml({
     xml += `
     <detalleVentas>
 
-      <tpIdCliente>01</tpIdCliente>
+      <tpIdCliente>${getTpId(doc.ruc)}</tpIdCliente>
 
       <idCliente>${escapeXml(doc.ruc)}</idCliente>
 
       <parteRel>NO</parteRel>
 
-      <tipoComprobante>${escapeXml(doc.documentType)}</tipoComprobante>
+      <tipoComprobante>18</tipoComprobante>
 
       <numeroComprobantes>1</numeroComprobantes>
 
@@ -154,9 +185,7 @@ export function buildAtsXml({
       <valorRetencionRenta>0.00</valorRetencionRenta>
 
       <formasDePago>
-
         <formaPago>20</formaPago>
-
       </formasDePago>
 
     </detalleVentas>
