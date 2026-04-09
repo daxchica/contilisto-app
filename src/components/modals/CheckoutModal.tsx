@@ -3,6 +3,8 @@
 // ============================================================================
 import { PlanType, PLANS } from "@/config/plans";
 
+
+
 type Props = {
   planType: PlanType;
   onClose: () => void;
@@ -11,12 +13,55 @@ type Props = {
 export default function CheckoutModal({ planType, onClose }: Props) {
   const plan = PLANS[planType];
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    console.log("Continue clicked");
     console.log("Selected plan:", planType);
 
-    // 👉 NEXT STEP: Stripe Checkout here
-    alert(`Continuar con el plan: ${plan.name}`);
+    try {
+      const priceMap = {
+        estudiante: "price_1TK0iZJ0Edrbdw3kyhIZCS1M",
+        contador: "price_1TK0iYJ0Edrbdw3kBlDsy4eT",
+        corporativo: "price_1TK0iXJ0Edrbdw3kAZOq8thm" // get this from Stripe
+      };
+
+      const priceId = priceMap[planType];
+
+      console.log("Price ID:", priceId);
+
+      const res = await fetch("/.netlify/functions/create-checkout-session", {
+      method: "POST",
+      body: JSON.stringify({
+        priceId,
+        userId: "test_user_123", // later replace with auth user
+        product: "contilisto",
+      }),
+    });
+
+    console.log("📡 Fetch response:", res);
+
+    let data;
+
+    try {
+      data = await res.json();
+    } catch (e) {
+      const text = await res.text();
+      console.error("❌ Non-JSON response:", text);
+      throw new Error("Invalid server response");
+    }
+
+    console.log("✅ Response data:", data);
+
+    if (data.url) {
+      console.log("🚀 Redirecting to Stripe...");
+      window.location.href = data.url;
+    } else {
+      console.error("❌ No URL returned", data);
+    }
+  } catch (error) {
+    console.error("🔥 Checkout error:", error);
+    }
   };
+    
 
   return (
     <div

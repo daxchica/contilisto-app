@@ -1,6 +1,14 @@
+// ============================================================================
 // src/components/PricingPlans.tsx
+// CONTILISTO — Pricing Plans (PRODUCTION READY)
+// ============================================================================
 
+import { useState } from "react";
 import { PlanType } from "@/config/plans";
+
+// ============================================================================
+// WRAPPER
+// ============================================================================
 
 function Wrapper({
   children,
@@ -21,113 +29,119 @@ function Wrapper({
   );
 }
 
-type Props = {
-  onSelectPlan: (plan: PlanType) => void;
-}
+// ============================================================================
+// PROPS
+// ============================================================================
 
-export default function PricingPlans({ onSelectPlan}: Props) {
+type Props = {
+  onSelectPlan: (plan: PlanType) => Promise<void> | void;
+};
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+export default function PricingPlans({ onSelectPlan }: Props) {
+  const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
+
+  async function handleClick(plan: PlanType) {
+    try {
+      setLoadingPlan(plan);
+      await onSelectPlan(plan);
+    } catch (err) {
+      console.error("Plan selection error:", err);
+      alert("Error procesando el plan. Intente nuevamente.");
+    } finally {
+      setLoadingPlan(null);
+    }
+  }
+
+  function isLoading(plan: PlanType) {
+    return loadingPlan === plan;
+  }
+
+  // ==========================================================================
+  // UI
+  // ==========================================================================
+
   return (
     <section className="max-w-6xl mx-auto w-full px-4 sm:px-6 mt-12">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-  
+
         {/* =======================
             PLAN ESTUDIANTE
         ======================= */}
         <Wrapper className="bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-900 flex flex-col text-center">
-  
+
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/70 flex items-center justify-center mb-4">
-            <span className="text-2xl">🌱</span>
+            🌱
           </div>
 
-          <h3 className="text-xl sm:text-2xl font-bold">
-            Estudiante
-          </h3>
+          <h3 className="text-xl sm:text-2xl font-bold">Estudiante</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-emerald-700">
-              $0
-            </span>
+            <span className="text-5xl font-extrabold text-emerald-700">$0</span>
             <span className="text-base ml-2">/ mes</span>
           </div>
 
-          <div className="mt-4">
-            <span className="inline-block bg-white text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full shadow">
-              INCLUYE
-            </span>
-
-            <div className="bg-emerald-600/10 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
-              <p>✅ Hasta 2 empresas</p>
-              <p>✅ 100 movimientos contables / mes</p>
-              <p>✅ Estado de Resultados y Balance General</p>
-              <p>✅ Libro Bancos</p>
-              <p>✅ Exportación PDF / CSV</p>
-              <p>✅ Soporte por email</p>
-            </div>
+          <div className="mt-4 text-sm space-y-2 text-left bg-emerald-600/10 rounded-2xl p-4">
+            <p>✅ Hasta 2 empresas</p>
+            <p>✅ 100 movimientos / mes</p>
+            <p>✅ Estados financieros</p>
+            <p>✅ Libro Bancos</p>
+            <p>✅ Exportación PDF / CSV</p>
+            <p>✅ Soporte email</p>
           </div>
 
-          <p className="mt-3 text-sm text-emerald-800/80">
-            Ideal para aprender y probar el flujo.
-          </p>
-
           <button
-            onClick={() => onSelectPlan("estudiante")}
-            className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold text-center
-                       hover:bg-emerald-700"
+            onClick={() => handleClick("estudiante")}
+            disabled={!!loadingPlan}
+            className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold
+                       hover:bg-emerald-700 disabled:opacity-50"
           >
-            Crear cuenta gratis
+            {isLoading("estudiante") ? "Procesando..." : "Crear cuenta gratis"}
           </button>
-          Sin tarjeta de crédito.
-          Puedes cambiar de plan en cualquier momento.
+
+          <p className="text-xs mt-2">
+            Sin tarjeta de crédito. Puedes cambiar luego.
+          </p>
         </Wrapper>
 
         {/* =======================
-            PLAN CONTADOR (POPULAR)
+            PLAN CONTADOR
         ======================= */}
-        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30 transform scale-105">
-          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-400 text-xs font-semibold px-3 py-1 shadow">
-            Más elegido por contadores
+        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30 scale-105">
+
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-400 text-xs px-3 py-1">
+            Más elegido
           </span>
 
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/15 flex items-center justify-center mb-4">
-            <span className="text-2xl">✨</span>
+            ✨
           </div>
 
-          <h3 className="transform scale-105 ring-2 ring-blue-500 rounded-2xl shadow-xl">
-            Contador
-          </h3>
-          
-          <p>Plan Contador Profesional</p>
-          <p>Para contadores independientes</p>
+          <h3 className="text-2xl font-bold">Contador</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-extrabold">
-              $29
-            </span>
-            <span className="text-base ml-2">/ mes</span>
+            <span className="text-5xl font-extrabold">$29</span>
+            <span className="ml-2">/ mes</span>
           </div>
-            Menos de $1 por día
 
-          <div className="mt-4">
-            <span className="inline-block bg-white text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full shadow">
-              INCLUYE
-            </span>
-
-            <div className="bg-indigo-500/30 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
-              <p>✅ Hasta 10 empresas</p>
-              <p>✅ 500 movimientos / mes</p>
-              <p>✅ Estados financieros automáticos</p>
-              <p>✅ Anexos y declaraciones SRI</p>
-              <p>✅ Facturación electrónica</p>
-              <p>✅ Hasta 3 usuarios por empresa</p>
-            </div>
+          <div className="mt-4 text-sm space-y-2 text-left bg-indigo-500/30 rounded-2xl p-4">
+            <p>✅ Hasta 10 empresas</p>
+            <p>✅ 500 movimientos / mes</p>
+            <p>✅ SRI automático</p>
+            <p>✅ Facturación electrónica</p>
+            <p>✅ 3 usuarios</p>
           </div>
 
           <button
-            onClick={() => onSelectPlan("contador")}
-            className="mt-6 w-full rounded-xl border border-white/70 py-3 font-semibold
-                       hover:bg-white/10"
+            onClick={() => handleClick("contador")}
+            disabled={!!loadingPlan}
+            className="mt-6 w-full rounded-xl border border-white py-3 font-semibold
+                       hover:bg-white/10 disabled:opacity-50"
           >
-            Comenzar con este plan
+            {isLoading("contador") ? "Redirigiendo..." : "Comenzar"}
           </button>
         </Wrapper>
 
@@ -135,44 +149,32 @@ export default function PricingPlans({ onSelectPlan}: Props) {
             PLAN CORPORATIVO
         ======================= */}
         <Wrapper className="bg-gradient-to-br from-slate-800 to-slate-900 text-white flex flex-col text-center">
+
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/10 flex items-center justify-center mb-4">
-            <span className="text-2xl">🚀</span>
+            🚀
           </div>
 
-          <h3 className="text-xl sm:text-2xl font-bold">
-            Corporativo
-          </h3>
-          Para empresas innovadoras.
-
+          <h3 className="text-2xl font-bold">Corporativo</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-4xl sm:text-5xl lg:text-6xl font-extrabold">
-              $69
-            </span>
-            <span className="text-base ml-2">/ mes</span>
+            <span className="text-5xl font-extrabold">$69</span>
+            <span className="ml-2">/ mes</span>
           </div>
 
-          <div className="mt-4">
-            <span className="inline-block bg-white text-slate-900 text-xs font-semibold px-3 py-1 rounded-full shadow">
-              INCLUYE
-            </span>
-
-            <div className="bg-white/10 rounded-2xl p-4 mt-3 text-sm space-y-2 text-left">
-              <p>✅ Soporte dedicado</p>
-              <p>✅ Facturación electrónica completa</p>
-              <p>✅ Declaraciones SRI automáticas</p>
-              <p>✅ Dashboard financiero avanzado</p>
-              <p>✅ Soporte Tecnológico de última generación.</p>
-              <p>✅ Usuarios y límites personalizados</p>
-            </div>
+          <div className="mt-4 text-sm space-y-2 text-left bg-white/10 rounded-2xl p-4">
+            <p>✅ Soporte dedicado</p>
+            <p>✅ SRI automático</p>
+            <p>✅ Dashboard avanzado</p>
+            <p>✅ Límites personalizados</p>
           </div>
 
           <button
-            onClick={() => onSelectPlan("corporativo")}
+            onClick={() => handleClick("corporativo")}
+            disabled={!!loadingPlan}
             className="mt-6 w-full rounded-xl bg-white text-slate-900 py-3 font-semibold
-                       hover:bg-slate-100"
+                       hover:bg-slate-100 disabled:opacity-50"
           >
-            Hablar con ventas
+            {isLoading("corporativo") ? "Redirigiendo..." : "Hablar con ventas"}
           </button>
         </Wrapper>
       </div>
