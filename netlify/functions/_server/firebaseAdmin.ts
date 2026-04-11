@@ -1,12 +1,27 @@
 // =======================================================
 // netlify/functions/_server/firebaseAdmin.ts
-// CONTILISTO — FIREBASE ADMIN INITIALIZATION (FINAL SAFE)
+// CONTILISTO — FIREBASE ADMIN INITIALIZATION (PRODUCTION SAFE)
 // =======================================================
 
 import * as admin from "firebase-admin";
 
-// ✅ LOAD FROM LOCAL FILE (PRIMARY METHOD)
-import serviceAccount from "../firebase-admin.json";
+// =======================================================
+// LOAD SERVICE ACCOUNT FROM ENV (BASE64)
+// =======================================================
+
+function loadServiceAccount() {
+  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+
+  if (!b64) {
+    throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_B64");
+  }
+
+  const json = JSON.parse(
+    Buffer.from(b64.trim(), "base64").toString("utf-8")
+  );
+
+  return validateServiceAccount(json);
+}
 
 // =======================================================
 // VALIDATE SERVICE ACCOUNT
@@ -34,7 +49,7 @@ export function getAdmin(): admin.app.App {
   if (adminInstance) return adminInstance;
 
   if (!admin.apps.length) {
-    const credentials = validateServiceAccount(serviceAccount);
+    const credentials = loadServiceAccount(); // ✅ FIXED
 
     adminInstance = admin.initializeApp({
       credential: admin.credential.cert(credentials),
