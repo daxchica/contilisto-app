@@ -39,6 +39,7 @@ import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 import AccountsPayableAging from "@/pages/payables/AccountsPayableAging";
+import Success from "@/pages/Success";
 
 export default function AppRoutes() {
   return (
@@ -69,6 +70,7 @@ export default function AppRoutes() {
           <Route path="/empresas" element={<CompaniesPage />} />
           <Route path="/configuracionSri" element={<SriSettingsPage />} />
           <Route path="/ap-aging" element={<AccountsPayableAging />} />
+          <Route path="/success" element={<Success />} />
         </Route>
       </Route>
 
