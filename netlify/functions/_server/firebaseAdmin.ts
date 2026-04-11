@@ -1,39 +1,24 @@
 // =======================================================
 // netlify/functions/_server/firebaseAdmin.ts
-// CONTILISTO — FIREBASE ADMIN INITIALIZATION (PRODUCTION SAFE)
+// CONTILISTO — FIREBASE ADMIN INITIALIZATION (FINAL SAFE)
 // =======================================================
 
 import * as admin from "firebase-admin";
 
+// ✅ LOAD FROM LOCAL FILE (PRIMARY METHOD)
+import serviceAccount from "../firebase-admin.json";
 
 // =======================================================
-// LOAD SERVICE ACCOUNT FROM ENV (BASE64 SAFE)
+// VALIDATE SERVICE ACCOUNT
 // =======================================================
 
-function loadServiceAccount()
-{
-  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
-
-  if (!b64)
-    throw new Error(
-      "Missing FIREBASE_SERVICE_ACCOUNT_B64 environment variable"
-    );
-
-  const json = JSON.parse(
-      Buffer
-        .from(b64.trim(), "base64")
-        .toString("utf-8")
-    );
-
+function validateServiceAccount(json: any) {
   if (
     !json.project_id ||
     !json.client_email ||
     !json.private_key
-  )
-  {
-    throw new Error(
-      "Invalid Firebase service account JSON"
-    );
+  ) {
+    throw new Error("Invalid Firebase service account JSON");
   }
 
   return json;
@@ -45,47 +30,44 @@ function loadServiceAccount()
 
 let adminInstance: admin.app.App | undefined;
 
-export function getAdmin(): admin.app.App
-{
-  if (adminInstance)
-    return adminInstance;
+export function getAdmin(): admin.app.App {
+  if (adminInstance) return adminInstance;
 
-  if (!admin.apps.length)
-  {
-    adminInstance =
-      admin.initializeApp({
+  if (!admin.apps.length) {
+    const credentials = validateServiceAccount(serviceAccount);
 
-        credential:
-          admin.credential.cert(
-            loadServiceAccount()
-          ),
+    adminInstance = admin.initializeApp({
+      credential: admin.credential.cert(credentials),
 
-        storageBucket:
-          process.env.FIREBASE_STORAGE_BUCKET ||
-          process.env.VITE_FIREBASE_STORAGE_BUCKET,
-
-      });
+      storageBucket:
+        process.env.FIREBASE_STORAGE_BUCKET ||
+        process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    });
 
     adminInstance.firestore().settings({
       ignoreUndefinedProperties: true,
     });
 
-  }
-  else
-  {
-    adminInstance = admin.apps[0] as admin.app.App;
+  } else {
+    const existingApp = admin.apps[0];
+
+    if (!existingApp) {
+      throw new Error("Firebase admin app not initialized");
+    }
+
+    adminInstance = existingApp;
   }
 
-  return adminInstance!;
+  return adminInstance;
 }
 
-
 // =======================================================
-// EXPORT SINGLETONS (STANDARDIZED NAMES)
+// EXPORT SINGLETONS
 // =======================================================
 
 export const adminApp = getAdmin();
 export const adminDb = adminApp.firestore();
 export const adminStorage = adminApp.storage();
-export { admin }
+
+export { admin };
 export default adminApp;

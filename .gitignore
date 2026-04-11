@@ -21,6 +21,10 @@ backend/.env
 openai_key.rtf
 goggle_cloud_code.rtf
 
+# Secrets (VERY IMPORTANT)
+netlify/functions/firebase-admin.json
+*.service-account.json
+
 # Local-only config
 *.local
 
@@ -37,8 +41,9 @@ goggle_cloud_code.rtf
 # Local Netlify folder
 .netlify
 # Firebase / Google secrets
-Firebase-admin.json
+firebase-admin.json
 *.service-account.json
 # Firebase Admin credentials
 firebase-admin.json
-
+# Netlify
+.netlify
