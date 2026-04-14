@@ -2,11 +2,26 @@
 
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-//const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+// ============================================================
+// INIT STRIPE (SAFE FOR NETLIFY ENV)
+// ============================================================
+
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+if (!stripeSecretKey) {
+  throw new Error("STRIPE_SECRET_KEY is not set in Netlify environment variables");
+}
+
+const stripe = new Stripe(stripeSecretKey);
+
+// ============================================================
+// HANDLER
+// ============================================================
 
 export const handler = async (event: any) => {
-  // ✅ Only allow POST
+  // ==========================================================
+  // METHOD CHECK
+  // ==========================================================
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -14,26 +29,59 @@ export const handler = async (event: any) => {
     };
   }
 
-  console.log("Stripe key:", process.env.STRIPE_SECRET_KEY);
-
   try {
-    // ✅ Safe parsing
-    const body = JSON.parse(event.body || "{}");
+    // =======================================================
+    // SAFE BODY PARSE
+    // =======================================================
+    let body: any = {};
+
+    try {
+        // ✅ Safe parsing
+        body = JSON.parse(event.body || "{}");
+    } catch {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: "Invalid JSON body"}),
+        };
+    }
 
     const { priceId, userId, product, email } = body;
 
-    if (!priceId || !userId) {
+    // ============================================================
+    // VALIDATION
+    // ============================================================
+    if (!priceId || typeof priceId !== "string") {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: "Missing parameters" }),
+        body: JSON.stringify({ error: "Invalid priceId" }),
       };
     }
 
-    // ✅ Base URL fallback (important)
+    if (!userId || typeof userId !== "string") {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Invalid userId" }),
+      };
+    }
+
+    if (email && typeof email !== "string") {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Invalid email" }),
+      };
+    }
+
+    // ============================================================
+    // BASE URL (NETLIFY SAFE)
+    // ============================================================
     const baseUrl =
-      process.env.URL ||
-      process.env.DEPLOY_PRIME_URL ||
-      "http://localhost:8888";
+      process.env.URL ||                 // production domain
+      process.env.DEPLOY_PRIME_URL ||   // preview deploy
+      "http://localhost:8888";          // local fallback
+
+    // ============================================================
+    // CREATE CHECKOUT SESSION
+    // ============================================================
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
