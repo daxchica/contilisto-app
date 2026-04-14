@@ -79,8 +79,8 @@ export default function CheckoutModal({ planType, onClose }: Props) {
       // PAID PLANS — STRIPE
       // =========================================================================
       const priceMap: Record<PaidPlan, string> = {
-        contador: "price_1TK0iYJ0Edrbdw3kBlDsy4eT",
-        corporativo: "price_1TK0iXJ0Edrbdw3kAZOq8thm",
+        contador: "price_1TJu8MJLwhW6OLiHYprCCzRT",
+        corporativo: "price_1TJu8MJLwhW6OLiHX4poYJPZ",
       };
 
       const priceId = priceMap[planType as PaidPlan];
