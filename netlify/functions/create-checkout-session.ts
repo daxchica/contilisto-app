@@ -1,4 +1,5 @@
-import "dotenv/config";
+// netlify/functions/create-checkout-session.ts
+
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);

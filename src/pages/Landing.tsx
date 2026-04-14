@@ -4,12 +4,15 @@
 // ============================================================================
 import { Link } from "react-router-dom";
 import { useCallback, useState, useRef, useEffect } from "react";
+import { auth } from "@/firebase-config";
 import { PlanType } from "@/config/plans";
+import { useNavigate } from "react-router-dom";
 import PricingPlans from "../components/PricingPlans";
 import Footer from "../components/footer/Footer";
 import FeatureCards from "../components/FeatureCards";
 import LoginModal from "@/components/modals/LoginModal";
 import CheckoutModal from "@/components/modals/CheckoutModal";
+import RegisterModal from "@/components/RegisterModal";
 
 export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -18,6 +21,9 @@ export default function Landing() {
   const [scrolled, setScrolled] = useState(false);
   const [showCTA, setShowCTA] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanType | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<PlanType | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   const openLogin = useCallback(() => {
     setMobileOpen(false);
@@ -48,6 +54,63 @@ export default function Landing() {
     });
   }
 }, []);
+
+  
+
+  const handleRequireAuth = (plan: PlanType) => {
+    console.log("🔐 Opening register for:", plan);
+
+    setPendingPlan(plan);
+    setShowRegister(true);
+  };
+
+  const navigate = useNavigate();
+
+  const handleRegisterSuccess = async () => {
+    console.log("✅ Register success");
+
+    const plan = pendingPlan;
+
+    setPendingPlan(null);
+    setShowRegister(false);
+
+    setTimeout(() => {
+
+      if (plan === "estudiante") {
+        console.log("Activating free plan");
+        navigate("/dashboard");
+        return;
+      }
+
+      if (plan) {
+        console.log("Opening checkout for:", pendingPlan);
+
+        setSelectedPlan(plan); // 🔥 continues flow → opens CheckoutModal
+        
+      }
+    }, 0);
+  }
+
+  const handleSelectPlan = async (plan: PlanType) => {
+    if (processing) return;
+    setProcessing(true);
+
+    try {
+      console.log("📦 Plan selected:", plan);
+
+      // ✅ User already logged in
+      if (plan === "estudiante") {
+        console.log("🎉 Activating free plan");
+
+        navigate("/dashboard");
+        return;
+      }
+
+      setSelectedPlan(plan);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -415,10 +478,22 @@ export default function Landing() {
           <p className="text-gray-600 text-center mb-16">
           Un contador puede ahorrar mas de 10 horas al mes automatizando el registro de facturas.</p>
           <div id="pricing-cards">
-            <PricingPlans onSelectPlan={setSelectedPlan}/>    
+            
+            <PricingPlans 
+              onSelectPlan={handleSelectPlan}
+              onRequireAuth={handleRequireAuth}
+            />
+
+            <RegisterModal
+              isOpen={showRegister}
+              onClose={() => setShowRegister(false)}
+              selectedPlan={pendingPlan ?? undefined}
+              onRegisterSuccess={handleRegisterSuccess}
+            />
+
                  
           </div>
-          {selectedPlan && (
+          {selectedPlan && selectedPlan !== "estudiante" && (
           <CheckoutModal
             planType={selectedPlan}
             onClose={() => setSelectedPlan(null)}

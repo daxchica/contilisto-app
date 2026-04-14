@@ -1,10 +1,11 @@
 // ============================================================================
 // src/components/PricingPlans.tsx
-// CONTILISTO — Pricing Plans (PRODUCTION READY)
+// CONTILISTO — Pricing Plans (IMPROVED PRODUCTION)
 // ============================================================================
 
 import { useState } from "react";
 import { PlanType } from "@/config/plans";
+import { auth } from "@/firebase-config";
 
 // ============================================================================
 // WRAPPER
@@ -35,22 +36,40 @@ function Wrapper({
 
 type Props = {
   onSelectPlan: (plan: PlanType) => Promise<void> | void;
+  onRequireAuth?: (plan: PlanType) => void;
 };
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
-export default function PricingPlans({ onSelectPlan }: Props) {
+export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
+  const [error, setError] = useState("");
+  
+  // ==========================================================================
+  // HANDLER
+  // ==========================================================================
 
   async function handleClick(plan: PlanType) {
+    if (loadingPlan) return; // prevent spam clicks
+
     try {
+      setError("");
       setLoadingPlan(plan);
+
+      const user = auth.currentUser;
+
+      if (!user) {
+        // 👉 trigger register modal instead of error
+        onRequireAuth?.(plan);
+        return;
+      }
+
       await onSelectPlan(plan);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Plan selection error:", err);
-      alert("Error procesando el plan. Intente nuevamente.");
+      setError(err?.message || "Error procesando el plan.");
     } finally {
       setLoadingPlan(null);
     }
@@ -66,6 +85,14 @@ export default function PricingPlans({ onSelectPlan }: Props) {
 
   return (
     <section className="max-w-6xl mx-auto w-full px-4 sm:px-6 mt-12">
+
+      {/* 🔴 ERROR MESSAGE */}
+      {error && (
+        <div className="mb-6 text-center text-red-600 font-medium">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
 
         {/* =======================
@@ -95,11 +122,13 @@ export default function PricingPlans({ onSelectPlan }: Props) {
 
           <button
             onClick={() => handleClick("estudiante")}
-            disabled={!!loadingPlan}
+            disabled={isLoading("estudiante")}
             className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold
                        hover:bg-emerald-700 disabled:opacity-50"
           >
-            {isLoading("estudiante") ? "Procesando..." : "Crear cuenta gratis"}
+            {isLoading("estudiante")
+              ? "Activando..."
+              : "Crear cuenta gratis"}
           </button>
 
           <p className="text-xs mt-2">
@@ -137,11 +166,13 @@ export default function PricingPlans({ onSelectPlan }: Props) {
 
           <button
             onClick={() => handleClick("contador")}
-            disabled={!!loadingPlan}
+            disabled={isLoading("contador")}
             className="mt-6 w-full rounded-xl border border-white py-3 font-semibold
                        hover:bg-white/10 disabled:opacity-50"
           >
-            {isLoading("contador") ? "Redirigiendo..." : "Comenzar"}
+            {isLoading("contador")
+              ? "Redirigiendo..."
+              : "Comenzar"}
           </button>
         </Wrapper>
 
@@ -170,11 +201,13 @@ export default function PricingPlans({ onSelectPlan }: Props) {
 
           <button
             onClick={() => handleClick("corporativo")}
-            disabled={!!loadingPlan}
+            disabled={isLoading("corporativo")}
             className="mt-6 w-full rounded-xl bg-white text-slate-900 py-3 font-semibold
                        hover:bg-slate-100 disabled:opacity-50"
           >
-            {isLoading("corporativo") ? "Redirigiendo..." : "Hablar con ventas"}
+            {isLoading("corporativo")
+              ? "Redirigiendo..."
+              : "Hablar con ventas"}
           </button>
         </Wrapper>
       </div>
