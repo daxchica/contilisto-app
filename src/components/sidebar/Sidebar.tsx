@@ -18,12 +18,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const { entities } = useEntities();
   const { selectedEntity, setEntity } = useSelectedEntity();
   
-
   const navigate = useNavigate();
   const location = useLocation();
 
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [openSection, setOpenSection] = useState<string | null>("cartera");
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const closeDrawer = useCallback(() => {
@@ -167,6 +168,42 @@ export default function Sidebar({ onClose }: SidebarProps) {
     );
   };
 
+    const Section = ({
+    id,
+    title,
+    icon,
+    children,
+  }: {
+    id: string;
+    title: string;
+    icon: string;
+    children: React.ReactNode;
+  }) => {
+    const isOpen = openSection === id;
+
+    return (
+      <div>
+        <button
+          onClick={() => setOpenSection(isOpen ? null : id)}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/10 transition"
+          type="button"
+        >
+          <div className="flex items-center gap-3">
+            <span className="w-6">{icon}</span>
+            <span className="font-medium">{title}</span>
+          </div>
+          <span className="text-xs">{isOpen ? "▲" : "▼"}</span>
+        </button>
+
+        {isOpen && (
+          <div className="ml-8 mt-2 flex flex-col space-y-2">
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside className="w-64 h-full bg-[#0A3558] text-white flex flex-col py-6 px-4 overflow-y-auto">
       {/* Mobile close button */}
@@ -245,53 +282,52 @@ export default function Sidebar({ onClose }: SidebarProps) {
       )}
 
       {/* MENU */}
-      <nav className="flex flex-col space-y-4">
+      <nav className="flex flex-col space-y-2">
+
+        {/* Dashboard */}
         <LinkRow to="/dashboard" icon="📊" label="Dashboard" requiresEntity />
 
-        {/* ✅ Unificado */}
+        {/* Contactos */}
         <LinkRow to="/contactos" icon="👥" label="Contactos" requiresEntity />
-        <LinkRow to="/contabilidad" icon="📊" label="Procesamiento Contable" requiresEntity />
-        
 
-        <LinkRow to="/accountsreceivable" icon="💼" label="Documentos x Cobrar" requiresEntity />
-        <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging de Cartera" requiresEntity />
-        
-        <LinkRow to="/accountspayable" icon="💼" label="Documentos x Pagar" requiresEntity />
-        
-        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Impuestos
-        </div>
+        {/* =========================
+            CARTERA (KEY MODULE)
+        ========================= */}
+        <Section id="cartera" title="Cartera" icon="💼">
+          <LinkRow to="/accountsreceivable" icon="📥" label="Por Cobrar" requiresEntity />
+          <LinkRow to="/accountspayable" icon="📤" label="Por Pagar" requiresEntity />
+          <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging" requiresEntity />
+        </Section>
 
-        <LinkRow to="/impuestos" icon="📝" label="Retenciones SRI" requiresEntity />
-        
-        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Contabilidad
-        </div>
+        {/* =========================
+            CONTABILIDAD
+        ========================= */}
+        <Section id="contabilidad" title="Contabilidad" icon="📘">
+          <LinkRow to="/contabilidad" icon="⚙️" label="Procesamiento" requiresEntity />
+          <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
+          <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
+          <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
+        </Section>
 
-        <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
-        <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
-        <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
+        {/* =========================
+            IMPUESTOS
+        ========================= */}
+        <Section id="impuestos" title="Impuestos" icon="🧾">
+          <LinkRow to="/impuestos" icon="📝" label="Retenciones SRI" requiresEntity />
+        </Section>
 
-        {/*<LinkRow
-          to="/facturacion"
-          icon="🧾"
-          label="Facturación Electrónica (SRI)"
-          requiresEntity
-        />*/}
+        {/* =========================
+            CONFIGURACIÓN
+        ========================= */}
+        <Section id="config" title="Configuración" icon="⚙️">
+          {isMaster ? (
+            <LinkRow to="/admin" icon="🛠️" label="Admin Panel" />
+          ) : (
+            <LinkRow to="/empresas" icon="🏢" label="Empresas" />
+          )}
+          <LinkRow to="/configuracionSri" icon="📝" label="SRI" requiresEntity />
+        </Section>
 
-       
-
-        <div className="text-xs uppercase tracking-wide text-gray-300 mt-4 mb-1">
-          Configuración
-        </div>
-
-        {isMaster ? (
-          <LinkRow to="/admin" icon="🛠️" label="Admin Panel" />
-        ) : (
-          <LinkRow to="/empresas" icon="🏢" label="Empresas" />
-        )}
-
-         <LinkRow to="/configuracionSri" icon="📝" label="Configuracion SRI" requiresEntity />
       </nav>
 
       {/* LOGOUT */}

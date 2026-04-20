@@ -11,7 +11,7 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen flex bg-gray-100">
 
       {/* Desktop Sidebar */}
       <aside className="hidden md:fixed md:inset-y-0 md:w-64 md:block z-40">

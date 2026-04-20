@@ -21,6 +21,10 @@ export default function Success() {
         <p className="text-gray-600">
           Tu plan ha sido activado correctamente.
         </p>
+        <p>Para iniciar a usar Contilisto...</p>
+        <p className="text-gray-600">
+          Haz click en el link de "Empresas".
+        </p>
       </div>
     </div>
   );

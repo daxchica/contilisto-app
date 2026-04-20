@@ -156,6 +156,12 @@ export default function Declaraciones() {
   const safeEntityId = entityId as string;
   const hasPeriodEntries = periodEntries.length > 0;
 
+  useEffect(() => {
+  console.log("📅 PERIOD:", period);
+  console.log("📊 PERIOD ENTRIES COUNT:", periodEntries.length);
+  console.log("📊 PERIOD SAMPLE:", periodEntries[0]);
+}, [periodEntries, period]);
+
   // ==========================================================================
   // LOAD JOURNAL ENTRIES
   // ==========================================================================
@@ -172,8 +178,14 @@ export default function Declaraciones() {
     async function loadEntries() {
       try {
         const data = await fetchJournalEntries(safeEntityId);
+
+        console.log("RAW FETCH RESULT:", data);
+
         if (!cancelled) {
           setEntries(Array.isArray(data) ? data : []);
+
+          console.log("ENTRIES SET IN STATE:", data?.length);
+
         }
       } catch (err) {
         console.error("Error loading journal entries:", err);
@@ -255,15 +267,20 @@ export default function Declaraciones() {
       return;
     }
 
+    console.log("🚀 GENERATING IVA WITH ENTRIES:", entries.length);
+    console.log("🚀 PERIOD ENTRIES USED:", periodEntries.length);
+    
     const safeEntityId = entityId;
 
     setActiveAction("iva");
     try {
       const summary = await generateIva104(
-        entries, 
+        periodEntries, 
         safeEntityId, 
         period
       );
+
+      console.log("IVA SUMMARY:", summary);
 
       setIvaSummary(summary);
       setShowIvaPreview(true);

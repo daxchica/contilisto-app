@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 
@@ -31,6 +32,7 @@ export default function AccountsPayablePage() {
 
   const entityId = selectedEntity?.id ?? "";
   const userIdSafe = user?.uid ?? "";
+  const navigate = useNavigate();
 
   const [payables, setPayables] = useState<Payable[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -145,11 +147,20 @@ export default function AccountsPayablePage() {
   return (
     <div className="p-6">
       {/* HEADER */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Cuentas por Pagar</h1>
-        <p className="text-sm text-gray-600">
-          Facturas pendientes de pago
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Cuentas por Pagar</h1>
+          <p className="text-sm text-gray-600">
+            Facturas pendientes de pago
+          </p>
+        </div>
+
+        <button
+          onClick={() => navigate("/cartera/historial?type=ap")}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+        >
+          📜 Ver historial completo
+        </button>
       </div>
 
       {/* ACTIONS */}
@@ -252,6 +263,8 @@ export default function AccountsPayablePage() {
                     >
                       Cuotas
                     </button>
+
+                    
                   </td>
                 </tr>
 

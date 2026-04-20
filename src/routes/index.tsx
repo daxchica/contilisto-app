@@ -25,12 +25,13 @@ import FlujoCaja from "@/pages/CashFlowPage";
 import CompaniesPage from "@/pages/CompaniesPage";
 import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";
-import AccountsReceivablePage from "@/pages/receivables/AccountReceivables";
+import AccountsReceivablePage from "@/pages/receivables/AccountReceivablesPage";
 import AccountsReceivableAgingPage from "@/pages/receivables/AccountsReceivableAgingPage";
+import InvoiceHistoryPage from "@/pages/cartera/InvoiceHistoryPage";
 import AccountingDashboard from "@/pages/AccountingDashboard";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
-import AccountsPayablePage from "@/pages/AccountsPayablePage";
+import AccountsPayablePage from "@/pages/payables/AccountsPayablePage";
 
 // Admin
 import AdminLayout from "@/pages/admin/AdminLayout";
@@ -65,6 +66,7 @@ export default function AppRoutes() {
           <Route path="/accountspayable" element={<AccountsPayablePage />} />
           <Route path="/accountsreceivable" element={<AccountsReceivablePage />} />
           <Route path="/accountsreceivables/aging" element={<AccountsReceivableAgingPage />} />
+          <Route path="/cartera/historial" element={<InvoiceHistoryPage />} />
           <Route path="/impuestos" element={<Declaraciones />} />
           <Route path="/flujo-caja" element={<FlujoCaja />} />
           <Route path="/empresas" element={<CompaniesPage />} />
