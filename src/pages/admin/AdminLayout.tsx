@@ -18,9 +18,9 @@ export default function AdminLayout() {
 
   // 2) Hard guard (defensive)
   const role = user?.role;
-  const isAdminOrMaster = role === "admin" || role === "master";
+  const isOwner = role === "owner";
 
-  if (!isAdminOrMaster) {
+  if (!isOwner) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
         <div className="bg-white shadow rounded-xl p-6 max-w-md w-full">
@@ -57,7 +57,7 @@ export default function AdminLayout() {
             Contilisto Admin
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Acceso {role === "master" ? "Master" : "Admin"}
+            Acceso Owner
           </p>
         </div>
 
@@ -89,8 +89,8 @@ export default function AdminLayout() {
             Usuarios
           </NavLink>
 
-          {/* SOLO MASTER */}
-          {user?.role === "master" && (
+          {/* OWNER ONLY */}
+          {user?.role === "owner" && (
             <>
               <NavLink
                 to="/admin/plans"

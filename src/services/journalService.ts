@@ -235,7 +235,14 @@ export async function saveJournalEntries(
   const invoiceNumber = entries[0]?.invoice_number ?? "";
   const normalizedInvoice = normalizeInvoiceNumber(invoiceNumber);
 
-  if (normalizedInvoice && !isPayment) {
+  const skipDuplicateInvoiceCheck = entries.some(
+    (e) =>
+      e.transactionType === "payment" ||
+      e.transactionType === "transfer" ||
+      e.transactionType === "initial_balance"
+  );
+
+  if (normalizedInvoice && !skipDuplicateInvoiceCheck) {
     const exists = await invoiceAlreadyExists(entityId, normalizedInvoice);
     if (exists) throw new Error(`Factura ${invoiceNumber} ya registrada`);
   }
@@ -264,10 +271,20 @@ export async function saveJournalEntries(
     }
 
     const inferredType =
+      e.transactionType === "initial_balance" ||
+      e.transactionType === "invoice" ||
       e.transactionType === "payment" ||
       e.transactionType === "transfer"
         ? e.transactionType
         : "invoice";
+
+    const inferredNature =
+      e.documentNature ??
+      (inferredType === "initial_balance"
+        ? "opening"
+        : inferredType === "transfer" || inferredType === "payment"
+          ? "cash"
+          : transactionNature);
 
     const entry: JournalEntry = {
       ...e,
@@ -290,7 +307,7 @@ export async function saveJournalEntries(
       source: e.source ?? "manual",
 
       transactionType: inferredType,
-      documentNature: transactionNature,
+      documentNature: inferredNature,
 
       transactionId: txId,
 
@@ -502,7 +519,7 @@ export async function fetchJournalEntries(
   return snap.docs.map(d => {
     const data = d.data() as JournalEntry;
 
-    if (!data.documentNature || !["sale", "purchase"].includes(data.documentNature)) {
+    if (!data.documentNature || !["sale", "purchase", "cash", "opening"].includes(data.documentNature)) {
       data.documentNature =
         data.account_code?.startsWith("5") ||
         data.account_code?.startsWith("2")
@@ -520,7 +537,8 @@ export async function fetchJournalEntries(
 
 export async function annulInvoiceByTransaction(
   entityId: string,
-  transactionId: string
+  transactionId: string,
+  invoiceNumber?: string
 ): Promise<void> {
 
   requireEntityId(entityId, "anular transacción");
@@ -615,7 +633,7 @@ export async function createTransferJournalEntry(
       credit: value,
       description: description ?? "Transferencia bancaria",
       transactionType: "transfer",
-      documentNature: "sale",
+      documentNature: "cash",
       source: "manual",
     },
     {
@@ -634,6 +652,106 @@ export async function createTransferJournalEntry(
   ];
 
   await saveJournalEntries(entityId, userIdSafe, entries);
+
+  return tx;
+}
+
+// ============================================================================
+// CREATE RECEIVABLE COLLECTION JOURNAL ENTRY
+// ============================================================================
+
+export async function createReceivableCollectionJournalEntry(
+  entityId: string,
+  userIdSafe: string,
+  bankAccount: { account_code: string; name?: string },
+  receivableAccount: { account_code: string; name?: string },
+  amountCollected: number,
+  collectionDate: string,
+  description?: string,
+  options?: {
+    bankMovementId?: string;
+    invoiceNumber?: string;
+  }
+): Promise<string> {
+  requireEntityId(entityId, "cobro cliente");
+
+  if (!userIdSafe?.trim()) {
+    throw new Error("UID requerido para cobro de cliente");
+  }
+
+  const amount = n2(amountCollected);
+
+  if (amount <= 0) {
+    throw new Error("Monto inválido para cobro de cliente");
+  }
+
+  if (!bankAccount.account_code?.trim()) {
+    throw new Error("Cuenta bancaria contable requerida");
+  }
+
+  if (!receivableAccount.account_code?.trim()) {
+    throw new Error("Cuenta por cobrar requerida");
+  }
+
+  const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
+
+  const concept = description ?? "Cobro de cliente";
+  const invoiceNumber = options?.invoiceNumber ?? "";
+
+  const entries: JournalEntry[] = [
+    {
+      entityId,
+      uid: userIdSafe,
+      transactionId: tx,
+      transactionType: "payment",
+      documentNature: "sale",
+
+      date: collectionDate,
+      account_code: norm(bankAccount.account_code),
+      account_name: bankAccount.name ?? "Banco",
+      
+      debit: amount,
+      credit: 0,
+      
+      description: concept,
+      invoice_number: invoiceNumber,
+      bankMovementId: options?.bankMovementId,
+
+      source: "manual",
+    },
+    {
+      entityId,
+      uid: userIdSafe,
+      transactionId: tx,
+      transactionType: "payment",
+      documentNature: "sale",
+
+      date: collectionDate,
+      account_code: norm(receivableAccount.account_code),
+      account_name: receivableAccount.name ?? "Cuentas por cobrar",
+      
+      debit: 0,
+      credit: amount,
+      
+      description: concept,
+      invoice_number: invoiceNumber,
+      bankMovementId: options?.bankMovementId,
+
+      source: "manual",
+    },
+  ];
+
+  await saveJournalEntries(entityId, userIdSafe, entries);
+
+  await createBankMovement({
+    entityId,
+    bankAccountId: bankAccount.account_code,
+    relatedJournalTransactionId: tx,
+    amount,
+    date: collectionDate,
+    type: "deposit",
+    description: description ?? "Cobro de cliente",
+  } as any);
 
   return tx;
 }

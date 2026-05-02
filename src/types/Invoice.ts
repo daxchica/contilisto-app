@@ -22,7 +22,7 @@ export type identificationType =
 export interface InvoiceCustomer {
   contactId?: string;
 
-  identificationType: "ruc" | "cedula" | "pasaporte";
+  identificationType: identificationType;
   identification: string;
   name: string;
 

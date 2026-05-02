@@ -97,3 +97,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
  * ============================================================ */
 
 export const useAuth = () => useContext(AuthContext);
+
+
+export type UserRole =
+  | "owner"
+  | "accountant"
+  | "assistant"
+  | "viewer"
+  | "admin"      // keep for backward compatibility
+  | "master";    // keep for backward compatibility

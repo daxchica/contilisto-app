@@ -97,7 +97,7 @@ Do not include any explanation or commentary. Respond only with valid JSON.
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a strict financial assistant. Return valid JSON only."},
-                {"role": "user", "content": prompt}
+                {"role": "viewer", "content": prompt}
             ],
             temperature=0,
         )

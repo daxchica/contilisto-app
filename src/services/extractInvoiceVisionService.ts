@@ -53,7 +53,7 @@ export interface ExtractedInvoiceResponse {
 
 }
 
-const n = (x: any) => {
+const n = (x: unknown): number => {
   const v = Number(x);
   return Number.isFinite(v) ? v : 0;
 };
@@ -122,7 +122,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     }
 
     // Ensure sales VAT (IVA débito) line exists if iva>0
-    if (iva > 0 && !data.entries.some(e => String(e.account_code ?? "") === "201030102")) {
+    if (iva > 0 && !data.entries.some(e => String(e.account_code ?? "") === "201020101")) {
       data.entries.push({
         account_code: "201020101",
         account_name: "IVA débito en ventas",
@@ -210,7 +210,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     // Sales: adjust Clientes debit
     if (data.invoiceType === "sale") {
       const idx = data.entries.findIndex(
-        (e: VisionEntry) => String(e.account_code ?? "").startsWith("130"));
+        (e: VisionEntry) => String(e.account_code ?? "").startsWith("10103"));
       if (idx >= 0) {
         data.entries[idx] = {
           ...data.entries[idx],
@@ -223,7 +223,7 @@ function ensureMinimumValidEntries(data: ExtractedInvoiceResponse) {
     // Expense: adjust Proveedores credit
     if (data.invoiceType === "expense") {
       const idx = data.entries.findIndex(
-        (e: VisionEntry) => String(e.account_code ?? "").startsWith("201"));
+        (e: VisionEntry) => String(e.account_code ?? "").startsWith("20103"));
       if (idx >= 0) {
         data.entries[idx] = {
           ...data.entries[idx],
@@ -296,14 +296,14 @@ export function buildDocumentFromVision(
 export async function extractInvoiceVision(
   base64: string,
   userRUC: string,
-  uid: string,
-  entityId: string,
+  userId?: string,
+  entityId?: string,
 ): Promise<ExtractedInvoiceResponse> {
   try {
     const res = await fetch("/.netlify/functions/extract-invoice-vision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base64, userRUC, uid }),
+      body: JSON.stringify({ base64, userRUC, userId }),
     });
 
     if (!res.ok) {
@@ -345,16 +345,17 @@ export async function extractInvoiceVision(
       data.invoiceType === "expense" &&
       data.issuerRUC &&
       Array.isArray(data.entries) &&
-      uid
+      userId &&
+      entityId
     ) {
       try {
         const hint = await getContextualAccountHint(
           entityId,
-          uid, 
+          userId, 
           data.issuerRUC,
-          data.concepto
+          data.concepto ?? ""
         );
-
+      
         if (hint) {
           data.entries = data.entries.map((e: VisionEntry) => {
             const debit = n(e.debit);

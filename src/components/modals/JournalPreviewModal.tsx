@@ -91,14 +91,22 @@ const createEmptyRow = (
   invoice?: string
 ): Row => ({
   id: crypto.randomUUID(),
-  transactionId,
+  
   entityId,
   uid,
+
+  transactionId,
+
+  transactionType: "invoice",
+  documentNature: "sale",
+
   date,
   account_code: "",
   account_name: "",
+  
   debit: 0,
   credit: 0,
+
   description: "",
   invoice_number: invoice ?? "",
   source: "edited",

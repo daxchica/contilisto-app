@@ -22,7 +22,7 @@ export interface AdminUser {
 function normalizeRole(value: any): UserRole {
   return value === "master" || value === "admin" || value === "user"
     ? value
-    : "user";
+    : "viewer";
 }
 
 export async function fetchUsers(): Promise<AdminUser[]> {

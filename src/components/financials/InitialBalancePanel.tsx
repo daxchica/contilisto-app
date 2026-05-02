@@ -1,6 +1,6 @@
 // ============================================================================
 // components/InitialBalancePanel.tsx
-// CONTILISTO — ACCOUNTING-SAFE INITIAL BALANCE PANEL (FINAL)
+// CONTILISTO — ACCOUNTING-SAFE INITIAL BALANCE PANEL (IMPROVED)
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
@@ -17,9 +17,9 @@ import {
   saveJournalEntries,
   fetchJournalEntries,
 } from "@/services/journalService";
-import { getDefaultInitialBalanceDate } from "@/utils/dateUtils";
-import { BalanceEntry } from "@/types/BalanceTypes";
 
+import { getDefaultInitialBalanceDate } from "@/utils/dateUtils";
+import type { BalanceEntry } from "@/types/BalanceTypes";
 
 /* ========================================================================== */
 /* CONFIG                                                                     */
@@ -29,59 +29,88 @@ interface Props {
   entityId: string;
   userIdSafe: string;
   accounts: Account[];
-  disabled?: boolean;
-  initialEntries?: JournalEntry[];
   editMode?: boolean;
 }
 
-const INITIAL_BALANCE_TX = (entityId: string) =>
-  `INITIAL_BALANCE:${entityId}`;
-
 const INITIAL_SOURCE: EntrySource = "initial";
 
+const getInitialTxId = (entityId: string) =>
+  `INITIAL_BALANCE:${entityId}`;
+
 /* ========================================================================== */
-/* ACCOUNTING HELPERS (CRITICAL FIX)                                          */
+/* HELPERS                                                                    */
 /* ========================================================================== */
 
-function accountGroup(code: string): "1" | "2" | "3" | "other" {
-  const g = (code ?? "").trim().charAt(0);
-  if (g === "1" || g === "2" || g === "3") return g;
-  return "other";
+function extractAmount(e: unknown): { debit: number; credit: number } {
+  const entry = e as any;
+
+  if ("debit" in entry || "credit" in entry) {
+    return {
+      debit: Number(entry.debit ?? 0),
+      credit: Number(entry.credit ?? 0),
+    };
+  }
+
+  if ("value" in entry) {
+    const value = Number(entry.value ?? 0);
+    return {
+      debit: value > 0 ? value : 0,
+      credit: value < 0 ? Math.abs(value) : 0,
+    };
+  }
+
+  return { debit: 0, credit: 0 };
 }
 
-/**
- * For Initial Balance:
- * - Assets (1) → Debit
- * - Liabilities (2) → Credit
- * - Equity (3) → Credit
- */
-function normalizeInitialSide(
-  account_code: string,
-  debitRaw: number,
-  creditRaw: number
-) {
-  const debit = Number(debitRaw ?? 0);
-  const credit = Number(creditRaw ?? 0);
+function accountGroup(code: string): "1" | "2" | "3" | "other" {
+  const g = code.trim().charAt(0);
+  return g === "1" || g === "2" || g === "3" ? g : "other";
+}
 
+function normalizeInitialSide(
+  code: string,
+  debit: number,
+  credit: number
+) {
   if (debit < 0 || credit < 0) {
     throw new Error("No se permiten valores negativos.");
   }
 
   if (debit > 0 && credit > 0) {
-    throw new Error(
-      `La cuenta ${account_code} no puede tener débito y crédito a la vez en Balance Inicial.`
-    );
+    throw new Error(`La cuenta ${code} no puede tener débito y crédito.`);
   }
 
   const amount = debit > 0 ? debit : credit;
   if (amount <= 0) return { debit: 0, credit: 0 };
 
-  const g = accountGroup(account_code);
+  const group = accountGroup(code);
 
-  if (g === "1") return { debit: amount, credit: 0 };
-  if (g === "2" || g === "3") return { debit: 0, credit: amount };
+  if (group === "1") return { debit: amount, credit: 0 };
+  if (group === "2" || group === "3") return { debit: 0, credit: amount };
 
   return { debit, credit };
+}
+
+function buildInitialEntry(
+  base: Partial<JournalEntry>,
+  entityId: string,
+  userIdSafe: string,
+  date: string
+): JournalEntry {
+  return {
+    entityId,
+    uid: userIdSafe,
+    transactionId: getInitialTxId(entityId),
+    transactionType: "initial_balance",
+    documentNature: "opening",
+    source: INITIAL_SOURCE,
+    description: "Balance Inicial",
+    date,
+    createdAt: Date.now(),
+    debit: Number(base.debit ?? 0),
+    credit: Number(base.credit ?? 0),
+    ...base,
+  } as JournalEntry;
 }
 
 /* ========================================================================== */
@@ -94,42 +123,31 @@ export default function InitialBalancePanel({
   accounts,
   editMode = false,
 }: Props) {
-  const [showPanel, setShowPanel] = useState(false);
-  const [balanceEntries, setBalanceEntries] = useState<JournalEntry[]>([]);
-  const [showSavedMessage, setShowSavedMessage] = useState(false);
-  const [existingInitialBalanceTx, setExistingInitialBalanceTx] =
-    useState<boolean>(false);
-
-  const [initialBalanceDate, setInitialBalanceDate] = useState<string>(
-    getDefaultInitialBalanceDate()
-  );
   const { user } = useAuth();
 
+  const [showPanel, setShowPanel] = useState(false);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [exists, setExists] = useState(false);
+
+  const [date, setDate] = useState(getDefaultInitialBalanceDate());
+
   /* ------------------------------------------------------------------------ */
-  /* Detect if Initial Balance exists                                         */
+  /* LOAD EXISTING                                                            */
   /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      try {
-        const all = await fetchJournalEntries(entityId);
-        const txId = INITIAL_BALANCE_TX(entityId);
+      const all = await fetchJournalEntries(entityId);
+      const txId = getInitialTxId(entityId);
 
-        const exists = all.some(
-          (e) =>
-            e.source === "initial" &&
-            e.transactionId === txId
-        );
+      const has = all.some(
+        (e) => e.source === "initial" && e.transactionId === txId
+      );
 
-        if (!cancelled) {
-          setExistingInitialBalanceTx(exists);
-        }
-      } catch (err) {
-        console.error("Error loading journal:", err);
-        if (!cancelled) setExistingInitialBalanceTx(false);
-      }
+      if (!cancelled) setExists(has);
     })();
 
     return () => {
@@ -142,16 +160,14 @@ export default function InitialBalancePanel({
 
     (async () => {
       const all = await fetchJournalEntries(entityId);
-      const txId = INITIAL_BALANCE_TX(entityId);
+      const txId = getInitialTxId(entityId);
 
       const initial = all.filter(
-        (e) =>
-          e.source === "initial" &&
-          e.transactionId === txId
+        (e) => e.source === "initial" && e.transactionId === txId
       );
 
-      setBalanceEntries(initial);
-      setShowPanel(true); // 👈 force open when editing
+      setEntries(initial);
+      setShowPanel(true);
     })();
   }, [editMode, entityId]);
 
@@ -159,187 +175,121 @@ export default function InitialBalancePanel({
   /* VALIDATION                                                               */
   /* ------------------------------------------------------------------------ */
 
-  const validateInitialBalance = (entries: JournalEntry[]) => {
-    if (!entries.length) {
-      throw new Error("Debe ingresar al menos una línea contable.");
-    }
+  function validate(entries: JournalEntry[]) {
+    if (!entries.length) throw new Error("Debe ingresar al menos una línea.");
 
-    let debit = 0;
-    let credit = 0;
+    let d = 0;
+    let c = 0;
 
     for (const e of entries) {
-      if (!e.account_code) {
-        throw new Error("Existen líneas sin cuenta contable.");
-      }
+      const debit = Number(e.debit ?? 0);
+      const credit = Number(e.credit ?? 0);
 
       const g = accountGroup(e.account_code);
 
-      if ((g === "2" || g === "3") && (e.debit ?? 0) > 0) {
-        throw new Error(
-          `La cuenta ${e.account_code} debe registrarse al CRÉDITO en Balance Inicial.`
-        );
+      if ((g === "2" || g === "3") && debit > 0) {
+        throw new Error(`La cuenta ${e.account_code} debe ir al crédito.`);
       }
 
-      if (g === "1" && (e.credit ?? 0) > 0) {
-        throw new Error(
-          `La cuenta ${e.account_code} debe registrarse al DÉBITO en Balance Inicial.`
-        );
+      if (g === "1" && credit > 0) {
+        throw new Error(`La cuenta ${e.account_code} debe ir al débito.`);
       }
 
-      debit += Number(e.debit ?? 0);
-      credit += Number(e.credit ?? 0);
+      d += debit;
+      c += credit;
     }
 
-    if (Math.abs(debit - credit) >= 0.01) {
-      throw new Error("El Balance Inicial no está balanceado.");
+    if (Math.abs(d - c) >= 0.01) {
+      throw new Error("El balance no cuadra.");
     }
-  };
+  }
 
   /* ------------------------------------------------------------------------ */
-  /* Persist Initial Balance                                                  */
+  /* SAVE                                                                     */
   /* ------------------------------------------------------------------------ */
 
-  const persistInitialBalance = async (entries: JournalEntry[]) => {
-
+  async function persist(list: JournalEntry[]) {
+    const txId = getInitialTxId(entityId);
     const all = await fetchJournalEntries(entityId);
-    const txId = INITIAL_BALANCE_TX(entityId);
-    
-    const exists = all.some(
-      (e) => e.source === "initial" && e.transactionId === txId
-  );
- 
-  if (exists && !editMode) {
-    throw new Error("Esta entidad ya tiene un Balance Inicial guardado.");
-  }
 
-  // 🔥 DELETE OLD IF EDITING
-  if (exists && editMode) {
-    if (!user?.uid) {
-      throw new Error("Usuario no autenticado");
+    const already = all.some(
+      (e) => e.source === "initial" && e.transactionId === txId
+    );
+
+    if (already && !editMode) {
+      throw new Error("Ya existe Balance Inicial.");
     }
 
-    await deleteJournalEntriesByTransactionId(
-      entityId,
-      txId,
-      user.uid
-    );
+    if (already && editMode) {
+      if (!user?.uid) throw new Error("Usuario inválido");
+
+      await deleteJournalEntriesByTransactionId(entityId, txId);
+    }
+
+    await saveJournalEntries(entityId, userIdSafe, list);
+
+    setExists(true);
   }
 
-  const payload: JournalEntry[] = entries.map((e) => ({
-    ...e,
-    entityId,
-    uid: userIdSafe,
-    transactionId: txId,
-    invoice_number: "INITIAL_BALANCE",
-    source: INITIAL_SOURCE,
-    date: initialBalanceDate,
-  }));
-    
-  await saveJournalEntries(entityId, userIdSafe, payload);
-
-  setExistingInitialBalanceTx(true);
-};
-
   /* ------------------------------------------------------------------------ */
-  /* Manual Submit                                                            */
+  /* TRANSFORM                                                                */
   /* ------------------------------------------------------------------------ */
 
-  const handleManualSubmit = async (entries: ManualBalanceEntry[]) => {
-    try {
-      const normalized: JournalEntry[] = entries.map((e) => {
-        
-        const code = (e.account_code ?? "").trim();
+  function transform(input: any[]): JournalEntry[] {
+    return input.map((e) => {
+      const code = (e.account_code ?? "").trim();
+      if (!code) throw new Error("Cuenta inválida");
 
-        if (!code) {
-          throw new Error("Cuenta contable inválida.");
-        }
+      const { debit, credit } = extractAmount(e);
+      const side = normalizeInitialSide(code, debit, credit);
 
-        const side = normalizeInitialSide(
-          code,
-          Number(e.debit ?? 0),
-          Number(e.credit ?? 0)
-        );
-
-        return {
-          // id: crypto.randomUUID(),
-          entityId,
-          uid: userIdSafe,
+      return buildInitialEntry(
+        {
           account_code: code,
           account_name: (e.account_name ?? "").trim(),
           debit: side.debit,
           credit: side.credit,
-          description: "Balance Inicial",
-          date: initialBalanceDate,
-          source: INITIAL_SOURCE,
-        };
-      });
-
-
-
-      validateInitialBalance(normalized);
-
-      const enriched = normalized.map((e) => ({
-          ...e,
-          entityId,
-          uid: userIdSafe,
-      }));
-
-      setBalanceEntries(enriched);
-
-      await persistInitialBalance(enriched);
-
-      setShowSavedMessage(true);
-      setTimeout(() => setShowSavedMessage(false), 3000);
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
+        },
+        entityId,
+        userIdSafe,
+        date
+      );
+    });
+  }
 
   /* ------------------------------------------------------------------------ */
-  /* PDF Upload                                                               */
+  /* HANDLERS                                                                 */
   /* ------------------------------------------------------------------------ */
 
-  const handleUpload = async (entries: BalanceEntry[]) => {
+  async function handleManual(data: ManualBalanceEntry[]) {
     try {
-      const normalized: JournalEntry[] = entries.map((e) => {
-        const code = (e.account_code ?? "").trim();
-        
-        if (!code) {
-          throw new Error("Cuenta contable invalida.");
-        }
+      const normalized = transform(data);
+      validate(normalized);
 
-        const amount = Math.abs(Number(e.initial_balance ?? 0));
-        const g = accountGroup(code);
+      setEntries(normalized);
+      await persist(normalized);
 
-        const debit = g === "1" ? amount : 0;
-        const credit = g === "2" || g === "3" ? amount : 0;
-
-        return {
-          // id: crypto.randomUUID(),
-          entityId,
-          uid: userIdSafe,
-          account_code: code,
-          account_name: (e.account_name ?? "").trim(),
-          debit,
-          credit,
-          description: "Balance Inicial",
-          date: initialBalanceDate,
-          source: INITIAL_SOURCE,
-        };
-      });
-
-      validateInitialBalance(normalized);
-
-      setBalanceEntries(normalized);
-
-      await persistInitialBalance(normalized);
-
-      setShowSavedMessage(true);
-      setTimeout(() => setShowSavedMessage(false), 3000);
-    } catch (err: any) {
-      alert(err.message);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      alert(e.message);
     }
-  };
+  }
+
+  async function handleUpload(data: BalanceEntry[]) {
+    try {
+      const normalized = transform(data);
+      validate(normalized);
+
+      setEntries(normalized);
+      await persist(normalized);
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
 
   /* ------------------------------------------------------------------------ */
   /* RENDER                                                                   */
@@ -353,13 +303,13 @@ export default function InitialBalancePanel({
             onClick={() => setShowPanel((p) => !p)}
             className="px-4 py-2 bg-blue-700 text-white rounded"
           >
-          🧾 {showPanel ? "Ocultar" : "Carga el Balance Inicial"}
-        </button>
+            🧾 {showPanel ? "Ocultar" : "Carga el Balance Inicial"}
+          </button>
         )}
 
-        {showSavedMessage && (
+        {saved && (
           <span className="text-green-600 font-semibold">
-            ✅ Balance inicial guardado
+            ✅ Guardado
           </span>
         )}
       </div>
@@ -367,51 +317,43 @@ export default function InitialBalancePanel({
       {showPanel && (
         <div className="mt-4 space-y-6">
 
-          {!existingInitialBalanceTx && !editMode && (
+          {!exists && !editMode && (
             <>
               <ManualBalanceForm
                 entityId={entityId}
                 accounts={accounts}
-                onSubmit={handleManualSubmit}
-                initialBalanceDate={initialBalanceDate}
-                setInitialBalanceDate={setInitialBalanceDate}
-                existingInitialBalanceTx={existingInitialBalanceTx}
+                onSubmit={handleManual}
+                initialBalanceDate={date}
+                setInitialBalanceDate={setDate}
+                existingInitialBalanceTx={exists}
               />
 
               <BalancePDFUploader onUploadComplete={handleUpload} />
             </>
           )}
 
-          {/* ========================= */}
-          {/* EDIT MODE (🔥 KEY FIX)    */}
-          {/* ========================= */}
           {editMode && (
-            <>
-              <ManualBalanceForm
-                entityId={entityId}
-                accounts={accounts}
-                onSubmit={handleManualSubmit}
-                initialBalanceDate={initialBalanceDate}
-                setInitialBalanceDate={setInitialBalanceDate}
-                existingInitialBalanceTx={existingInitialBalanceTx}
-                initialData={balanceEntries} // 👈 REQUIRED
-              />
-            </>
+            <ManualBalanceForm
+              entityId={entityId}
+              accounts={accounts}
+              onSubmit={handleManual}
+              initialBalanceDate={date}
+              setInitialBalanceDate={setDate}
+              existingInitialBalanceTx={exists}
+              initialData={entries}
+            />
           )}
 
-          {/* ========================= */}
-          {/* PREVIEW                   */}
-          {/* ========================= */}
-
-          {balanceEntries.length > 0 && (
+          {entries.length > 0 && (
             <div className="border rounded-lg p-4 bg-gray-50">
               <h3 className="text-lg font-bold text-blue-800 mb-3">
-                🧾 Balance Inicial (vista previa)
+                🧾 Vista previa
               </h3>
 
               <BalanceSheet
-                entries={balanceEntries}
+                entries={entries}
                 entityId={entityId}
+                resultadoDelEjercicio={0}
                 showHeader={false}
               />
             </div>

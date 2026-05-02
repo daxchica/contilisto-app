@@ -4,7 +4,9 @@
 // ============================================================================
 
 import * as pdfjsLib from "pdfjs-dist";
-import "pdfjs-dist/build/pdf.worker";
+import pdfWorker from "pdfjs-dist/build/pdf.worker?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 // ============================================================
 // TYPES

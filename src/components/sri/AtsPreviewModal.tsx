@@ -74,9 +74,9 @@ export default function AtsPreviewModal({
 
                   <td className="border p-2">{tipo}</td>
 
-                  <td className="border p-2 font-mono">{doc.ruc}</td>
+                  <td className="border p-2 font-mono">{doc.counterpartyRUC}</td>
 
-                  <td className="border p-2">{doc.razonSocial}</td>
+                  <td className="border p-2">{doc.counterpartyName}</td>
 
                   <td className="border p-2 font-mono">
                     {doc.establishment}-{doc.emissionPoint}-{doc.sequential}

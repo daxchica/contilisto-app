@@ -1,4 +1,4 @@
-import type { Invoice } from "@/types/Invoice";
+import type { Invoice, TaxRate } from "@/types/Invoice";
 
 /* ==============================
    HELPERS
@@ -29,6 +29,38 @@ function buyerIdType(type?: string): "04" | "05" | "06" | "07" {
   return "04"; // RUC
 }
 
+function ivaCode(rate: TaxRate): string {
+  if (rate === 0) return "0";
+  if (rate === 12) return "2";
+  if (rate === 15) return "4";
+  return "0";
+}
+
+function buildTotalImpuesto(rate: TaxRate, base: number, iva: number): string {
+  if (base <= 0) return "";
+
+  return `
+      <totalImpuesto>
+        <codigo>2</codigo>
+        <codigoPorcentaje>${ivaCode(rate)}</codigoPorcentaje>
+        <baseImponible>${n(base)}</baseImponible>
+        <valor>${n(iva)}</valor>
+      </totalImpuesto>`;
+}
+
+function buildItemImpuesto(rate: TaxRate, base: number, iva: number): string {
+  if (base <= 0) return "";
+
+  return `
+        <impuesto>
+          <codigo>2</codigo>
+          <codigoPorcentaje>${ivaCode(rate)}</codigoPorcentaje>
+          <tarifa>${n(rate, 0)}</tarifa>
+          <baseImponible>${n(base)}</baseImponible>
+          <valor>${n(iva)}</valor>
+        </impuesto>`;
+}
+
 /* ==============================
    XML BUILDER (MVP SRI REAL)
 ============================== */
@@ -49,13 +81,20 @@ export function buildSriInvoiceXml(
 
   const fechaEmision = formatDateSri(invoice.issueDate);
 
-  const totalSinImpuestos =
-    invoice.totals.subtotal0 + invoice.totals.subtotal15;
+  const subtotal0 = invoice.totals.subtotalsByRate[0] ?? 0;
+  const subtotal12 = invoice.totals.subtotalsByRate[12] ?? 0;
+  const subtotal15 = invoice.totals.subtotalsByRate[15] ?? 0;
 
-  const totalDescuento = invoice.items.reduce(
-    (sum, i) => sum + (i.discount ?? 0),
-    0
-  );
+  const iva12 = invoice.totals.ivaByRate[12] ?? 0;
+  const iva15 = invoice.totals.ivaByRate[15] ?? 0;
+
+  const totalSinImpuestos = 
+    invoice.totals.subtotalSinImpuestos ??
+    subtotal0 + subtotal12 + subtotal15;
+  
+  const totalDescuento = 
+    invoice.totals.discountTotal ??
+    invoice.items.reduce((sum, i) => sum + Number(i.discount ?? 0), 0);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <factura id="comprobante" version="1.1.0">
@@ -83,17 +122,11 @@ export function buildSriInvoiceXml(
     <totalDescuento>${n(totalDescuento)}</totalDescuento>
 
     <totalConImpuestos>
-      ${
-        invoice.totals.subtotal15 > 0
-          ? `<totalImpuesto>
-              <codigo>2</codigo>
-              <codigoPorcentaje>2</codigoPorcentaje>
-              <baseImponible>${n(invoice.totals.subtotal15)}</baseImponible>
-              <valor>${n(invoice.totals.iva15)}</valor>
-            </totalImpuesto>`
-          : ""
-      }
+      ${buildTotalImpuesto(0, subtotal0, 0)}
+      ${buildTotalImpuesto(12, subtotal12, iva12)}
+      ${buildTotalImpuesto(15, subtotal15, iva15)}
     </totalConImpuestos>
+
 
     <propina>0.00</propina>
     <importeTotal>${n(invoice.totals.total)}</importeTotal>
@@ -108,31 +141,24 @@ export function buildSriInvoiceXml(
   </infoFactura>
 
   <detalles>
-    ${invoice.items
-      .map(
-        (i) => `
+${invoice.items
+  .map((i) => {
+    const rate = Number(i.ivaRate ?? 0) as TaxRate;
+
+    return `
     <detalle>
+      <codigoPrincipal>${xmlEscape(i.id ?? "ITEM")}</codigoPrincipal>
       <descripcion>${xmlEscape(i.description)}</descripcion>
-      <cantidad>${n(i.quantity)}</cantidad>
-      <precioUnitario>${n(i.unitPrice)}</precioUnitario>
+      <cantidad>${n(i.quantity, 6)}</cantidad>
+      <precioUnitario>${n(i.unitPrice, 6)}</precioUnitario>
       <descuento>${n(i.discount ?? 0)}</descuento>
       <precioTotalSinImpuesto>${n(i.subtotal)}</precioTotalSinImpuesto>
       <impuestos>
-        ${
-          i.ivaRate === 12
-            ? `<impuesto>
-                <codigo>2</codigo>
-                <codigoPorcentaje>2</codigoPorcentaje>
-                <tarifa>12</tarifa>
-                <baseImponible>${n(i.subtotal)}</baseImponible>
-                <valor>${n(i.ivaValue)}</valor>
-              </impuesto>`
-            : ""
-        }
+${buildItemImpuesto(rate, i.subtotal, i.ivaValue ?? 0)}
       </impuestos>
-    </detalle>`
-      )
-      .join("")}
+    </detalle>`;
+  })
+  .join("")}
   </detalles>
 </factura>`;
 }

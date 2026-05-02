@@ -382,7 +382,8 @@ export async function updatePayableTerms(
   entityId: string,
   payableId: string,
   termsDays: number,
-  installments: number
+  installments: number,
+  issueDate?: string,
 ) {
   requireEntityId(entityId, "actualizar términos CxP");
 

@@ -5,9 +5,9 @@ type CardProps = {
   blurb: string;
   Icon: React.ElementType;
   bgColor: string;
-  hoverColor: string;
   iconBg: string;
   iconColor: string;
+  hoverColor: string;
 };
 
 function FeatureCard({ title, blurb, Icon, bgColor, hoverColor, iconBg, iconColor }: CardProps) {
@@ -48,6 +48,7 @@ export default function FeatureCards() {
           bgColor="bg-emeral-50"
           iconBg="bg-emerald-100"
           iconColor="text-emerald-700"
+          hoverColor="hover:bg-blue-100"
         />
         <FeatureCard
           title="Cartera"
@@ -56,6 +57,7 @@ export default function FeatureCards() {
           bgColor="bg-indigo-50"
           iconBg="bg-indigo-100"
           iconColor="text-indigo-700"
+          hoverColor="hover:bg-blue-100"
         />
         <FeatureCard
           title="Cuentas Corrientes"
@@ -64,6 +66,7 @@ export default function FeatureCards() {
           bgColor="bg-amber-50"
           iconBg="bg-amber-100"
           iconColor="text-amber-700"
+          hoverColor="hover:bg-blue-100"
         />
       </div>
     </section>

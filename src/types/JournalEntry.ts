@@ -19,9 +19,9 @@ export type EntrySource =
 // CORE TRANSACTION TYPES (MANDATORY)
 // ============================================================================
 
-export type TransactionType = "invoice" | "payment" | "transfer";
+export type TransactionType = "initial_balance" | "invoice" | "payment" | "transfer";
 
-export type DocumentNature = "sale" | "purchase";
+export type DocumentNature = "sale" | "purchase" | "cash" | "opening";
 
 // ============================================================================
 // JOURNAL ENTRY

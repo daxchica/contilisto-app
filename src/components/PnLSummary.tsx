@@ -8,6 +8,8 @@ import { useFilteredEntries } from "@/hooks/useFilteredEntries";
 
 interface Props {
   entries: JournalEntry[];
+  startDate?: string;
+  endDate?: string;
   onResultChange?: (result: number) => void;
 }
 
@@ -34,39 +36,109 @@ export default function PnLSummary({
 
   const summary = useMemo(() => {
 
-    const ingresos = filteredEntries
-      .filter((e) => (e.account_code || "").startsWith("7"))
-      .reduce(
-        (sum, e) => sum + Number(e.credit || 0) - Number(e.debit || 0),
-        0
+  // ============================================================
+  // CLEAN ENTRIES
+  // ============================================================
+
+  const validEntries = filteredEntries.filter(
+    (e) =>
+      e.account_code &&
+      e.account_code.trim().length > 0
+  );
+
+  // ============================================================
+  // INGRESOS (GROUP 4)
+  // ============================================================
+
+  const ingresos = validEntries
+
+    .filter((e) => {
+      const code = e.account_code || "";
+  
+      return (
+        code.startsWith("4")
+    );
+  })
+
+    .reduce((sum, e) => {
+
+      return (
+        sum +
+        Number(e.credit || 0) -
+        Number(e.debit || 0)
       );
 
-    const costos = filteredEntries
-      .filter((e) => (e.account_code || "").startsWith("6"))
-      .reduce(
-        (sum, e) => sum + Number(e.debit || 0) - Number(e.credit || 0),
-        0
+    }, 0);
+
+  // ============================================================
+  // COSTOS (OPTIONAL 6)
+  // ============================================================
+
+  const costos = validEntries
+
+    .filter((e) =>
+      (e.account_code || "").startsWith("6")
+    )
+
+    .reduce((sum, e) => {
+
+      return (
+        sum +
+        Number(e.debit || 0) -
+        Number(e.credit || 0)
       );
 
-    const gastos = filteredEntries
-      .filter((e) => (e.account_code || "").startsWith("5"))
-      .reduce(
-        (sum, e) => sum + Number(e.debit || 0) - Number(e.credit || 0),
-        0
+    }, 0);
+
+  // ============================================================
+  // GASTOS (GROUP 5)
+  // ============================================================
+
+  const gastos = validEntries
+
+    .filter((e) => {
+      const code = e.account_code || "";
+      
+      return code.startsWith("5");
+    })
+
+    .reduce((sum, e) => {
+
+      return (
+        sum +
+        Number(e.debit || 0) -
+        Number(e.credit || 0)
       );
 
-    const utilidadBruta = ingresos - costos;
-    const utilidadNeta = utilidadBruta - gastos;
+    }, 0);
 
-    return {
-      ingresos,
-      costos,
-      gastos,
-      utilidadBruta,
-      utilidadNeta,
-    };
+  // ============================================================
+  // RESULTS
+  // ============================================================
 
-  }, [filteredEntries]);
+  const utilidadBruta =
+    ingresos - costos;
+
+  const utilidadNeta =
+    utilidadBruta - gastos;
+
+  console.log("P&L ENGINE", {
+    ingresos,
+    costos,
+    gastos,
+    utilidadBruta,
+    utilidadNeta,
+  });
+
+  return {
+    ingresos,
+    costos,
+    gastos,
+    utilidadBruta,
+    utilidadNeta,
+  };
+
+}, [filteredEntries]);
 
   /* ----------------------------------------------------- */
   /* EXPENSE DETAILS                                       */

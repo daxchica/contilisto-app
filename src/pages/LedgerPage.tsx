@@ -77,8 +77,8 @@ export default function LedgerPage() {
 
         const data = await fetchJournalEntriesByDateRange(
           entityId,
-          fromDate || undefined,
-          toDate || undefined
+          fromDate ?? "",
+          toDate ?? "",
         );
 
         setEntries(data);

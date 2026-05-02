@@ -185,6 +185,10 @@ export async function rebuildPayablesFromJournal(entityId: string) {
     /* -----------------------------------------------------------------------
      * CREATE / UPDATE PAYABLE
      * --------------------------------------------------------------------- */
+    
+    function normalizeInvoiceNumber(value?: string) {
+      return (value || "").replace(/\s+/g, "").replace(/-/g, "").trim();
+    }
 
     await upsertPayable(entityId, {
 
@@ -197,6 +201,8 @@ export async function rebuildPayablesFromJournal(entityId: string) {
       supplierRUC,
 
       invoiceNumber: control.invoice_number,
+      invoiceNumberNormalized: normalizeInvoiceNumber(control.invoice_number),
+      
       issueDate: control.date,
 
       total,

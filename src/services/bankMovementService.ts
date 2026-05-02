@@ -356,6 +356,10 @@ export async function unreconcileBankMovement(
   });
 }
 
+export async function addBankMovement(entityId: string, movement: any) {
+  console.log("TODO addBankMovement", entityId, movement);
+}
+
 /* ============================================================================
  * Transfers
  * ========================================================================== */

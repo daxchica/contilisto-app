@@ -24,7 +24,7 @@ export default function Login() {
 
     if (!user) return;
 
-    if (user.role === "master" || user.role === "admin") {
+    if (user.role === "owner") {
       navigate("/admin", { replace: true });
     } else {
       navigate("/empresas", { replace: true });

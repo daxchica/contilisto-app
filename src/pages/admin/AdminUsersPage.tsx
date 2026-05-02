@@ -94,7 +94,7 @@ export default function AdminUsersPage() {
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
-                  {currentUser?.role === "master" && (
+                  {currentUser?.role === "owner" && (
                     <option value="master">Master</option>
                   )}
                 </select>

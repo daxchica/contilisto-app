@@ -1,10 +1,14 @@
 // src/components/entity/UploadButtonsAndLogs.tsx
 
 import React from "react";
-import PDFUploader from "../PDFUploader";
-import ManualEntryModal from "../ManualEntryModal";
-import { JournalEntry } from "../../types/JournalEntry";
-import { ProcessedLog } from "../../types/ProcessedLog";
+import ManualEntryModal from "@/components/modals/ManualEntryModal";
+import { JournalEntry } from "@/types/JournalEntry";
+
+type ProcessedLog = {
+  id?: string;
+  invoiceNumber?: string;
+  date?: string;
+};
 
 interface Props {
   entityId: string;
@@ -20,11 +24,9 @@ interface Props {
 export default function UploadButtonsAndLogs({
   entityId,
   userIdSafe,
-  userRUC,
   accounts,
   logs,
   setLogs,
-  onUploadComplete,
   onAddManualEntry,
 }: Props) {
   const [showManualModal, setShowManualModal] = React.useState(false);
@@ -39,15 +41,7 @@ export default function UploadButtonsAndLogs({
   return (
     <div className="space-y-2">
       <div className="flex gap-3">
-        <PDFUploader
-          entityId={entityId}
-          userIdSafe={userIdSafe}
-          userRUC={userRUC}
-          accounts={accounts}
-          onUploadComplete={onUploadComplete}
-          refreshJournal={() => {}}
-        />
-
+        
         <button
           className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded"
           onClick={() => setShowManualModal(true)}
@@ -72,10 +66,11 @@ export default function UploadButtonsAndLogs({
       {showManualModal && (
         <ManualEntryModal
           onClose={() => setShowManualModal(false)}
-          onAddEntries={onAddManualEntry}
+          onAddEntries={async (entries) => { onAddManualEntry(entries); }}
           entityId={entityId}
           userIdSafe={userIdSafe}
-          accounts={accounts}
+          postableAccounts={accounts}
+          leafCodeSet={new Set()}
         />
       )}
     </div>

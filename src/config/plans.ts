@@ -4,7 +4,7 @@ export interface PlanConfig {
   id: PlanType;
   name: string;
   price: number;
-  stripePriceId?: string;
+  stripePriceId: string | null;
 
   limits: {
     maxEntities: number;
@@ -25,7 +25,7 @@ export const PLANS: Record<PlanType, PlanConfig> = {
     id: "estudiante",
     name: "Estudiante",
     price: 0,
-    stripePriceId: undefined,
+    stripePriceId: null,
 
     limits: {
       maxEntities: 1,

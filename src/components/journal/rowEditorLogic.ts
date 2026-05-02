@@ -1,57 +1,90 @@
 // ============================================================================
 // src/components/journal/rowEditorLogic.ts
 // Shared row-engine used by ManualEntryModal + JournalPreviewModal
-// - Add / duplicate / delete rows
-// - Debit/Credit raw formatting with blur cleanup
-// - Enter navigation (debit -> credit -> next row debit)
-// - Canonical PUC normalization via canonicalPair + normalizeEntry
-// - Firestore-safe (no undefined for required numeric fields)
+// PRODUCTION HARDENED VERSION
 // ============================================================================
 
+import React from "react";
 import { v4 as uuidv4 } from "uuid";
+
 import type { Account } from "@/types/AccountTypes";
 import type { JournalEntry } from "@/types/JournalEntry";
+
 import { canonicalPair, normalizeEntry } from "@/utils/accountPUCMap";
+
+/* =============================================================================
+   TYPES
+============================================================================= */
 
 export type Row = Omit<JournalEntry, "thirdParty" | "documentRef"> & {
   thirdParty?: string | null;
   documentRef?: string | null;
   requiresThirdParty?: boolean;
+
+  // UI-only fields
   _debitRaw?: string;
   _creditRaw?: string;
 };
 
+/* =============================================================================
+   CONSTANTS
+============================================================================= */
+
 export const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* =============================================================================
+   CORE ROW FACTORY (CRITICAL)
+============================================================================= */
 
 export function createEmptyRow(
   entityId: string,
   userIdSafe: string,
   defaults?: Partial<Row>
 ): Row {
+  const baseTransactionId = defaults?.transactionId ?? uuidv4();
+
   return {
     id: uuidv4(),
+
+    entityId,
+    uid: userIdSafe,
+
+    transactionId: baseTransactionId,
+    transactionType: defaults?.transactionType ?? "invoice",
+    documentNature: defaults?.documentNature ?? "sale",
+
     account_code: "",
     account_name: "",
+
     debit: 0,
     credit: 0,
+
     description: "",
-    entityId,
-    userIdSafe,
     date: todayISO(),
+
     source: "manual",
     isManual: true,
+
     createdAt: Date.now(),
+
     thirdParty: null,
     documentRef: null,
     requiresThirdParty: false,
-    ...defaults,
+
+    ...defaults, // 👈 applied last but safe due to enforced fields above
   };
 }
 
+/* =============================================================================
+   TOTALS
+============================================================================= */
+
 export function calcTotals(rows: Row[]) {
-  const debit = rows.reduce((s, r) => s + (Number(r.debit) || 0), 0);
-  const credit = rows.reduce((s, r) => s + (Number(r.credit) || 0), 0);
+  const debit = rows.reduce((s, r) => s + Number(r.debit ?? 0), 0);
+  const credit = rows.reduce((s, r) => s + Number(r.credit ?? 0), 0);
+
   const diff = +(debit - credit).toFixed(2);
+
   return {
     debit: +debit.toFixed(2),
     credit: +credit.toFixed(2),
@@ -60,19 +93,26 @@ export function calcTotals(rows: Row[]) {
   };
 }
 
-/**
- * Patch row with canonical normalization
- */
+/* =============================================================================
+   PATCH ROW (SAFE NORMALIZATION)
+============================================================================= */
+
 export function patchRowFactory(
   getAccountsByCode: () => Map<string, Account>,
   setRows: React.Dispatch<React.SetStateAction<Row[]>>
 ) {
   return (idx: number, patch: Partial<Row>) => {
     setRows((prev) => {
-      const next = [...prev];
-      const merged = { ...next[idx], ...patch };
+      const current = prev[idx];
+      if (!current) return prev;
 
-      // Normalize account code/name using your canonical logic
+      const next = [...prev];
+
+      const merged: Row = {
+        ...current,
+        ...patch,
+      };
+
       const canon = normalizeEntry({
         account_code: merged.account_code,
         account_name: merged.account_name,
@@ -82,6 +122,8 @@ export function patchRowFactory(
         ...merged,
         account_code: canon.account_code,
         account_name: canon.account_name,
+        debit: Number(merged.debit ?? 0),
+        credit: Number(merged.credit ?? 0),
       };
 
       return next;
@@ -89,43 +131,54 @@ export function patchRowFactory(
   };
 }
 
-/**
- * Apply account selection using canonicalPair
- */
+/* =============================================================================
+   ACCOUNT SELECTION
+============================================================================= */
+
 export function applyAccountFactory(
   patchRow: (idx: number, patch: Partial<Row>) => void
 ) {
   return (idx: number, acc: { code: string; name: string } | null) => {
     if (!acc) return;
+
     const canon = canonicalPair(acc);
-    patchRow(idx, { account_code: canon.code, account_name: canon.name });
+
+    patchRow(idx, {
+      account_code: canon.code,
+      account_name: canon.name,
+    });
   };
 }
 
-// ---------------------------------------------
-// Numeric input helpers (raw formatting)
-// ---------------------------------------------
+/* =============================================================================
+   NUMERIC HELPERS
+============================================================================= */
 
 export function parseDecimalLoose(raw: string): number | null {
   const cleaned = raw.replace(/,/g, "").trim();
   if (!cleaned) return 0;
+
   const num = parseFloat(cleaned);
-  if (Number.isNaN(num)) return null;
-  return num;
+  return Number.isNaN(num) ? null : num;
 }
 
 export function formatMoney(num: number): string {
   if (!num || Number.isNaN(num)) return "";
+
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
 
+/* =============================================================================
+   INPUT FORMATTERS
+============================================================================= */
+
 export function debitValueForInput(r: Row): string {
   return (
     r._debitRaw ??
-    ((r.debit ?? 0) !== 0
+    (Number(r.debit ?? 0) !== 0
       ? Number(r.debit).toLocaleString("en-US", {
           minimumFractionDigits: 0,
           maximumFractionDigits: 2,
@@ -137,7 +190,7 @@ export function debitValueForInput(r: Row): string {
 export function creditValueForInput(r: Row): string {
   return (
     r._creditRaw ??
-    ((r.credit ?? 0) !== 0
+    (Number(r.credit ?? 0) !== 0
       ? Number(r.credit).toLocaleString("en-US", {
           minimumFractionDigits: 0,
           maximumFractionDigits: 2,
@@ -146,9 +199,9 @@ export function creditValueForInput(r: Row): string {
   );
 }
 
-// ---------------------------------------------
-// Keyboard navigation helpers
-// ---------------------------------------------
+/* =============================================================================
+   KEYBOARD NAVIGATION
+============================================================================= */
 
 export function focusInput(selector: string) {
   const el = document.querySelector<HTMLInputElement>(selector);
@@ -160,6 +213,7 @@ export function handleEnterFromDebit(
   idx: number
 ) {
   if (ev.key !== "Enter") return;
+
   ev.preventDefault();
   focusInput(`[data-credit="${idx}"]`);
 }
@@ -170,9 +224,9 @@ export function handleEnterFromCredit(
   addRow: () => void
 ) {
   if (ev.key !== "Enter") return;
+
   ev.preventDefault();
 
-  // Try next row debit
   const nextSelector = `[data-debit="${idx + 1}"]`;
   const next = document.querySelector<HTMLInputElement>(nextSelector);
 
@@ -181,23 +235,35 @@ export function handleEnterFromCredit(
     return;
   }
 
-  // If last row, add new row and focus it
   addRow();
+
   setTimeout(() => {
     focusInput(`[data-debit="${idx + 1}"]`);
   }, 100);
 }
 
-// ---------------------------------------------
-// Row operations
-// ---------------------------------------------
+/* =============================================================================
+   ROW OPERATIONS
+============================================================================= */
 
 export function addRowFactory(
   entityId: string,
   userIdSafe: string,
   setRows: React.Dispatch<React.SetStateAction<Row[]>>
 ) {
-  return () => setRows((prev) => [...prev, createEmptyRow(entityId, userIdSafe)]);
+  return () =>
+    setRows((prev) => {
+      const base = prev[0];
+
+      return [
+        ...prev,
+        createEmptyRow(entityId, userIdSafe, {
+          transactionId: base?.transactionId ?? uuidv4(),
+          transactionType: base?.transactionType ?? "invoice",
+          documentNature: base?.documentNature ?? "sale",
+        }),
+      ];
+    });
 }
 
 export function removeRowFactory(
@@ -208,12 +274,12 @@ export function removeRowFactory(
   return (idx: number) => {
     setRows((prev) => {
       if (prev.length <= 1) return prev;
-      const next = prev.filter((_, i) => i !== idx);
-      return next;
+      return prev.filter((_, i) => i !== idx);
     });
 
-    const selectedIdx = getSelectedIdx();
-    if (selectedIdx === idx) setSelectedIdx(null);
+    if (getSelectedIdx() === idx) {
+      setSelectedIdx(null);
+    }
   };
 }
 
@@ -224,27 +290,36 @@ export function duplicateRowFactory(
   getRowsSnapshot: () => Row[]
 ) {
   return () => {
-    const selectedIdx = getSelectedIdx();
-    if (selectedIdx == null) return;
+    const idx = getSelectedIdx();
+    if (idx == null) return;
 
     const rows = getRowsSnapshot();
-    const base = rows[selectedIdx];
+    const base = rows[idx];
     if (!base) return;
 
     const copy: Row = {
       ...base,
       id: uuidv4(),
+
+      transactionId: base.transactionId,
+      transactionType: base.transactionType,
+      documentNature: base.documentNature,
+
+      debit: Number(base.debit ?? 0),
+      credit: Number(base.credit ?? 0),
+
       createdAt: Date.now(),
+
       _debitRaw: base._debitRaw,
       _creditRaw: base._creditRaw,
     };
 
     setRows((prev) => {
       const next = [...prev];
-      next.splice(selectedIdx + 1, 0, copy);
+      next.splice(idx + 1, 0, copy);
       return next;
     });
 
-    setSelectedIdx(selectedIdx + 1);
+    setSelectedIdx(idx + 1);
   };
 }

@@ -453,7 +453,6 @@ export default function RegisterPayablePaymentModal({
         paymentAmountNum,
         paymentDate,
         {
-          id: selectedBank.id,
           account_code: bankGL,
           name: selectedBank.name ?? "Cuenta bancaria",
         },

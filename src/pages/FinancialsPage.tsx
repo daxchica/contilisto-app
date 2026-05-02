@@ -65,24 +65,45 @@ export default function FinancialsPage() {
 
   /* ----------------- Fallback: calculate base utility ----------------- */
   const utilidadBase = useMemo(() => {
-    const sumByCode = (codes: string[], side: "debit" | "credit") =>
-      entries
-        .filter((e) => codes.includes(e.account_code || ""))
-        .reduce((acc, e) => acc + Number(e[side] || 0), 0);
 
-    const sumByPrefix = (prefix: string, side: "debit" | "credit") =>
-      entries
-        .filter((e) => (e.account_code || "").startsWith(prefix))
-        .reduce((acc, e) => acc + Number(e[side] || 0), 0);
+    const ingresos = entries
+      .filter((e) =>
+        (e.account_code || "").startsWith("4")
+      )
+      .reduce(
+        (acc, e) =>
+          acc +
+          Number(e.credit || 0) -
+          Number(e.debit || 0),
+        0
+      );
 
-    const ventas = sumByCode(["70101"], "credit");
-    const compras = sumByCode(["60601"], "debit");
-    const ice = sumByCode(["53901"], "debit");
-    const ivaCredito = sumByCode(["24301"], "debit");
-    const costoVentas = compras + ice + ivaCredito;
-    const gastos = sumByPrefix("5", "debit");
+    const costos = entries
+      .filter((e) =>
+        (e.account_code || "").startsWith("6")
+      )
+      .reduce(
+        (acc, e) =>
+          acc +
+          Number(e.debit || 0) -
+          Number(e.credit || 0),
+        0
+      );
 
-    return ventas - costoVentas - gastos;
+    const gastos = entries
+      .filter((e) =>
+        (e.account_code || "").startsWith("5")
+      )
+      .reduce(
+        (acc, e) =>
+          acc +
+          Number(e.debit || 0) -
+          Number(e.credit || 0),
+        0
+      );
+
+    return ingresos - costos - gastos;
+
   }, [entries]);
 
   const handleResultChange = useCallback((newResult: number) => {
@@ -122,7 +143,7 @@ export default function FinancialsPage() {
         </h2>
         <BalanceSheet
           entries={allEntries}
-          resultadoDelEjercicio={resultadoDelEjercicio || utilidadBase}
+          resultadoDelEjercicio={resultadoDelEjercicio}
           entityId={entityId}
         />
       </div>

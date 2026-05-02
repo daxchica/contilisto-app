@@ -99,7 +99,7 @@ export default function CompaniesPage() {
     if (creating) return;
 
     // 🚨 PLAN LIMIT
-    if (entities.length >= plan.maxEntities) {
+    if (entities.length >= plan.limits.maxEntities) {
       alert("Has alcanzado el límite de empresas de tu plan");
       return;
     }
@@ -171,9 +171,9 @@ export default function CompaniesPage() {
 
       <button
         onClick={() => setShowAddModal(true)}
-        disabled={entities.length >= plan.maxEntities}
+        disabled={entities.length >= plan.limits.maxEntities}
         className={`mb-4 px-4 py-2 rounded ${
-          entities.length >= plan.maxEntities
+          entities.length >= plan.limits.maxEntities
             ? "bg-gray-300 cursor-not-allowed" 
             : "bg-blue-600 text-white hover:bg-blue-700"
         }`}
@@ -181,7 +181,7 @@ export default function CompaniesPage() {
         ➕ Agregar Empresa
       </button>
 
-      {entities.length >= plan.maxEntities && (
+      {entities.length >= plan.limits.maxEntities && (
         <p className="text-sm text-red-600 mb-4">
           Has alcanzado el límite de tu plan. Mejora tu plan para agregar más empresas.
         </p>

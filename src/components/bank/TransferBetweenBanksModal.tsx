@@ -76,13 +76,12 @@ export default function TransferBetweenBanksModal({
 
       const transactionId = await createTransferJournalEntry(
         entityId,
-        fromBank.code,
-        toBank.code,
+        userIdSafe,
+        { account_code: fromBank.code, name: fromBank.name },
+        { account_code: toBank.code, name: toBank.name },
         numericAmount,
         date,
-        userIdSafe,
-        fromBank.name,
-        toBank.name
+        "Transferencia entre bancos"
       );
 
       await linkJournalTransactionByTransferId(

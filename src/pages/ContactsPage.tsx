@@ -274,7 +274,7 @@ export default function ContactsPage() {
         onClose={() => setShowModal(false)}
         onSave={handleSave}
         entityId={entityId}
-        initialData={editingContact}
+        initialData={editingContact ?? undefined}
       />
     </div>
   );

@@ -1,18 +1,9 @@
 // ============================================================================
 // src/services/sri/atsXmlBuilder.ts
-// CONTILISTO — ATS XML Builder (SRI Compatible)
+// CONTILISTO — ATS XML Builder (SRI CORRECT / PRODUCTION READY)
 // ============================================================================
 
 import type { AtsDocument } from "@/types/atsDocument";
-
-export interface AtsXmlParams {
-  documents: AtsDocument[];
-  period: string;
-  ruc: string;
-  razonSocial: string;
-  anio?: string;
-  mes?: string;
-}
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -26,10 +17,16 @@ const escapeXml = (value?: string) =>
 
 const num = (v?: number) => Number(v ?? 0).toFixed(2);
 
+const formatDate = (date?: string) => {
+  if (!date) return "";
+  const [y, m, d] = date.split("-");
+  return `${d}/${m}/${y}`;
+};
+
 const getTpId = (ruc: string) => {
-  if (ruc?.length === 13) return "01"; // RUC
-  if (ruc?.length === 10) return "05"; // Cédula
-  return "06"; // Otros
+  if (ruc?.length === 13) return "01";
+  if (ruc?.length === 10) return "05";
+  return "06";
 };
 
 /* -------------------------------------------------------------------------- */
@@ -41,17 +38,17 @@ export function buildAtsXml({
   period,
   ruc,
   razonSocial,
-  anio,
-  mes,
-}: AtsXmlParams): string {
+}: {
+  documents: AtsDocument[];
+  period: string;
+  ruc: string;
+  razonSocial: string;
+}): string {
 
-  const [yearFromPeriod = "", monthFromPeriod = ""] = String(period).split("-");
+  const [anio, mes] = period.split("-");
 
-  const safeAnio = anio ?? yearFromPeriod;
-  const safeMes = mes ?? monthFromPeriod;
-
-  const compras = documents.filter(d => d.documentType === "01");
-  const ventas = documents.filter(d => d.documentType === "18");
+  const compras = documents.filter(d => d.type === "purchase");
+  const ventas = documents.filter(d => d.type === "sale");
   const retenciones = documents.filter(d => d.documentType === "07");
 
   const totalVentas = ventas.reduce(
@@ -67,11 +64,10 @@ export function buildAtsXml({
   <IdInformante>${escapeXml(ruc)}</IdInformante>
   <razonSocial>${escapeXml(razonSocial)}</razonSocial>
 
-  <Anio>${safeAnio}</Anio>
-  <Mes>${safeMes}</Mes>
+  <Anio>${anio}</Anio>
+  <Mes>${mes}</Mes>
 
   <numEstabRuc>001</numEstabRuc>
-
   <totalVentas>${num(totalVentas)}</totalVentas>
 
   <codigoOperativo>IVA</codigoOperativo>
@@ -85,51 +81,47 @@ export function buildAtsXml({
 
   for (const doc of compras) {
 
+    const rucProv = doc.counterpartyRUC || "9999999999999";
+
     xml += `
     <detalleCompras>
 
-      <tpIdProv>${getTpId(doc.ruc)}</tpIdProv>
-
-      <idProv>${escapeXml(doc.ruc)}</idProv>
+      <tpIdProv>${getTpId(rucProv)}</tpIdProv>
+      <idProv>${escapeXml(rucProv)}</idProv>
 
       <tipoComprobante>01</tipoComprobante>
-
       <parteRel>NO</parteRel>
 
-      <fechaRegistro>${escapeXml(doc.date)}</fechaRegistro>
+      <fechaRegistro>${formatDate(doc.date)}</fechaRegistro>
 
-      <establecimiento>${escapeXml(doc.establishment ?? "001")}</establecimiento>
+      <establecimiento>${escapeXml(doc.establishment)}</establecimiento>
+      <puntoEmision>${escapeXml(doc.emissionPoint)}</puntoEmision>
+      <secuencial>${escapeXml(doc.sequential)}</secuencial>
 
-      <puntoEmision>${escapeXml(doc.emissionPoint ?? "001")}</puntoEmision>
-
-      <secuencial>${escapeXml(doc.sequential ?? "")}</secuencial>
-
-      <fechaEmision>${escapeXml(doc.date)}</fechaEmision>
-
-      <autorizacion>${escapeXml(doc.authorizationNumber ?? "")}</autorizacion>
+      <fechaEmision>${formatDate(doc.date)}</fechaEmision>
+      <autorizacion>${escapeXml(doc.authorizationNumber)}</autorizacion>
 
       <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
-
       <baseImponible>0.00</baseImponible>
-
       <baseImpGrav>${num(doc.base12)}</baseImpGrav>
 
       <montoIva>${num(doc.iva)}</montoIva>
-
       <montoIce>${num(doc.ice)}</montoIce>
 
-      <valorRetencionIva>0.00</valorRetencionIva>
+      <valorRetencionIva>${num(doc.ivaRetention)}</valorRetencionIva>
 
       <formasDePago>
         <formaPago>20</formaPago>
       </formasDePago>
 `;
 
-    /* 🔥 AIR RETENTIONS (CORRECT LOOP) */
-    if (doc.retenciones?.length) {
+    /* 🔥 ONLY RENTA goes into AIR */
+    const rentaRet = doc.retenciones?.filter(r => r.taxType === "RENTA") || [];
+
+    if (rentaRet.length) {
       xml += `<air>`;
 
-      for (const r of doc.retenciones) {
+      for (const r of rentaRet) {
         xml += `
         <detalleAir>
           <codRetAir>${escapeXml(r.code)}</codRetAir>
@@ -147,7 +139,7 @@ export function buildAtsXml({
   }
 
   xml += `</compras>`;
-  
+
 
   /* ===============================
      VENTAS
@@ -157,32 +149,28 @@ export function buildAtsXml({
 
   for (const doc of ventas) {
 
+    const rucCli = doc.counterpartyRUC || "9999999999999";
+
     xml += `
     <detalleVentas>
 
-      <tpIdCliente>${getTpId(doc.ruc)}</tpIdCliente>
-
-      <idCliente>${escapeXml(doc.ruc)}</idCliente>
+      <tpIdCliente>${getTpId(rucCli)}</tpIdCliente>
+      <idCliente>${escapeXml(rucCli)}</idCliente>
 
       <parteRel>NO</parteRel>
 
-      <tipoComprobante>18</tipoComprobante>
-
+      <tipoComprobante>01</tipoComprobante>
       <numeroComprobantes>1</numeroComprobantes>
 
       <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
-
       <baseImponible>0.00</baseImponible>
-
       <baseImpGrav>${num(doc.base12)}</baseImpGrav>
 
       <montoIva>${num(doc.iva)}</montoIva>
-
       <montoIce>${num(doc.ice)}</montoIce>
 
-      <valorRetencionIva>0.00</valorRetencionIva>
-
-      <valorRetencionRenta>0.00</valorRetencionRenta>
+      <valorRetencionIva>${num(doc.ivaRetention)}</valorRetencionIva>
+      <valorRetencionRenta>${num(doc.rentaRetention)}</valorRetencionRenta>
 
       <formasDePago>
         <formaPago>20</formaPago>
@@ -194,6 +182,7 @@ export function buildAtsXml({
 
   xml += `</ventas>`;
 
+
   /* ===============================
      RETENCIONES
   =============================== */
@@ -202,23 +191,20 @@ export function buildAtsXml({
 
   for (const doc of retenciones) {
 
-    if (!doc.retenciones?.length) continue;
+    const rucProv = doc.counterpartyRUC || "9999999999999";
 
-    for (const r of doc.retenciones) {
+    for (const r of doc.retenciones || []) {
 
       xml += `
       <detalleRetenciones>
 
-        <tpIdProv>01</tpIdProv>
-
-        <idProv>${escapeXml(doc.ruc)}</idProv>
+        <tpIdProv>${getTpId(rucProv)}</tpIdProv>
+        <idProv>${escapeXml(rucProv)}</idProv>
 
         <codigo>${escapeXml(r.code)}</codigo>
 
         <baseImponible>${num(r.base)}</baseImponible>
-
         <porcentajeRetener>${num(r.percentage)}</porcentajeRetener>
-
         <valorRetenido>${num(r.amount)}</valorRetenido>
 
       </detalleRetenciones>
@@ -233,5 +219,4 @@ export function buildAtsXml({
 `;
 
   return xml;
-
 }

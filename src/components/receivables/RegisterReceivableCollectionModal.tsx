@@ -151,16 +151,22 @@ export default function RegisterReceivableCollectionModal({
       // =====================================================
       const transactionId = await createReceivableCollectionJournalEntry(
         entityId,
-        r,
-        numericAmount,
-        collectionDate,
+        userIdSafe,
+
         {
-          id: selectedBank.id!,
           account_code: bankGLCode,
           name: selectedBank.name,
         },
-        userIdSafe,
-        { bankMovementId }
+
+        {
+          account_code: String(r.account_code ?? ""),
+          name: r.account_name ?? "Cuentas por cobrar",
+        },
+
+        numericAmount,
+        collectionDate,
+        `Cobro a cliente ${r.customerName ?? "Cliente"} — Factura ${r.invoiceNumber}`,
+        
       );
 
       // =====================================================
