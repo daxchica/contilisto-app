@@ -47,3 +47,5 @@ firebase-admin.json
 firebase-admin.json
 # Netlify
 .netlify
+# Claude Code worktrees (never commit these)
+.claude/
