@@ -222,13 +222,13 @@ export default function Landing() {
       <main className="flex-1 pt-16">
 
         {/* ================================================================
-         * HERO — fills viewport
+         * HERO
          * ============================================================== */}
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-white" />
 
-          <div className="relative max-w-7xl mx-auto px-6 py-16 lg:py-0 lg:min-h-[calc(100vh-64px)] flex items-center">
-            <div className="grid lg:grid-cols-2 gap-10 xl:gap-16 items-center w-full py-8">
+          <div className="relative max-w-7xl mx-auto px-6 py-14 lg:py-20">
+            <div className="grid lg:grid-cols-2 gap-10 xl:gap-16 items-start">
 
               {/* TEXT */}
               <div className="text-center lg:text-left">
@@ -250,27 +250,14 @@ export default function Landing() {
                   conciliaciones bancarias y reportes SRI — en minutos.
                 </p>
 
-                <div className="flex flex-wrap gap-8 mt-8 text-sm text-gray-600 justify-center lg:justify-start">
-                  <div className="flex items-center gap-1">
-                    <span className="font-bold text-blue-700">10x</span> más rápido
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="font-bold text-blue-700">90%</span> menos trabajo manual
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="font-bold text-blue-700">100%</span> compatible SRI
-                  </div>
-                </div>
-
                 {/* CTA — Desktop */}
-                <div className="hidden md:flex mt-8 gap-3 items-center">
+                <div className="hidden md:flex mt-7 gap-3 items-center">
                   <button
                     onClick={scrollToPricing}
                     className="bg-blue-600 text-white px-7 py-3 rounded-xl font-semibold hover:bg-blue-700 transition"
                   >
                     Crear Cuenta Gratis
                   </button>
-
                   <button
                     onClick={openDemo}
                     className="group flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition"
@@ -280,9 +267,56 @@ export default function Landing() {
                   </button>
                 </div>
 
-                <p className="text-sm text-gray-500 mt-3">
-                  Sin tarjeta de crédito · Plan gratuito disponible
+                {/* Social proof */}
+                <div className="hidden md:flex items-center gap-3 mt-5">
+                  {/* Avatar stack */}
+                  <div className="flex -space-x-2">
+                    {["EF","MC","RV","AP","JL"].map((initials, i) => (
+                      <div
+                        key={i}
+                        className="w-8 h-8 rounded-full bg-blue-600 border-2 border-white flex items-center justify-center text-white text-[10px] font-bold"
+                        style={{ zIndex: 5 - i }}
+                      >
+                        {initials}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-semibold text-gray-900">+500 contadores</span> ya automatizan con Contilisto
+                  </p>
+                </div>
+
+                {/* Stat pills */}
+                <div className="flex flex-wrap gap-3 mt-6 justify-center lg:justify-start">
+                  {[
+                    { value: "10x", label: "más rápido", color: "bg-blue-50 text-blue-700" },
+                    { value: "90%", label: "menos trabajo manual", color: "bg-green-50 text-green-700" },
+                    { value: "100%", label: "compatible SRI", color: "bg-purple-50 text-purple-700" },
+                  ].map(({ value, label, color }) => (
+                    <div key={value} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${color}`}>
+                      <span className="font-extrabold">{value}</span>
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-sm text-gray-500 mt-4">
+                  Sin tarjeta de crédito · Plan gratuito disponible · Cancela cuando quieras
                 </p>
+
+                {/* Feature highlights */}
+                <div className="mt-6 grid grid-cols-2 gap-2 text-sm text-left">
+                  {[
+                    "✓ Asientos contables automáticos",
+                    "✓ Declaraciones IVA con un clic",
+                    "✓ Conciliación bancaria inteligente",
+                    "✓ Reportes SRI en tiempo real",
+                    "✓ Multi-empresa desde una cuenta",
+                    "✓ Plan único de cuentas Ecuador",
+                  ].map((f) => (
+                    <p key={f} className="text-gray-600">{f}</p>
+                  ))}
+                </div>
 
                 {/* CTA — Mobile */}
                 <div className="md:hidden mt-7 space-y-3">
@@ -474,7 +508,7 @@ export default function Landing() {
         {/* ================================================================
          * DEMO VIDEO SECTION — first-timer CTA
          * ============================================================== */}
-        <section className="bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 py-16 md:py-20">
+        <section className="bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 py-14 md:py-16">
           <div className="max-w-4xl mx-auto px-6 text-center">
             <p className="text-blue-400 font-semibold text-sm uppercase tracking-widest mb-3">
               Mira cómo funciona
