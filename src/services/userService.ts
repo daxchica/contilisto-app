@@ -14,7 +14,7 @@ import {
  * TYPES
  * ============================================================ */
 
-export type UserRole = "owner" | "accountant" | "assistant" | "viewer";
+export type UserRole = "owner" | "master" | "admin" | "user" | "accountant" | "assistant" | "viewer";
 
 export type SubscriptionPlan = "Free" | "Pro";
 

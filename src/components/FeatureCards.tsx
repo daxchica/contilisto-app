@@ -1,4 +1,4 @@
-import { Brain, BadgeDollarSign, Banknote } from "lucide-react";
+import { Brain, BadgeDollarSign, Banknote, FileText, BarChart2, Receipt, BookOpen, Building2, ArrowLeftRight } from "lucide-react";
 
 type CardProps = {
   title: string;
@@ -18,7 +18,7 @@ function FeatureCard({ title, blurb, Icon, bgColor, hoverColor, iconBg, iconColo
       aria-label={title}
     >
       <div className="relative flex items-start gap-3">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg}`}>
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
           <Icon className={`h-6 w-6 ${iconColor}`} aria-hidden />
         </div>
         <div>
@@ -45,28 +45,82 @@ export default function FeatureCards() {
           title="Contabilidad IA"
           blurb="Sube PDFs y la IA genera asientos con PUC Ecuador, IVA y conciliaciones básicas en minutos."
           Icon={Brain}
-          bgColor="bg-emeral-50"
+          bgColor="bg-emerald-50"
           iconBg="bg-emerald-100"
           iconColor="text-emerald-700"
+          hoverColor="hover:bg-emerald-100"
+        />
+        <FeatureCard
+          title="Facturación Electrónica"
+          blurb="Emite, firma y envía facturas electrónicas al SRI desde la plataforma. Cumple con toda la normativa vigente."
+          Icon={Receipt}
+          bgColor="bg-blue-50"
+          iconBg="bg-blue-100"
+          iconColor="text-blue-700"
           hoverColor="hover:bg-blue-100"
         />
         <FeatureCard
+          title="Estados Financieros"
+          blurb="Balance general, estado de resultados y balance de comprobación generados automáticamente."
+          Icon={BarChart2}
+          bgColor="bg-violet-50"
+          iconBg="bg-violet-100"
+          iconColor="text-violet-700"
+          hoverColor="hover:bg-violet-100"
+        />
+        <FeatureCard
           title="Cartera"
-          blurb="Cuentas por cobrar y pagar con aging, estados por cliente/proveedor y recordatorios."
+          blurb="Cuentas por cobrar y pagar con aging, estados por cliente/proveedor y seguimiento de vencimientos."
           Icon={BadgeDollarSign}
           bgColor="bg-indigo-50"
           iconBg="bg-indigo-100"
           iconColor="text-indigo-700"
-          hoverColor="hover:bg-blue-100"
+          hoverColor="hover:bg-indigo-100"
         />
         <FeatureCard
-          title="Cuentas Corrientes"
-          blurb="Movimientos por banco, conciliaciones y saldos al día con anexos y soporte de comprobantes."
+          title="Libro de Bancos"
+          blurb="Registra movimientos bancarios, realiza conciliaciones y mantén tus saldos al día con soporte de comprobantes."
           Icon={Banknote}
           bgColor="bg-amber-50"
           iconBg="bg-amber-100"
           iconColor="text-amber-700"
-          hoverColor="hover:bg-blue-100"
+          hoverColor="hover:bg-amber-100"
+        />
+        <FeatureCard
+          title="Declaraciones SRI"
+          blurb="Genera anexos transaccionales (ATS) y declaraciones de IVA listas para presentar al SRI."
+          Icon={FileText}
+          bgColor="bg-rose-50"
+          iconBg="bg-rose-100"
+          iconColor="text-rose-700"
+          hoverColor="hover:bg-rose-100"
+        />
+        <FeatureCard
+          title="Libro Mayor"
+          blurb="Consulta los libros auxiliares por cuenta, filtra por fecha y exporta los movimientos contables."
+          Icon={BookOpen}
+          bgColor="bg-teal-50"
+          iconBg="bg-teal-100"
+          iconColor="text-teal-700"
+          hoverColor="hover:bg-teal-100"
+        />
+        <FeatureCard
+          title="Flujo de Caja"
+          blurb="Visualiza entradas y salidas de efectivo, proyecta tu liquidez y toma decisiones con datos en tiempo real."
+          Icon={ArrowLeftRight}
+          bgColor="bg-cyan-50"
+          iconBg="bg-cyan-100"
+          iconColor="text-cyan-700"
+          hoverColor="hover:bg-cyan-100"
+        />
+        <FeatureCard
+          title="Multi-empresa"
+          blurb="Gestiona varias empresas desde una sola cuenta. Cambia de entidad sin cerrar sesión."
+          Icon={Building2}
+          bgColor="bg-slate-50"
+          iconBg="bg-slate-100"
+          iconColor="text-slate-700"
+          hoverColor="hover:bg-slate-100"
         />
       </div>
     </section>

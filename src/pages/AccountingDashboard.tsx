@@ -51,6 +51,8 @@ import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
 import { getPdfPageCount } from "@/utils/pdfUtils";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { getContextualAccountHint } from "@/services/firestoreHintsService";
+import { parseSriTxt } from "@/services/parseSriTxt";
+import { sriRowToEntries } from "@/utils/sriTxtToEntries";
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -113,6 +115,12 @@ export default function AccountingDashboard() {
     useState<InvoicePreviewMetadata | null>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+
+  // SRI TXT batch queue — one preview modal per invoice
+  const [sriQueue, setSriQueue] = useState<
+    Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }>
+  >([]);
+  const [sriQueueIdx, setSriQueueIdx] = useState(0);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
 
@@ -425,6 +433,121 @@ const stableJournal = useMemo(() =>
   );
 
   // --------------------------------------------------------------------------
+  // SRI TXT PROCESSOR
+  // --------------------------------------------------------------------------
+
+  const handleTxtFileSelected = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return;
+
+      const authUid = getAuth().currentUser?.uid;
+      if (!authUid || authUid !== userIdSafe) {
+        alert("Sesión no válida.");
+        return;
+      }
+
+      if (!entityId) {
+        alert("Selecciona una empresa primero.");
+        return;
+      }
+
+      if (accounts.length === 0 && !accountsLoading) {
+        await loadAccounts();
+      }
+
+      try {
+        const file = files[0];
+        const content = await file.text();
+        const rows = parseSriTxt(content);
+
+        if (rows.length === 0) {
+          alert("No se encontraron facturas en el archivo TXT.");
+          return;
+        }
+
+        // Build one queue item per invoice so user reviews each individually
+        const queue: Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }> = [];
+
+        for (const row of rows) {
+          const cacheKey = `${entityId}__${row.issuerRUC}`;
+          let hint = hintCache.current.get(cacheKey);
+
+          if (hint === undefined) {
+            try {
+              hint = await getContextualAccountHint(entityId, authUid, row.issuerRUC);
+            } catch {
+              hint = null;
+            }
+            hintCache.current.set(cacheKey, hint ?? null);
+          }
+
+          const normalizedHintCode = normalizeComparableCode(hint?.accountCode ?? "");
+          const useHint =
+            hint &&
+            hint.frequency >= 2 &&
+            normalizedHintCode &&
+            normalizedLeafCodeSet.has(normalizedHintCode) &&
+            normalizedAccountCodeSet.has(normalizedHintCode);
+
+          const entries = sriRowToEntries(
+            row,
+            entityId,
+            authUid,
+            useHint ? normalizedHintCode : undefined,
+            useHint ? hint!.accountName : undefined
+          );
+
+          const metadata: InvoicePreviewMetadata = {
+            invoiceType: "expense",
+            issuerRUC: row.issuerRUC,
+            issuerName: row.issuerName,
+            buyerName: selectedEntity?.name ?? "",
+            buyerRUC: entityRUC,
+            invoiceDate: row.fechaEmision,
+            invoice_number: row.serie,
+          };
+
+          queue.push({ entries, metadata });
+        }
+
+        setSriQueue(queue);
+        setSriQueueIdx(0);
+      } catch (err: unknown) {
+        console.error(err);
+        alert(`Error procesando TXT: ${getErrorMessage(err)}`);
+      }
+    },
+    [
+      entityId,
+      entityRUC,
+      userIdSafe,
+      accounts.length,
+      accountsLoading,
+      loadAccounts,
+      normalizedLeafCodeSet,
+      normalizedAccountCodeSet,
+      selectedEntity,
+    ]
+  );
+
+  // --------------------------------------------------------------------------
+  // COMBINED FILE HANDLER (PDF or TXT)
+  // --------------------------------------------------------------------------
+
+  const handleFilesSelected = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return;
+      const file = files[0];
+      if (file.name.toLowerCase().endsWith(".txt")) {
+        await handleTxtFileSelected(files);
+      } else {
+        await handlePdfFilesSelected(files);
+      }
+    },
+    [handlePdfFilesSelected, handleTxtFileSelected]
+  );
+
+  // --------------------------------------------------------------------------
   // DELETE / ANNUL SELECTED
   // --------------------------------------------------------------------------
 
@@ -482,7 +605,7 @@ const stableJournal = useMemo(() =>
           </div>
 
           {/* UPLOADER */}
-          <PDFDropzone onFilesSelected={handlePdfFilesSelected} />
+          <PDFDropzone onFilesSelected={handleFilesSelected} />
 
           <div className="bg-white rounded-xl shadow-sm border">
             
@@ -532,6 +655,52 @@ const stableJournal = useMemo(() =>
           }}
         />
       )}
+
+      {/* SRI TXT queue — one preview per invoice */}
+      {sriQueue.length > 0 && sriQueueIdx < sriQueue.length && (() => {
+        const current = sriQueue[sriQueueIdx];
+        const advanceQueue = (saved: boolean) => {
+          if (saved) setLogRefreshTrigger((v) => v + 1);
+          const next = sriQueueIdx + 1;
+          if (next >= sriQueue.length) {
+            setSriQueue([]);
+            setSriQueueIdx(0);
+          } else {
+            setSriQueueIdx(next);
+          }
+        };
+        return (
+          <JournalPreviewModal
+            open={true}
+            entries={current.entries}
+            metadata={current.metadata}
+            queuePosition={{ current: sriQueueIdx + 1, total: sriQueue.length }}
+            entityId={entityId}
+            userIdSafe={userIdSafe}
+            accounts={accounts}
+            postableAccounts={postableAccounts}
+            leafCodeSet={leafCodeSet}
+            onClose={() => {
+              setSriQueue([]);
+              setSriQueueIdx(0);
+            }}
+            onSkip={() => advanceQueue(false)}
+            onSave={async (entries) => {
+              const authUid = getAuth().currentUser?.uid;
+              if (!authUid) return;
+              try {
+                await saveJournalEntries(entityId, authUid, entries);
+                const invoiceNumber = current.metadata.invoice_number ?? "";
+                if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
+                advanceQueue(true);
+              } catch (err: unknown) {
+                console.error("SRI QUEUE SAVE ERROR", err);
+                alert(getErrorMessage(err) || "Error al guardar asiento");
+              }
+            }}
+          />
+        );
+      })()}
 
       {accountsLoading && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

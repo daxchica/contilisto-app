@@ -18,7 +18,7 @@ export default function AdminLayout() {
 
   // 2) Hard guard (defensive)
   const role = user?.role;
-  const isOwner = role === "owner";
+  const isOwner = role === "owner" || role === "master";
 
   if (!isOwner) {
     return (
@@ -89,8 +89,8 @@ export default function AdminLayout() {
             Usuarios
           </NavLink>
 
-          {/* OWNER ONLY */}
-          {user?.role === "owner" && (
+          {/* OWNER / MASTER ONLY */}
+          {(user?.role === "owner" || user?.role === "master") && (
             <>
               <NavLink
                 to="/admin/plans"

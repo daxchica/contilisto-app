@@ -68,13 +68,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
   // Guard central (para todo lo que requiere empresa seleccionada)
   const requireEntityOrRedirect = useCallback((): boolean => {
-    if (isMaster) {
-      alert("La cuenta master está destinada al panel de administración.");
-      closeDrawer();
-      navigate("/admin", { replace: true });
-      return false;
-    }
-
     if (!selectedEntity) {
       closeDrawer();
       navigate("/empresas", { replace: true });
@@ -82,7 +75,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     }
 
     return true;
-  }, [isMaster, selectedEntity, closeDrawer, navigate]);
+  }, [selectedEntity, closeDrawer, navigate]);
 
   const handleSecureNavigation = useCallback(
     (path: string) => {
@@ -224,8 +217,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
       <div className="text-2xl font-bold mb-6 tracking-wide">CONTILISTO</div>
 
       {/* SELECTOR DE EMPRESA */}
-      {!isMaster && (
-        <div ref={dropdownRef} className="relative mb-8">
+      <div ref={dropdownRef} className="relative mb-8">
           <button
             onClick={() => setOpen((v) => !v)}
             aria-haspopup="listbox"
@@ -279,7 +271,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
           </div>
           )}
         </div>
-      )}
 
       {/* MENU */}
       <nav className="flex flex-col space-y-2">
@@ -320,11 +311,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
             CONFIGURACIÓN
         ========================= */}
         <Section id="config" title="Configuración" icon="⚙️">
-          {isMaster ? (
-            <LinkRow to="/admin" icon="🛠️" label="Admin Panel" />
-          ) : (
-            <LinkRow to="/empresas" icon="🏢" label="Empresas" />
-          )}
+          <LinkRow to="/empresas" icon="🏢" label="Empresas" />
+          {isMaster && <LinkRow to="/admin" icon="🛠️" label="Admin Panel" />}
           <LinkRow to="/configuracionSri" icon="📝" label="SRI" requiresEntity />
         </Section>
 

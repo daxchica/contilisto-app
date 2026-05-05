@@ -3,6 +3,7 @@
 import type { Account } from "@/types/AccountTypes";
 import { fetchEntityAccounts } from "@/services/entityAccountsService";
 import { initializeEntityCOA } from "@/services/coaService";
+import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 
 /* ============================================================================
    TYPES
@@ -46,13 +47,20 @@ export async function getEffectiveAccountPlan(
     throw new Error("EntityId is required to load account plan.");
   }
 
-  let effectiveAccounts = await fetchEntityAccounts(entityId);
+  let firestoreAccounts = await fetchEntityAccounts(entityId);
 
-  // 🔥 Self-healing safeguard
-  if (!effectiveAccounts.length) {
+  // Self-healing: initialize if the entity has no accounts at all
+  if (!firestoreAccounts.length) {
     await initializeEntityCOA(entityId);
-    effectiveAccounts = await fetchEntityAccounts(entityId);
+    firestoreAccounts = await fetchEntityAccounts(entityId);
   }
+
+  // Merge: Firestore accounts win on code conflict; ECUADOR_COA fills the gaps.
+  // This ensures newly added COA accounts are always searchable even before
+  // a manual syncEntityCOA() is run on existing entities.
+  const firestoreCodes = new Set(firestoreAccounts.map((a) => a.code));
+  const coaFallbacks = ECUADOR_COA.filter((a) => !firestoreCodes.has(a.code));
+  const effectiveAccounts = [...firestoreAccounts, ...coaFallbacks];
 
   const { postableAccounts, postableCodeSet } =
     computePostables(effectiveAccounts);

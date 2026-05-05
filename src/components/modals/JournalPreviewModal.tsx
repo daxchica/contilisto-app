@@ -38,6 +38,10 @@ interface Props {
 
   onClose: () => void;
   onSave: (entries: JournalEntry[], note: string) => Promise<void>;
+
+  // Queue navigation (SRI TXT batch mode)
+  queuePosition?: { current: number; total: number };
+  onSkip?: () => void;
 }
 
 type Row = Omit<JournalEntry, "debit" | "credit"> & {
@@ -138,6 +142,8 @@ export default function JournalPreviewModal({
   userIdSafe,
   onClose,
   onSave,
+  queuePosition,
+  onSkip,
 }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState("");
@@ -395,8 +401,7 @@ export default function JournalPreviewModal({
       );
       
       await onSave(normalized, note);
-
-      onClose();
+      // Navigation is handled by the parent (queue advance or modal close)
     } catch (err) {
       console.error(err);
       alert("Error al guardar.");
@@ -464,12 +469,18 @@ export default function JournalPreviewModal({
       >
         {/* HEADER */}
 
-        <div className="drag-header bg-blue-600 text-white px-6 py-4 rounded-t-xl flex justify-between cursor-move">
-          <span className="text-xl font-semibold">
-            Vista previa de asiento contable IA
-          </span>
-
-          <button onClick={onClose}>×</button>
+        <div className="drag-header bg-blue-600 text-white px-6 py-4 rounded-t-xl flex justify-between items-center cursor-move">
+          <div className="flex items-center gap-3">
+            <span className="text-xl font-semibold">
+              Vista previa de asiento contable IA
+            </span>
+            {queuePosition && (
+              <span className="bg-blue-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">
+                Factura {queuePosition.current} de {queuePosition.total}
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl leading-none">×</button>
         </div>
 
         {/* BODY */}
@@ -665,10 +676,19 @@ export default function JournalPreviewModal({
             <div className="flex gap-3 ml-4">
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-200 rounded"
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
               >
-                Cancelar
+                {queuePosition ? "Cancelar todo" : "Cancelar"}
               </button>
+
+              {onSkip && (
+                <button
+                  onClick={onSkip}
+                  className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+                >
+                  Omitir
+                </button>
+              )}
 
               <button
                 onClick={handleSave}
@@ -678,9 +698,13 @@ export default function JournalPreviewModal({
                   !totals.leafOk ||
                   !rowsValid
                 }
-                className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50"
+                className="px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50 hover:bg-emerald-700"
               >
-                Confirmar Asiento
+                {saving
+                  ? "Guardando..."
+                  : queuePosition && queuePosition.current < queuePosition.total
+                  ? "Confirmar y Siguiente →"
+                  : "Confirmar Asiento"}
               </button>
             </div>
           </div>

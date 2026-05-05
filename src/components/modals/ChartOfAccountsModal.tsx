@@ -7,6 +7,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { deleteAccount } from "@/services/entityAccountsService";
+import { syncEntityCOA } from "@/services/coaService";
 import CreateSubaccountModal from "@/components/accounts/CreateSubaccountModal";
 
 interface Props {
@@ -84,6 +85,7 @@ export default function ChartOfAccountsModal({
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [postableSet, setPostableSet] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   /* =====================================================
      LOAD PLAN
@@ -247,17 +249,37 @@ export default function ChartOfAccountsModal({
       />
 
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <button
-          onClick={() => {
-            if (!parent) {
-              alert("Selecciona una cuenta padre.");
-              return;
-            }
-            setShowCreateModal(true);
-          }}
-        >
-          ➕ Crear subcuenta
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => {
+              if (!parent) {
+                alert("Selecciona una cuenta padre.");
+                return;
+              }
+              setShowCreateModal(true);
+            }}
+          >
+            ➕ Crear subcuenta
+          </button>
+
+          <button
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                const added = await syncEntityCOA(entityId);
+                await loadPlan();
+                alert(added > 0 ? `${added} cuentas nuevas agregadas.` : "El plan de cuentas ya está actualizado.");
+              } catch (e: any) {
+                alert(e.message ?? "Error al sincronizar");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            {syncing ? "Sincronizando..." : "🔄 Sincronizar plan"}
+          </button>
+        </div>
 
         <div>
           <button onClick={exportCSV}>CSV</button>

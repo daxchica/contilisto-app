@@ -24,6 +24,7 @@ export default function Landing() {
   const [showRegister, setShowRegister] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PlanType | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const openLogin = useCallback(() => {
     setMobileOpen(false);
@@ -195,6 +196,9 @@ export default function Landing() {
               <a href="#precios" onClick={() => setMobileOpen(false)} className="text-gray-700 hover:text-blue-700">
                 Precios
               </a>
+              <a href="#faq" onClick={() => setMobileOpen(false)} className="text-gray-700 hover:text-blue-700">
+                FAQ
+              </a>
 
               <div className="h-6 w-px bg-gray-300" />
 
@@ -227,11 +231,17 @@ export default function Landing() {
           {mobileOpen && (
             <div className="md:hidden pb-4">
               <div className="mt-2 rounded-2xl border bg-white shadow-lg p-5 flex flex-col gap-4 text-base font-semibold">
+                <a href="#como-funciona" onClick={() => setMobileOpen(false)}>
+                  Cómo funciona
+                </a>
                 <a href="#beneficios" onClick={() => setMobileOpen(false)}>
                   Beneficios
                 </a>
                 <a href="#precios" onClick={() => setMobileOpen(false)}>
                   Precios
+                </a>
+                <a href="#faq" onClick={() => setMobileOpen(false)}>
+                  FAQ
                 </a>
 
                 <div className="pt-2 border-t flex flex-col gap-3">
@@ -352,46 +362,137 @@ export default function Landing() {
                 </div>
               </div>
 
-              {/* MOCKUP */}
-              <div className="bg-white border rounded-2xl shadow-2xl overflow-hidden transform lg:scale-105">
-                
+              {/* MOCKUP — browser frame */}
+              <div className="rounded-2xl shadow-2xl overflow-hidden border border-gray-200 transform lg:scale-105">
 
-                <p className="px-4 py-3 text-sm font-semibold text-blue-700 mb-3">
-                  Automatización contable en segundos.
-                </p>
-                
-
-                <div className="grid grid-cols-3 gap-4 text-sm items-center">
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <p className="font-semibold">PDF Factura</p>
-                    <p className="text-xs text-gray-500">
-                      Proveedor XYZ<br />Total $120,50
-                    </p>
+                {/* Browser chrome */}
+                <div className="bg-gray-100 border-b px-4 py-2.5 flex items-center gap-3">
+                  <div className="flex gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-red-400" />
+                    <div className="w-3 h-3 rounded-full bg-yellow-400" />
+                    <div className="w-3 h-3 rounded-full bg-green-400" />
                   </div>
-                  
-
-                  <div className="flex items-center justify-center">
-                    <span className="h-14 w-14 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold animate-[pulse_2.5s_infinite]">
-                      IA
-                    </span>
-                  </div>
-
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <p className="font-semibold">Asiento contable</p>
-                    <p className="text-xs">
-                      Bancos / Ventas / IVA
-                    </p>
+                  <div className="flex-1 bg-white rounded-md px-3 py-1 text-xs text-gray-400 border">
+                    contilisto.com/dashboard
                   </div>
                 </div>
+
+                {/* App shell */}
+                <div className="flex h-64">
+
+                  {/* Sidebar */}
+                  <div className="w-32 bg-blue-900 text-white p-3 flex flex-col gap-1 text-xs shrink-0">
+                    <p className="font-bold text-sm mb-3 px-2">Contilisto</p>
+                    {[
+                      { label: "Tablero",      active: true  },
+                      { label: "Facturación",  active: false },
+                      { label: "Contabilidad", active: false },
+                      { label: "Bancos",       active: false },
+                      { label: "SRI",          active: false },
+                    ].map(({ label, active }) => (
+                      <div
+                        key={label}
+                        className={`px-2 py-1.5 rounded-lg ${active ? "bg-blue-700 font-semibold" : "text-blue-200"}`}
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Main content */}
+                  <div className="flex-1 bg-gray-50 p-3 overflow-hidden flex flex-col gap-3">
+
+                    {/* KPI cards */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-white rounded-xl p-2.5 shadow-sm border">
+                        <p className="text-xs text-gray-500">Ingresos</p>
+                        <p className="text-sm font-bold text-green-600">$12.450</p>
+                        <p className="text-xs text-green-500">↑ 8%</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 shadow-sm border">
+                        <p className="text-xs text-gray-500">Gastos</p>
+                        <p className="text-sm font-bold text-red-500">$8.230</p>
+                        <p className="text-xs text-red-400">↑ 3%</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-2.5 shadow-sm border">
+                        <p className="text-xs text-gray-500">Utilidad</p>
+                        <p className="text-sm font-bold text-blue-700">$4.220</p>
+                        <p className="text-xs text-blue-400">↑ 15%</p>
+                      </div>
+                    </div>
+
+                    {/* Mini bar chart */}
+                    <div className="bg-white rounded-xl p-3 shadow-sm border flex-1">
+                      <p className="text-xs font-semibold text-gray-700 mb-2">Ingresos vs Gastos</p>
+                      <div className="flex items-end gap-1.5 h-16">
+                        {[
+                          { inc: 60, exp: 40 },
+                          { inc: 75, exp: 55 },
+                          { inc: 50, exp: 45 },
+                          { inc: 85, exp: 60 },
+                          { inc: 70, exp: 50 },
+                          { inc: 90, exp: 65 },
+                        ].map((d, i) => (
+                          <div key={i} className="flex-1 flex items-end gap-0.5">
+                            <div className="flex-1 bg-emerald-400 rounded-t" style={{ height: `${d.inc}%` }} />
+                            <div className="flex-1 bg-rose-300 rounded-t"    style={{ height: `${d.exp}%` }} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-3 mt-1.5 text-xs text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />Ingresos
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-300 inline-block" />Gastos
+                        </span>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Status bar */}
+                <div className="bg-blue-700 px-4 py-2 flex items-center justify-between text-xs text-white/80">
+                  <span>✓ Asiento generado automáticamente · IVA 15%</span>
+                  <span className="animate-pulse text-white font-semibold">● IA activa</span>
+                </div>
+
               </div>
             </div>
           </div>
         </section>
         
-        <div className="border-t border-gray-100" />
-        
+        {/* TRUST SIGNALS */}
+        <div className="border-y border-gray-100 bg-gray-50">
+          <div className="max-w-5xl mx-auto px-6 py-6">
+            <div className="flex flex-wrap justify-center gap-x-10 gap-y-4 text-sm text-gray-600">
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 font-bold text-base">✓</span>
+                <span>100% compatible con SRI Ecuador</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 font-bold text-base">✓</span>
+                <span>Datos encriptados y seguros</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 font-bold text-base">✓</span>
+                <span>Sin permanencia — cancela cuando quieras</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 font-bold text-base">✓</span>
+                <span>Soporte en español</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-green-500 font-bold text-base">✓</span>
+                <span>Plan gratuito disponible</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* HOW IT WORKS */}
-        <section id="como-funciona" className="py-20">
+        <section id="como-funciona" className="py-12 md:py-20">
 
           <div className="max-w-6xl mx-auto px-6 text-center">
 
@@ -452,31 +553,35 @@ export default function Landing() {
         <div className="border-t border-gray-100" />
 
         {/* BENEFICIOS */}
-        <section id="beneficios" className="bg-gray-50 py-20">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-10">
-          Funciones diseñadas para contadores
-          </h2>
-
-          <p className="text-gray-600 text-center max-w-2xl mx-auto mb-16">
-          Todo lo que necesitas para automatizar tu contabilidad,
-          desde generación de asientos hasta conciliación bancaria.
-          </p>
+        <section id="beneficios" className="bg-gray-50 py-12 md:py-20">
           <div className="max-w-6xl mx-auto px-6">
+            <h2 className="text-3xl md:text-4xl font-bold text-center mb-10">
+              Funciones diseñadas para contadores
+            </h2>
+
+            <p className="text-gray-600 text-center max-w-2xl mx-auto mb-16">
+              Todo lo que necesitas para automatizar tu contabilidad,
+              desde generación de asientos hasta conciliación bancaria.
+            </p>
+
             <FeatureCards />
           </div>
         </section>
 
         {/* PRECIOS */}
         <section id="precios" className="py-20">
-          <h2 className="text-3xl md:text-4xl font-bold text-center mb-6">
-            Planes diseñados para contadores
-          </h2>
+          <div className="max-w-6xl mx-auto px-6">
+            <h2 className="text-3xl md:text-4xl font-bold text-center mb-6">
+              Planes diseñados para contadores
+            </h2>
 
-          <p className="text-gray-600 text-center mb-6">
-            Automatiza tu contabilidad y ahorra horas de trabajo cada semana.
-          </p>
-          <p className="text-gray-600 text-center mb-16">
-          Un contador puede ahorrar mas de 10 horas al mes automatizando el registro de facturas.</p>
+            <p className="text-gray-600 text-center mb-6">
+              Automatiza tu contabilidad y ahorra horas de trabajo cada semana.
+            </p>
+            <p className="text-gray-600 text-center mb-16">
+              Un contador puede ahorrar más de 10 horas al mes automatizando el registro de facturas.
+            </p>
+          </div>
           <div id="pricing-cards">
             
             <PricingPlans 
@@ -501,7 +606,69 @@ export default function Landing() {
         )}
           
         </section>
-        
+
+        {/* FAQ */}
+        <section id="faq" className="py-20 bg-gray-50">
+          <div className="max-w-3xl mx-auto px-6">
+            <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
+              Preguntas frecuentes
+            </h2>
+            <p className="text-gray-600 text-center mb-12">
+              ¿Tienes dudas? Aquí están las respuestas más comunes.
+            </p>
+
+            <div className="flex flex-col gap-3">
+              {[
+                {
+                  q: "¿Necesito saber contabilidad para usar Contilisto?",
+                  a: "No. La inteligencia artificial genera los asientos contables automáticamente. Solo necesitas subir tus facturas en PDF o XML y el sistema hace el resto.",
+                },
+                {
+                  q: "¿Es compatible con el SRI de Ecuador?",
+                  a: "Sí, 100%. Puedes emitir facturas electrónicas, firmarlas digitalmente y enviarlas al SRI directamente desde la plataforma. También genera los anexos ATS y declaraciones de IVA.",
+                },
+                {
+                  q: "¿Qué tipos de documentos puedo subir?",
+                  a: "Puedes subir facturas en formato PDF o XML (del SRI). La IA extrae automáticamente el proveedor, montos, impuestos y genera el asiento contable correspondiente.",
+                },
+                {
+                  q: "¿Puedo gestionar varias empresas desde una sola cuenta?",
+                  a: "Sí. Contilisto soporta multi-empresa. Puedes cambiar de entidad sin cerrar sesión y cada empresa tiene sus propios libros, facturas y reportes.",
+                },
+                {
+                  q: "¿Cómo funciona el plan gratuito?",
+                  a: "El Plan Estudiante es completamente gratis, sin tarjeta de crédito. Incluye acceso a las funciones principales para que puedas explorar la plataforma sin compromiso.",
+                },
+                {
+                  q: "¿Puedo cancelar en cualquier momento?",
+                  a: "Sí. No hay contratos ni permanencia mínima. Puedes cancelar tu suscripción cuando quieras desde tu perfil.",
+                },
+                {
+                  q: "¿Mis datos están seguros?",
+                  a: "Sí. Toda la información se almacena encriptada y la plataforma utiliza infraestructura de nivel empresarial. Nunca compartimos tus datos con terceros.",
+                },
+              ].map(({ q, a }, i) => (
+                <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <button
+                    className="w-full flex items-center justify-between px-6 py-4 text-left font-semibold text-gray-900 hover:bg-gray-50 transition"
+                    onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  >
+                    <span>{q}</span>
+                    <span className="text-blue-600 text-xl ml-4 shrink-0">
+                      {openFaq === i ? "−" : "+"}
+                    </span>
+                  </button>
+                  {openFaq === i && (
+                    <div className="px-6 pb-5 text-gray-600 text-sm leading-relaxed border-t border-gray-100 pt-4">
+                      {a}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
       </main>
 
       {showDemo && (
@@ -574,7 +741,7 @@ export default function Landing() {
       {/* LOGIN MODAL */}
       <LoginModal isOpen={loginOpen} onClose={closeLogin} />
       
-      <section className="py-28 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center">
+      <section className="py-28 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center px-6">
         <h2 className="text-3xl font-bold mb-4">
           Empieza a usar Contilisto hoy
         </h2>
@@ -587,7 +754,10 @@ export default function Landing() {
           Recibe tips contables y actualizaciones del sistema.
         </p>
 
-        <button className="bg-white text-blue-600 px-8 py-3 rounded-xl font-semibold">
+        <button
+          onClick={scrollToPricing}
+          className="bg-white text-blue-600 px-8 py-3 rounded-xl font-semibold hover:bg-blue-50 transition"
+        >
           Crear Cuenta Gratis
         </button>
       </section>

@@ -84,7 +84,7 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
   // ==========================================================================
 
   return (
-    <section className="max-w-6xl mx-auto w-full px-4 sm:px-6 mt-12">
+    <section className="max-w-6xl mx-auto w-full px-6 mt-12">
 
       {/* 🔴 ERROR MESSAGE */}
       {error && (

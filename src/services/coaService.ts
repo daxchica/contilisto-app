@@ -166,6 +166,56 @@ export async function fetchBankAccountsFromCOA(
   return banks;
 }
 
+/**
+ * Additive migration: adds any ECUADOR_COA accounts missing from an entity's
+ * Firestore accounts collection. Safe to run on existing entities — never
+ * overwrites or deletes existing accounts.
+ */
+export async function syncEntityCOA(entityId: string): Promise<number> {
+  requireEntityId(entityId, "sincronizar plan de cuentas");
+
+  const accountsRef = collection(db, "entities", entityId, "accounts");
+  const snap = await getDocs(accountsRef);
+
+  const existingCodes = new Set(snap.docs.map((d) => d.data().code as string));
+
+  const missing = ECUADOR_COA.filter((acc) => !existingCodes.has(acc.code));
+  if (missing.length === 0) return 0;
+
+  const BATCH_LIMIT = 490;
+  let added = 0;
+
+  for (let i = 0; i < missing.length; i += BATCH_LIMIT) {
+    const chunk = missing.slice(i, i + BATCH_LIMIT);
+    const batch = writeBatch(db);
+
+    chunk.forEach((acc) => {
+      const ref = doc(accountsRef, acc.code);
+      batch.set(ref, {
+        code: acc.code,
+        name: acc.name,
+        parentCode: acc.parentCode ?? null,
+        level: acc.level,
+        isSystem: true,
+        nature: acc.nature ?? null,
+        taxType: acc.taxType ?? null,
+        category: acc.category ?? null,
+        sign: acc.sign ?? null,
+        isReceivable: acc.isReceivable ?? false,
+        isPayable: acc.isPayable ?? false,
+        requiresThirdParty: acc.requiresThirdParty ?? false,
+        isBank: acc.isBank ?? false,
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    await batch.commit();
+    added += chunk.length;
+  }
+
+  return added;
+}
+
 export async function deleteCOAAccount(
     entityId: string, 
     accountCode: string

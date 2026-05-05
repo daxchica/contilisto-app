@@ -4,11 +4,18 @@ import {
   collection,
   getDocs,
   updateDoc,
+  deleteDoc,
   doc,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import type { UserRole } from "@/context/AuthContext";
 import { requireNonEmpty } from "./requireNonEmpty";
+
+async function getIdToken(): Promise<string> {
+  const token = await getAuth().currentUser?.getIdToken();
+  if (!token) throw new Error("No autenticado");
+  return token;
+}
 
 export interface AdminUser {
   uid: string;
@@ -73,3 +80,37 @@ export async function fetchUsers(): Promise<AdminUser[]> {
     requireNonEmpty(uid, "uid");
     await updateDoc(doc(db, "users", uid), data);
     }
+
+export async function createAdminUser(payload: {
+  email: string;
+  password: string;
+  role: UserRole;
+  planKey: string;
+}): Promise<string> {
+  const token = await getIdToken();
+  const res = await fetch("/.netlify/functions/admin-create-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(text || "Error en el servidor");
+  }
+  if (!data.ok) throw new Error(data.error ?? "Error creando usuario");
+  return data.uid;
+}
+
+export async function deleteAdminUser(uid: string): Promise<void> {
+  requireNonEmpty(uid, "uid");
+  // Delete Firestore document directly — no firebase-admin needed.
+  // The Firebase Auth account becomes orphaned but non-functional
+  // since the app always requires a Firestore user document.
+  await deleteDoc(doc(db, "users", uid));
+}
