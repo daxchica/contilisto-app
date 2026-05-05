@@ -37,9 +37,11 @@ export interface AppUser {
 
   stripeCustomerId?: string | null;
 
+  planKey?: "estudiante" | "contador" | "corporativo";
+  planStatus?: "active" | "inactive";
+
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
-  plan?: "estudiante" | "contador" | "corporativo";
 }
 
 /* ============================================================
@@ -111,10 +113,13 @@ export async function getUser(uid: string): Promise<AppUser | null> {
 
     role: data.role ?? "owner",
 
-    subscription: data.subscription ?? "Free",
-    subscriptionStatus: data.subscriptionStatus ?? "active",
+    subscription: (typeof data.subscription === "string" ? data.subscription : "Free") as SubscriptionPlan,
+    subscriptionStatus: (typeof data.subscriptionStatus === "string" ? data.subscriptionStatus : "active") as SubscriptionStatus,
 
     stripeCustomerId: data.stripeCustomerId ?? null,
+
+    planKey: typeof data.planKey === "string" ? (data.planKey as AppUser["planKey"]) : undefined,
+    planStatus: typeof data.planStatus === "string" ? (data.planStatus as AppUser["planStatus"]) : undefined,
 
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,

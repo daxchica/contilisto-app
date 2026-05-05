@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAuth, onAuthStateChanged, signOut, User } from "firebase/auth";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
+import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 
 import {
@@ -12,7 +13,6 @@ import {
   ArrowRightOnRectangleIcon,
   UserCircleIcon,
   Cog6ToothIcon,
-  BuildingOffice2Icon,
 } from "@heroicons/react/24/outline";
 
 interface NavBarProps {
@@ -21,15 +21,14 @@ interface NavBarProps {
 
 export default function NavBar({ onMenuClick }: NavBarProps) {
   const navigate = useNavigate();
-  const { selectedEntity } = useSelectedEntity();
+  const { setEntity } = useSelectedEntity();
+  const { user: appUser } = useAuth();
 
   const [user, setUser] = useState<User | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [companyDropdown, setCompanyDropdown] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 🔐 Auth listener
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -38,23 +37,20 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
     return () => unsubscribe();
   }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
-        setCompanyDropdown(false);
       }
     }
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleLogout = async () => {
+    setEntity(null);
+    localStorage.clear();
+    sessionStorage.clear();
     await signOut(getAuth());
     navigate("/", { replace: true });
   };
@@ -64,16 +60,14 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
 
   const email = user?.email || "";
 
-  // 👇 Temporary subscription logic (replace with real plan later)
-  const subscriptionPlan = "Pro"; // or "Free"
+  const subscriptionPlan = appUser?.planKey ?? appUser?.subscription ?? null;
 
   return (
     <nav className="bg-blue-700 text-white shadow-md">
       <div className="h-16 px-6 flex items-center justify-between">
 
-        {/* LEFT SIDE */}
+        {/* LEFT SIDE — mobile menu toggle only */}
         <div className="flex items-center gap-4">
-
           {onMenuClick && (
             <button
               onClick={onMenuClick}
@@ -81,38 +75,6 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
             >
               ☰
             </button>
-          )}
-
-          {/* Company Switcher */}
-          {selectedEntity && (
-            <div className="relative">
-              <button
-                onClick={() => setCompanyDropdown(!companyDropdown)}
-                className="flex items-center gap-2 font-semibold hover:text-white/80"
-              >
-                <BuildingOffice2Icon className="w-5 h-5" />
-                {selectedEntity.name}
-                <ChevronDownIcon className="w-4 h-4" />
-              </button>
-
-              <AnimatePresence>
-                {companyDropdown && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute left-0 mt-2 w-56 bg-white text-gray-700 rounded-lg shadow-xl overflow-hidden z-50"
-                  >
-                    <button
-                      onClick={() => navigate("/empresas")}
-                      className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                    >
-                      Cambiar Empresa
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
           )}
         </div>
 
@@ -127,15 +89,11 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
             <BellIcon className="w-6 h-6 text-white/80 hover:text-white cursor-pointer" />
 
             {/* Subscription Badge */}
-            <span
-              className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                subscriptionPlan === "Pro"
-                  ? "bg-green-500"
-                  : "bg-gray-400"
-              }`}
-            >
-              {subscriptionPlan}
-            </span>
+            {subscriptionPlan && (
+              <span className="text-xs px-2 py-1 rounded-full font-semibold bg-green-500 capitalize">
+                {subscriptionPlan}
+              </span>
+            )}
 
             {/* Avatar + Name */}
             <button

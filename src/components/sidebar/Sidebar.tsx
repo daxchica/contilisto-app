@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { signOut } from "firebase/auth";
-import { auth } from "@/firebase-config";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { useEntities } from "@/hooks/useEntities";
 import { useAuth } from "@/context/AuthContext";
@@ -16,13 +14,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const isMaster = (user as any)?.role === "master";
 
   const { entities } = useEntities();
-  const { selectedEntity, setEntity } = useSelectedEntity();
+  const { selectedEntity, setEntity: selectEntity } = useSelectedEntity();
   
   const navigate = useNavigate();
   const location = useLocation();
 
   const [open, setOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>("cartera");
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -87,34 +84,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
   );
 
   const handleSelectEntity = (ent: Entity) => {
-    setEntity(ent);   // ← PASS FULL ENTITY
+    selectEntity(ent);
 
     setOpen(false);
     closeDrawer();
     navigate("/dashboard", { replace: true });
-  };
-
-  const logout = async () => {
-    if (loggingOut) return;
-
-    setLoggingOut(true);
-
-    try {
-      setEntity(null);
-      localStorage.clear();
-      sessionStorage.clear();
-
-      await signOut(auth);
-
-      navigate("/", { replace: true});
-    } catch (err) {
-      console.error("Error al cerrar sesion", err);
-    } finally {
-      setEntity(null);
-      
-      closeDrawer();
-      setLoggingOut(false);
-    }
   };
 
   const LinkRow = ({
@@ -287,7 +261,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
         <Section id="cartera" title="Cartera" icon="💼">
           <LinkRow to="/accountsreceivable" icon="📥" label="Por Cobrar" requiresEntity />
           <LinkRow to="/accountspayable" icon="📤" label="Por Pagar" requiresEntity />
-          <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging" requiresEntity />
+          <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging CxC" requiresEntity />
+          <LinkRow to="/ap-aging" icon="📉" label="Aging CxP" requiresEntity />
         </Section>
 
         {/* =========================
@@ -318,16 +293,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
       </nav>
 
-      {/* LOGOUT */}
-      <div className="mt-auto border-t border-white/20 pt-4">
-        <button
-          onClick={logout}
-          className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 transition text-red-300"
-          type="button"
-        >
-          🚪 Salir
-        </button>
-      </div>
     </aside>
   );
 }

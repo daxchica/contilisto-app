@@ -102,8 +102,9 @@ export default function ProfilePage() {
           <label className="block text-sm font-medium mb-1">
             Plan
           </label>
-          <div className="px-3 py-2 bg-gray-100 rounded">
-            {user.subscription} ({user.subscriptionStatus})
+          <div className="px-3 py-2 bg-gray-100 rounded capitalize">
+            {user.planKey ?? user.subscription}
+            <span className="ml-2 text-xs text-gray-500">({user.planStatus ?? user.subscriptionStatus})</span>
           </div>
         </div>
 

@@ -49,12 +49,12 @@ export default function ChartIncomeVsExpenses({
   }, [data]);
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow h-[500px] overflow-hidden">
+    <div className="bg-white p-6 rounded-xl shadow">
       <h3 className="font-semibold text-gray-700 mb-4">
         Ingresos vs Gastos
       </h3>
 
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={340}>
         <LineChart 
           data={data}
           margin={{ top: 10, right: 30, left: 10, bottom: 60 }}  

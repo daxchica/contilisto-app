@@ -43,10 +43,8 @@ export default function AppLayout() {
         </header>
 
         {/* PAGE CONTENT */}
-        <main className="flex-1 pt-16 px-3 sm:px-4 md:px-6">
-          <div className="mx-auto w-full max-w-6xl">
-            <Outlet />
-          </div>
+        <main className="flex-1 pt-6 pb-6 px-4 sm:px-6 md:px-8">
+          <Outlet />
         </main>
 
         {/* FOOTER */}
