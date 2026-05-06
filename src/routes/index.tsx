@@ -41,6 +41,7 @@ import PlansConfig from "@/pages/admin/PlansCofig";
 import AuditLogs from "@/pages/admin/AuditLogs";
 import AccountsPayableAging from "@/pages/payables/AccountsPayableAging";
 import Success from "@/pages/Success";
+import SaldoInicialPage from "@/pages/SaldoInicialPage";
 
 export default function AppRoutes() {
   return (
@@ -92,6 +93,7 @@ export default function AppRoutes() {
         <Route path="/libros-auxiliares" element={<LedgerPage />} />
         <Route path="/estados-financieros" element={<FinancialStatements />} />
         <Route path="/libro-bancos" element={<BankBookPage />} />
+        <Route path="/saldo-inicial" element={<SaldoInicialPage />} />
       </Route>
 
       {/* ============================================================

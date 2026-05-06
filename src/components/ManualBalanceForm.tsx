@@ -14,6 +14,7 @@ import type { Account } from "../types/AccountTypes";
 import CreateSubaccountModal from "@/components/accounts/CreateSubaccountModal";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { JournalEntry } from "@/types/JournalEntry";
+import MonthYearPicker from "@/components/ui/MonthYearPicker";
 
 export interface Entry {
   id: string;
@@ -221,15 +222,15 @@ export default function ManualBalanceForm({
         Carga Manual del Balance Inicial
       </h3>
 
-      {/* DATE */}
-      <div className="flex items-center gap-3 mb-3">
-        <label className="text-sm font-medium">Fecha</label>
-        <input
-          type="date"
+      {/* DATE — month + year picker (always last day of month) */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1.5">
+          Fecha de corte del balance inicial
+        </label>
+        <MonthYearPicker
           value={initialBalanceDate}
+          onChange={setInitialBalanceDate}
           disabled={existingInitialBalanceTx && !initialData}
-          onChange={(e) => setInitialBalanceDate(e.target.value)}
-          className="border rounded px-2 py-1 text-sm"
         />
       </div>
 

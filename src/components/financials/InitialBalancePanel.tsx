@@ -30,6 +30,8 @@ interface Props {
   userIdSafe: string;
   accounts: Account[];
   editMode?: boolean;
+  /** When true the panel is always visible without the toggle button */
+  alwaysOpen?: boolean;
 }
 
 const INITIAL_SOURCE: EntrySource = "initial";
@@ -122,6 +124,7 @@ export default function InitialBalancePanel({
   userIdSafe,
   accounts,
   editMode = false,
+  alwaysOpen = false,
 }: Props) {
   const { user } = useAuth();
 
@@ -295,26 +298,33 @@ export default function InitialBalancePanel({
   /* RENDER                                                                   */
   /* ------------------------------------------------------------------------ */
 
+  const panelVisible = alwaysOpen || showPanel;
+
   return (
-    <div className="mt-8 border rounded shadow p-4 bg-white">
-      <div className="flex justify-between items-center">
-        {!editMode && (
-          <button
-            onClick={() => setShowPanel((p) => !p)}
-            className="px-4 py-2 bg-blue-700 text-white rounded"
-          >
-            🧾 {showPanel ? "Ocultar" : "Carga el Balance Inicial"}
-          </button>
-        )}
+    <div className={alwaysOpen ? "" : "mt-8 border rounded shadow p-4 bg-white"}>
+      {!alwaysOpen && (
+        <div className="flex justify-between items-center">
+          {!editMode && (
+            <button
+              onClick={() => setShowPanel((p) => !p)}
+              className="px-4 py-2 bg-blue-700 text-white rounded"
+            >
+              🧾 {showPanel ? "Ocultar" : "Carga el Balance Inicial"}
+            </button>
+          )}
+          {saved && (
+            <span className="text-green-600 font-semibold">✅ Guardado</span>
+          )}
+        </div>
+      )}
 
-        {saved && (
-          <span className="text-green-600 font-semibold">
-            ✅ Guardado
-          </span>
-        )}
-      </div>
+      {saved && alwaysOpen && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 font-semibold text-sm">
+          ✅ Balance inicial guardado correctamente.
+        </div>
+      )}
 
-      {showPanel && (
+      {panelVisible && (
         <div className="mt-4 space-y-6">
 
           {!exists && !editMode && (
