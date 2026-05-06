@@ -246,15 +246,18 @@ export async function applyPayablePayment(
   const paidNow = n2(current.paid);
   const balance = n2(current.balance ?? total - paidNow);
 
-  if (amountApplied > balance) {
+  // Allow up to 1-cent float drift (same tolerance the UI uses).
+  // Clamp to balance so downstream math stays exact when paying in full.
+  if (amountApplied > balance + 0.01) {
     throw new Error("El monto excede el saldo pendiente");
   }
+  const effectiveAmount = n2(Math.min(amountApplied, balance));
 
-  let paidDelta = amountApplied;
+  let paidDelta = effectiveAmount;
   let schedule = current.installmentSchedule ?? [];
 
   if (schedule.length) {
-    const res = applyPaymentToInstallments(schedule, amountApplied);
+    const res = applyPaymentToInstallments(schedule, effectiveAmount);
     schedule = res.updatedSchedule;
     paidDelta = n2(res.paidDelta);
   }
@@ -264,8 +267,8 @@ export async function applyPayablePayment(
 
   const paymentRecord = {
     transactionId: paymentTransactionId ?? "",
-    amountApplied: n2(amountApplied),
-    cashPaid: n2(options?.cashPaid ?? amountApplied),
+    amountApplied: n2(effectiveAmount),
+    cashPaid: n2(options?.cashPaid ?? effectiveAmount),
     retentionIR: n2(options?.retentionIR ?? 0),
     retentionIVA: n2(options?.retentionIVA ?? 0),
     paymentDate:

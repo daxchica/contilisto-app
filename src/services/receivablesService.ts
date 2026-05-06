@@ -266,9 +266,11 @@ export async function applyReceivablePayment(
 
     const balance = n2(current.balance);
 
-    if (amount > balance) {
+    // Allow up to 1-cent float drift; clamp so full-payment stays exact.
+    if (amount > balance + 0.01) {
       throw new Error("El pago excede el saldo pendiente");
     }
+    const effectiveAmount = n2(Math.min(amount, balance));
 
     const collectionIds: string[] = Array.isArray(current.collectionTransactionIds)
       ? current.collectionTransactionIds
@@ -278,11 +280,11 @@ export async function applyReceivablePayment(
       throw new Error("Este pago ya fue registrado");
     }
 
-    let paidDelta = amount;
+    let paidDelta = effectiveAmount;
     let schedule = current.installmentSchedule ?? [];
 
     if (schedule.length) {
-      const res = applyPaymentToInstallments(schedule, amount);
+      const res = applyPaymentToInstallments(schedule, effectiveAmount);
       schedule = res.updatedSchedule;
       paidDelta = res.paidDelta;
     }
