@@ -369,11 +369,15 @@ export async function createPayablePaymentJournalEntry(
 
   const totalApplied = n2(amount + retentionIR + retentionIVA);
 
-  if (totalApplied > n2(payable.balance)) {
+  if (totalApplied > n2(payable.balance) + 0.01) {
     throw new Error("Pago excede saldo");
   }
 
   const tx = doc(collection(db, "entities", entityId, "journalEntries")).id;
+
+  const paymentDesc = payable.supplierName
+    ? `Pago fact. ${payable.invoiceNumber} — ${payable.supplierName}`
+    : `Pago fact. ${payable.invoiceNumber}`;
 
   const entries: JournalEntry[] = [
     {
@@ -385,7 +389,8 @@ export async function createPayablePaymentJournalEntry(
       debit: totalApplied,
       credit: 0,
       invoice_number: payable.invoiceNumber,
-      description: "Pago a proveedor",
+      supplier_name: payable.supplierName,
+      description: paymentDesc,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
@@ -398,7 +403,9 @@ export async function createPayablePaymentJournalEntry(
       account_name: bankAccount.name ?? "Banco",
       debit: 0,
       credit: amount,
-      description: "Salida de banco",
+      invoice_number: payable.invoiceNumber,
+      supplier_name: payable.supplierName,
+      description: paymentDesc,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
@@ -414,7 +421,9 @@ export async function createPayablePaymentJournalEntry(
       account_name: "Retenciones IR por pagar",
       debit: 0,
       credit: retentionIR,
-      description: "Retención IR",
+      invoice_number: payable.invoiceNumber,
+      supplier_name: payable.supplierName,
+      description: `Retención IR — ${payable.invoiceNumber}`,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
@@ -430,7 +439,9 @@ export async function createPayablePaymentJournalEntry(
       account_name: "Retenciones IVA por pagar",
       debit: 0,
       credit: retentionIVA,
-      description: "Retención IVA",
+      invoice_number: payable.invoiceNumber,
+      supplier_name: payable.supplierName,
+      description: `Retención IVA — ${payable.invoiceNumber}`,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
@@ -438,20 +449,17 @@ export async function createPayablePaymentJournalEntry(
   }
 
   await saveJournalEntries(entityId, userIdSafe, entries);
-  await applyPayablePayment(entityId, payable, totalApplied);
+  await applyPayablePayment(entityId, payable, totalApplied, userIdSafe, tx);
 
   await createBankMovement({
-  entityId,
-  bankAccountId: bankAccount.account_code, // temporary mapping (see note below)
-
-  relatedJournalTransactionId: tx, // ✅ FIXED
-
-  amount,
-  date: paymentDate,
-
-  type: "withdrawal",
-  description: "Pago a proveedor",
-});
+    entityId,
+    bankAccountId: bankAccount.account_code,
+    relatedJournalTransactionId: tx,
+    amount,
+    date: paymentDate,
+    type: "withdrawal",
+    description: paymentDesc,
+  });
 
   return tx;
 }

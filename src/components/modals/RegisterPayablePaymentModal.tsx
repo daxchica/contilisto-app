@@ -461,10 +461,7 @@ export default function RegisterPayablePaymentModal({
           retentionIR: applyIR ? numericRetentionIR : 0,
           retentionIVA: applyIVA ? numericRetentionIVA : 0,
         },
-        
       );
-
-      await applyPayablePayment(entityId, payableForSave, totalApplied);
 
       onSaved?.();
       onClose();

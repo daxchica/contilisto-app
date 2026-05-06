@@ -31,6 +31,7 @@ import JournalTable from "@/components/journal/JournalTable";
 import ManualEntryModal from "@/components/modals/ManualEntryModal";
 import ChartOfAccountsModal from "@/components/modals/ChartOfAccountsModal";
 import JournalPreviewModal from "@/components/modals/JournalPreviewModal";
+import IgnoredInvoicesReportModal from "@/components/modals/IgnoredInvoicesReportModal";
 import PDFDropzone from "@/components/PDFDropzone";
 
 import type { Account } from "@/types/AccountTypes";
@@ -121,6 +122,10 @@ export default function AccountingDashboard() {
     Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }>
   >([]);
   const [sriQueueIdx, setSriQueueIdx] = useState(0);
+  const [ignoredInvoices, setIgnoredInvoices] = useState<
+    Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }>
+  >([]);
+  const [showIgnoredReport, setShowIgnoredReport] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
 
@@ -659,13 +664,25 @@ const stableJournal = useMemo(() =>
       {/* SRI TXT queue — one preview per invoice */}
       {sriQueue.length > 0 && sriQueueIdx < sriQueue.length && (() => {
         const current = sriQueue[sriQueueIdx];
-        const advanceQueue = (saved: boolean) => {
+        const advanceQueue = (saved: boolean, skippedItem?: { entries: JournalEntry[]; metadata: InvoicePreviewMetadata }) => {
           if (saved) setLogRefreshTrigger((v) => v + 1);
           const next = sriQueueIdx + 1;
+          const nextIgnored = skippedItem
+            ? [...ignoredInvoices, skippedItem]
+            : ignoredInvoices;
           if (next >= sriQueue.length) {
             setSriQueue([]);
             setSriQueueIdx(0);
+            setIgnoredInvoices([]);
+            if (nextIgnored.length > 0) {
+              // Defer so queue teardown renders first
+              setTimeout(() => {
+                setIgnoredInvoices(nextIgnored);
+                setShowIgnoredReport(true);
+              }, 50);
+            }
           } else {
+            if (skippedItem) setIgnoredInvoices(nextIgnored);
             setSriQueueIdx(next);
           }
         };
@@ -681,10 +698,18 @@ const stableJournal = useMemo(() =>
             postableAccounts={postableAccounts}
             leafCodeSet={leafCodeSet}
             onClose={() => {
+              const pending = ignoredInvoices;
               setSriQueue([]);
               setSriQueueIdx(0);
+              setIgnoredInvoices([]);
+              if (pending.length > 0) {
+                setTimeout(() => {
+                  setIgnoredInvoices(pending);
+                  setShowIgnoredReport(true);
+                }, 50);
+              }
             }}
-            onSkip={() => advanceQueue(false)}
+            onSkip={() => advanceQueue(false, current)}
             onSave={async (entries) => {
               const authUid = getAuth().currentUser?.uid;
               if (!authUid) return;
@@ -750,6 +775,16 @@ const stableJournal = useMemo(() =>
           entityName={selectedEntity.name}
           onClose={() => setShowAccountsModal(false)}
           onAccountsChanged={() => loadAccounts()}
+        />
+      )}
+
+      {showIgnoredReport && ignoredInvoices.length > 0 && (
+        <IgnoredInvoicesReportModal
+          invoices={ignoredInvoices}
+          onClose={() => {
+            setShowIgnoredReport(false);
+            setIgnoredInvoices([]);
+          }}
         />
       )}
     </>
