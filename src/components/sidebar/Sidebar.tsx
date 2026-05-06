@@ -20,7 +20,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation();
 
   const [open, setOpen] = useState(false);
-  const [openSection, setOpenSection] = useState<string | null>("cartera");
+  const [openSection, setOpenSection] = useState<string | null>("contabilidad");
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 

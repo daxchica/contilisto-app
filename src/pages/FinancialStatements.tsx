@@ -297,109 +297,39 @@ const filteredPnLEntries = useMemo(() => {
 
           </div>
 
-          {/* INITIAL BALANCE PANEL */}
-          
-          {/* INITIAL BALANCE CONTROLS */}
-          <div className="mb-6 bg-white border rounded-lg shadow-sm p-4">
-
-            {/* ACTION BAR */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3">
-              
-              <button
-                onClick={() => setShowInitialPanel((v) => !v)}
-                className="
-                  bg-blue-600 hover:bg-blue-700 
-                  text-white px-4 py-2 rounded-lg
-                  transition font-medium
-                  w-full sm:w-auto
-                  "
-              >
-                {showInitialPanel ? "Ocultar" : "Mostrar Balance Inicial"}
-              </button>
-
+          {/* SALDO INICIAL — quick-access card */}
+          <div className={`mb-6 rounded-xl border px-5 py-4 flex items-center justify-between gap-4 ${
+            hasInitialBalance
+              ? "bg-green-50 border-green-200"
+              : "bg-blue-50 border-blue-200"
+          }`}>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{hasInitialBalance ? "✅" : "🏁"}</span>
+              <div>
+                <p className="font-semibold text-gray-800 text-sm">
+                  {hasInitialBalance ? "Saldo inicial configurado" : "Sin saldo inicial"}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {hasInitialBalance
+                    ? "El balance de apertura está registrado. Puedes editarlo desde la página de Saldo Inicial."
+                    : "Configura el saldo de apertura para migrar desde otro sistema contable."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => setShowAccountsModal(true)}
-                className="
-                  bg-emerald-600 hover:bg-emerald-700 
-                  text-white px-4 py-2 rounded-lg
-                  transition font-medium
-                  w-full sm:w-auto
-                  "
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-100 transition"
               >
-                Ver Plan de Cuentas
+                Plan de Cuentas
               </button>
+              <Link
+                to="/saldo-inicial"
+                className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+              >
+                {hasInitialBalance ? "Ver / Editar" : "Configurar →"}
+              </Link>
             </div>
-
-            {/* WARNING */}
-            {hasInitialBalance && (
-              <div className="bg-amber-100 border border-amber-300 text-amber-700 px-4 py-2 rounded mb-3">
-                ⚠️ Ya existe un Balance Inicial para esta entidad.
-                <div className="text-sm mt-1">
-                  Puedes visualizarlo o desbloquear para editarlo.
-                </div>
-              </div>
-            )}
-
-            {/* 👁️ VIEW MODE (ALWAYS CLEAN) */}
-            {hasInitialBalance && showInitialPanel && !editEnabled && (
-              <div className="mb-4">
-                <div className="text-sm text-gray-600 mb-2">
-                  🔒 Balance Inicial (solo lectura)
-                </div>
-
-                <InitialBalanceViewer entries={entityEntries} />
-              </div>
-            )}
-
-            {/* 🔐 SECURITY */}
-            {hasInitialBalance && showInitialPanel && !editEnabled && (
-              <div className="mb-4">
-                <p className="text-sm mb-2">
-                  Para editar el balance escribe: <b>CONFIRMAR</b>
-                </p>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={securityWord}
-                    onChange={(e) => setSecurityWord(e.target.value)}
-                    className="border px-3 py-2 rounded w-64"
-                  />
-
-                  <button
-                    onClick={() => {
-                      if (securityWord === "CONFIRMAR") {
-                        setEditEnabled(true);
-                        setShowInitialPanel(true);
-
-                        // 🔥 force panel open inside child
-                        setTimeout(() => {
-                          const event = new CustomEvent("force-open-initial-panel");
-                          window.dispatchEvent(event);
-                        }, 50);
-
-                      } else {
-                        alert("Palabra incorrecta");
-                      }
-                    }}
-                    className="bg-green-600 text-white px-4 py-2 rounded"
-                  >
-                    Desbloquear
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ✏️ EDIT MODE */}
-            {showInitialPanel && editEnabled && (
-              <InitialBalancePanel
-                entityId={entityId}
-                userIdSafe={user.uid}
-                accounts={ECUADOR_COA}
-                editMode={editEnabled}
-              />
-            )}
-
           </div>
 
           {/* BROWSER STYLE TABS */}
