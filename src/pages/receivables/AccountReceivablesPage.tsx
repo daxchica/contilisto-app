@@ -180,14 +180,14 @@ export default function AccountsReceivablePage() {
 
       {/* TABLE */}
       <div className="bg-white shadow rounded overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-gray-100">
             <tr>
               <th className="p-2 text-left">Cliente</th>
               <th className="p-2">Factura</th>
-              <th className="p-2">Fecha</th>
+              <th className="p-2 hidden sm:table-cell">Fecha</th>
               <th className="p-2 text-right">Saldo</th>
-              <th className="p-2">Vence</th>
+              <th className="p-2 hidden md:table-cell">Vence</th>
               <th className="p-2">Estado</th>
               <th className="p-2">Acciones</th>
             </tr>
@@ -198,7 +198,7 @@ export default function AccountsReceivablePage() {
               <React.Fragment key={r.id}>
                 <tr className="border-t">
                   <td className="p-2">
-                    <div className="font-medium">
+                    <div className="font-medium leading-tight">
                       {r.customerName || "Cliente"}
                     </div>
                     <div className="text-xs text-gray-400">
@@ -206,14 +206,14 @@ export default function AccountsReceivablePage() {
                     </div>
                   </td>
 
-                  <td className="p-2">{r.invoiceNumber}</td>
-                  <td className="p-2">{r.issueDate}</td>
+                  <td className="p-2 text-xs">{r.invoiceNumber}</td>
+                  <td className="p-2 hidden sm:table-cell">{r.issueDate}</td>
 
                   <td className="p-2 text-right font-medium">
                     ${Number(r.balance || 0).toFixed(2)}
                   </td>
 
-                  <td className="p-2">
+                  <td className="p-2 hidden md:table-cell">
                     {resolveReceivableDueDate(r) ?? "—"}
                   </td>
 

@@ -21,7 +21,7 @@ interface NavBarProps {
 
 export default function NavBar({ onMenuClick }: NavBarProps) {
   const navigate = useNavigate();
-  const { setEntity } = useSelectedEntity();
+  const { setEntity, selectedEntity } = useSelectedEntity();
   const { user: appUser } = useAuth();
 
   const [user, setUser] = useState<User | null>(null);
@@ -64,33 +64,47 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
 
   return (
     <nav className="bg-blue-700 text-white shadow-md">
-      <div className="h-16 px-6 flex items-center justify-between">
+      <div className="h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between gap-2">
 
-        {/* LEFT SIDE — mobile menu toggle only */}
-        <div className="flex items-center gap-4">
+        {/* LEFT SIDE — hamburger + entity name on mobile */}
+        <div className="flex items-center gap-2 min-w-0">
           {onMenuClick && (
             <button
               onClick={onMenuClick}
-              className="md:hidden text-white text-xl"
+              className="md:hidden text-white p-1 -ml-1 shrink-0"
+              aria-label="Abrir menú"
             >
-              ☰
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
+          )}
+          {/* Entity name on mobile (hidden on desktop where sidebar shows it) */}
+          {selectedEntity && (
+            <div className="md:hidden min-w-0">
+              <p className="text-xs font-semibold text-white/90 truncate leading-tight">
+                {selectedEntity.name}
+              </p>
+              <p className="text-[10px] text-white/60 truncate leading-tight">
+                {selectedEntity.ruc}
+              </p>
+            </div>
           )}
         </div>
 
         {/* RIGHT SIDE */}
         {user && (
           <div
-            className="relative flex items-center gap-5"
+            className="relative flex items-center gap-2 sm:gap-4 shrink-0"
             ref={dropdownRef}
           >
 
-            {/* Notification Icon */}
-            <BellIcon className="w-6 h-6 text-white/80 hover:text-white cursor-pointer" />
+            {/* Notification Icon — hidden on very small screens */}
+            <BellIcon className="hidden sm:block w-6 h-6 text-white/80 hover:text-white cursor-pointer" />
 
-            {/* Subscription Badge */}
+            {/* Subscription Badge — hidden on mobile */}
             {subscriptionPlan && (
-              <span className="text-xs px-2 py-1 rounded-full font-semibold bg-green-500 capitalize">
+              <span className="hidden sm:inline text-xs px-2 py-1 rounded-full font-semibold bg-green-500 capitalize">
                 {subscriptionPlan}
               </span>
             )}
@@ -98,12 +112,12 @@ export default function NavBar({ onMenuClick }: NavBarProps) {
             {/* Avatar + Name */}
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-1.5 sm:gap-2"
             >
-              <div className="w-9 h-9 bg-white text-blue-700 rounded-full flex items-center justify-center font-bold">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-white text-blue-700 rounded-full flex items-center justify-center font-bold text-sm">
                 {displayName.charAt(0).toUpperCase()}
               </div>
-              <span className="hidden sm:inline font-medium">
+              <span className="hidden sm:inline font-medium text-sm">
                 {displayName}
               </span>
               <ChevronDownIcon className="w-4 h-4" />

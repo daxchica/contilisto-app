@@ -28,17 +28,54 @@ import { CashFlowItem } from "@/types/CashFlow";
 import CashFlowChart from "@/components/dashboard/CashFlowChart";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
-/* ============================================================================
- * HELPERS
- * ========================================================================== */
+// ============================================================================
+// HELPERS
+// ============================================================================
 
 function startsWithSafe(value: unknown, prefix: string): boolean {
   return typeof value === "string" && value.startsWith(prefix);
 }
 
-/* ============================================================================
- * COMPONENT
- * ========================================================================== */
+// ============================================================================
+// PERIOD HELPERS
+// ============================================================================
+
+type PeriodKey = "year" | "last30" | "all";
+
+function toLocalISODate(ms: number) {
+  const d = new Date(ms);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getPeriodBounds(key: PeriodKey): { from: string; to: string; label: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const todayISO = toLocalISODate(now.getTime());
+
+  if (key === "last30") {
+    const from = toLocalISODate(now.getTime() - 29 * 24 * 60 * 60 * 1000);
+    return { from, to: todayISO, label: `Últimos 30 días` };
+  }
+  if (key === "year") {
+    const from = `${now.getFullYear()}-01-01`;
+    return { from, to: todayISO, label: `Año ${now.getFullYear()}` };
+  }
+  // "all"
+  return { from: "", to: todayISO, label: "Todo el período" };
+}
+
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: "year",   label: "Este año" },
+  { key: "last30", label: "Últimos 30 días" },
+  { key: "all",    label: "Todo" },
+];
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
 const DashboardHome: React.FC = () => {
   const { selectedEntity } = useSelectedEntity();
@@ -52,9 +89,12 @@ const DashboardHome: React.FC = () => {
   const [realEvents, setRealEvents] = useState<any[]>([]);
   const [realLoading, setRealLoading] = useState(false);
 
+  // Period selector
+  const [periodKey, setPeriodKey] = useState<PeriodKey>("year");
+  const period = useMemo(() => getPeriodBounds(periodKey), [periodKey]);
 
   /* =======================
-   * DATE WINDOW
+   * DATE WINDOW (for cash flow charts — always last 30 days)
    * ======================= */
   const todayStart = useMemo(() => {
     const d = new Date();
@@ -65,14 +105,6 @@ const DashboardHome: React.FC = () => {
   const last30Start = useMemo(() => {
     return todayStart - 29 * 24 * 60 * 60 * 1000;
   }, [todayStart]);
-
-  function toLocalISODate(ms: number) {
-  const d = new Date(ms);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
 
   const todayISO = useMemo(() => toLocalISODate(todayStart), [todayStart]);
   const last30ISO = useMemo(() => toLocalISODate(last30Start), [last30Start]);
@@ -170,43 +202,55 @@ const DashboardHome: React.FC = () => {
   }, [selectedEntity?.id, last30ISO, todayISO]);
 
   /* =======================
-   * ACCOUNTING KPIs
+   * PERIOD-FILTERED ENTRIES (for P&L KPIs)
+   * ======================= */
+
+  const periodEntries = useMemo(() => {
+    if (!period.from) return entries; // "all" — no filter
+    return entries.filter((e) => {
+      if (!e.date) return false;
+      return e.date >= period.from && e.date <= period.to;
+    });
+  }, [entries, period]);
+
+  /* =======================
+   * ACCOUNTING KPIs (filtered by period)
    * ======================= */
 
   const totalIncome = useMemo(() => {
-    return entries
+    return periodEntries
       .filter((e) => startsWithSafe(e.account_code, "4"))
       .reduce((sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)), 0);
-  }, [entries]);
+  }, [periodEntries]);
 
   const totalExpenses = useMemo(() => {
-    return entries
+    return periodEntries
       .filter(
         (e) => startsWithSafe(e.account_code, "5") || startsWithSafe(e.account_code, "6")
       )
       .reduce((sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)), 0);
-  }, [entries]);
+  }, [periodEntries]);
 
   const profit = totalIncome - totalExpenses;
 
   /* =======================
-   * AR / AP (PROJECTED)
+   * AR / AP — running balance (all-time, not period-filtered)
    * ======================= */
 
   const AR_CODE = "101030101"; // Clientes nacionales
-  const AP_CODE = "201030102"; // Proveedores locales (your expense AP control)
+  const AP_CODE = "201030102"; // Proveedores locales
 
   const accountsReceivable = useMemo(() => {
-  return entries
-    .filter((e) => e.account_code === AR_CODE)
-    .reduce((sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)), 0);
-}, [entries]);
+    return entries
+      .filter((e) => e.account_code === AR_CODE)
+      .reduce((sum, e) => sum + ((e.debit ?? 0) - (e.credit ?? 0)), 0);
+  }, [entries]);
 
   const accountsPayable = useMemo(() => {
-  return entries
-    .filter((e) => e.account_code === AP_CODE)
-    .reduce((sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)), 0);
-}, [entries]);
+    return entries
+      .filter((e) => e.account_code === AP_CODE)
+      .reduce((sum, e) => sum + ((e.credit ?? 0) - (e.debit ?? 0)), 0);
+  }, [entries]);
 
   /* =======================
    * CHART DATA
@@ -214,7 +258,7 @@ const DashboardHome: React.FC = () => {
 
   const monthlyIncome = useMemo(() => {
     const out: Record<string, number> = {};
-    entries
+    periodEntries
       .filter((e) => startsWithSafe(e.account_code, "4"))
       .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
@@ -222,11 +266,11 @@ const DashboardHome: React.FC = () => {
         out[month] = (out[month] || 0) + net;
       });
     return out;
-  }, [entries]);
+  }, [periodEntries]);
 
   const monthlyExpenses = useMemo(() => {
     const out: Record<string, number> = {};
-    entries
+    periodEntries
       .filter((e) => startsWithSafe(e.account_code, "5") || startsWithSafe(e.account_code, "6"))
       .forEach((e) => {
         const month = e.date?.substring(0, 7) ?? "Sin fecha";
@@ -234,7 +278,7 @@ const DashboardHome: React.FC = () => {
         out[month] = (out[month] || 0) + net;
       });
     return out;
-  }, [entries]);
+  }, [periodEntries]);
 
   /* =======================
    * DASHBOARD CASH FLOW SERIES (REAL vs PROJECTED) — Daily last 30 days
@@ -256,7 +300,32 @@ const DashboardHome: React.FC = () => {
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+      {/* PERIOD SELECTOR */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setPeriodKey(opt.key)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition ${
+                periodKey === opt.key
+                  ? "bg-white shadow text-blue-700"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-gray-400">
+          {period.from
+            ? `${period.from} → ${period.to}`
+            : `Hasta ${period.to}`}
+        </span>
+      </div>
+
+      {/* KPI CARDS — 2 cols on mobile, 3 on tablet, 5 on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-6">
         <IncomeCard value={totalIncome} />
         <ExpenseCard value={totalExpenses} />
         <ProfitCard value={profit} />
@@ -272,7 +341,7 @@ const DashboardHome: React.FC = () => {
           />
         </div>
         <div>
-          <ChartExpensesPie entries={entries} />
+          <ChartExpensesPie entries={periodEntries} />
         </div>
       </div>
 

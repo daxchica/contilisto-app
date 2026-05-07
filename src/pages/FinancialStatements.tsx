@@ -279,7 +279,7 @@ const filteredPnLEntries = useMemo(() => {
   // RENDER
   // ------------------------------------
   return (
-      <div className="pt-16 px-4 lg:px-6 min-h-screen bg-gray-50">
+      <div className="min-h-screen">
         <div className="mx-auto w-full max-w-7xl">
 
          {/* PAGE TITLE */}

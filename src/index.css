@@ -17,7 +17,7 @@
    DASHBOARD CARDS
 =========================== */
   .dashboard-card {
-    @apply bg-white rounded-2xl shadow p-5 transition hover:shadow-lg;
+    @apply bg-white rounded-xl shadow p-3 sm:p-5 transition hover:shadow-lg;
   }
 
   .dashboard-title {

@@ -195,14 +195,14 @@ export default function AccountsPayablePage() {
 
       {/* TABLE */}
       <div className="bg-white shadow rounded overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[480px]">
           <thead className="bg-gray-100">
             <tr>
               <th className="p-2 text-left">Proveedor</th>
               <th className="p-2">Factura</th>
-              <th className="p-2">Fecha</th>
+              <th className="p-2 hidden sm:table-cell">Fecha</th>
               <th className="p-2 text-right">Saldo</th>
-              <th className="p-2">Vence</th>
+              <th className="p-2 hidden md:table-cell">Vence</th>
               <th className="p-2">Estado</th>
               <th className="p-2">Acciones</th>
             </tr>
@@ -213,7 +213,7 @@ export default function AccountsPayablePage() {
               <React.Fragment key={p.id}>
                 <tr className="border-t">
                   <td className="p-2">
-                    <div className="font-medium">
+                    <div className="font-medium leading-tight">
                       {resolveSupplierName(p)}
                     </div>
                     <div className="text-xs text-gray-400">
@@ -221,14 +221,14 @@ export default function AccountsPayablePage() {
                     </div>
                   </td>
 
-                  <td className="p-2">{p.invoiceNumber}</td>
-                  <td className="p-2">{p.issueDate}</td>
+                  <td className="p-2 text-xs">{p.invoiceNumber}</td>
+                  <td className="p-2 hidden sm:table-cell">{p.issueDate}</td>
 
                   <td className="p-2 text-right font-medium">
                     ${Number(p.balance || 0).toFixed(2)}
                   </td>
 
-                  <td className="p-2">
+                  <td className="p-2 hidden md:table-cell">
                     {resolvePayableDueDate(p) ?? "—"}
                   </td>
 

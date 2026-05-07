@@ -28,14 +28,19 @@ export async function fetchBankBookEntries(
     .map((m) => {
       runningBalance += m.amount;
 
+      // Use payee when available; fall back to description (which carries
+      // "Pago fact. XXX — SupplierName" set by journalService).
+      const displayPayee = m.payee?.trim() || m.description?.trim() || "";
+
       return {
         id: m.id!,
         bankAccountId: m.bankAccountId,
         date: m.date,
-        payee: m.payee ?? "",
+        payee: displayPayee,
+        description: m.description ?? "",
+        reference: m.reference ?? "",
         amount: m.amount,
         type: m.type,
-        description: m.description ?? "",
         status: m.reconciled ? "Conciliado" : "Pendiente",
         balance: runningBalance,
       };

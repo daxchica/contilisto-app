@@ -1,23 +1,69 @@
 // src/pages/ContactsPage.tsx
+
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchContacts,
   deleteContact,
+  saveContact,
 } from "@/services/contactService";
-import { Contact } from "@/types/Contact";
+import { fetchReceivables } from "@/services/receivablesService";
+import { fetchPayables } from "@/services/payablesService";
+import type { Contact, ContactRole } from "@/types/Contact";
 import ContactFormModal from "@/components/contacts/ContactFormModal";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 
+// ============================================================================
+// TYPES
+// ============================================================================
+
 type RoleFilter = "all" | "cliente" | "proveedor";
 
+/** A contact as shown in the list — may be a real saved contact
+ *  or a virtual entry inferred from receivables / payables */
+type DisplayContact = Contact & {
+  /** true  = inferred from AP/AR, NOT yet saved in the contacts collection */
+  isVirtual?: boolean;
+};
 
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function normalizeRuc(s?: string) {
+  return (s ?? "").replace(/\s+/g, "").toUpperCase();
+}
+
+function roleBadge(role: ContactRole) {
+  if (role === "cliente")
+    return (
+      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+        Cliente
+      </span>
+    );
+  if (role === "proveedor")
+    return (
+      <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+        Proveedor
+      </span>
+    );
+  return (
+    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+      Cliente / Proveedor
+    </span>
+  );
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
 
 export default function ContactsPage() {
   const { selectedEntity } = useSelectedEntity();
   const entityId = selectedEntity?.id ?? "";
 
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contacts, setContacts] = useState<DisplayContact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingVirtualId, setSavingVirtualId] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -25,15 +71,98 @@ export default function ContactsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
-  /* ======================================================
-     Fetch
-  ====================================================== */
+  // --------------------------------------------------------------------------
+  // LOAD + MERGE
+  // --------------------------------------------------------------------------
+
   const loadContacts = async () => {
     if (!entityId) return;
     setLoading(true);
-    const data = await fetchContacts(entityId);
-    setContacts(data.filter((c) => c.activo));
-    setLoading(false);
+
+    try {
+      // Fetch all three data sources in parallel
+      const [rawContacts, receivables, payables] = await Promise.all([
+        fetchContacts(entityId),
+        fetchReceivables(entityId).catch(() => []),
+        fetchPayables(entityId).catch(() => []),
+      ]);
+
+      // Index of real contacts by normalized RUC/identification
+      const byRuc = new Map<string, DisplayContact>();
+
+      for (const c of rawContacts) {
+        if (!c.activo) continue;
+        const key = normalizeRuc(c.identification);
+        if (key) byRuc.set(key, { ...c, isVirtual: false });
+      }
+
+      // Pull customers from receivables
+      for (const r of receivables) {
+        const ruc = normalizeRuc(r.customerRUC);
+        if (!ruc) continue;
+
+        if (byRuc.has(ruc)) {
+          // Upgrade role to "ambos" if this contact is also a supplier
+          const existing = byRuc.get(ruc)!;
+          if (existing.role === "proveedor") {
+            byRuc.set(ruc, { ...existing, role: "ambos" });
+          }
+        } else {
+          byRuc.set(ruc, {
+            id: `virtual-${ruc}`,
+            entityId,
+            role: "cliente",
+            identificationType: ruc.length === 13 ? "ruc" : "cedula",
+            identification: ruc,
+            name: r.customerName || ruc,
+            email: "",
+            address: "",
+            activo: true,
+            createdAt: 0,
+            isVirtual: true,
+          });
+        }
+      }
+
+      // Pull suppliers from payables
+      for (const p of payables) {
+        const ruc = normalizeRuc(p.supplierRUC);
+        if (!ruc) continue;
+
+        if (byRuc.has(ruc)) {
+          const existing = byRuc.get(ruc)!;
+          if (existing.role === "cliente") {
+            byRuc.set(ruc, { ...existing, role: "ambos" });
+          }
+        } else {
+          byRuc.set(ruc, {
+            id: `virtual-${ruc}`,
+            entityId,
+            role: "proveedor",
+            identificationType: ruc.length === 13 ? "ruc" : "cedula",
+            identification: ruc,
+            name: p.supplierName || ruc,
+            email: "",
+            address: "",
+            activo: true,
+            createdAt: 0,
+            isVirtual: true,
+          });
+        }
+      }
+
+      // Sort: real contacts first, then virtual; alphabetically within each group
+      const merged = [...byRuc.values()].sort((a, b) => {
+        if (!!a.isVirtual !== !!b.isVirtual) return a.isVirtual ? 1 : -1;
+        return a.name.localeCompare(b.name, "es");
+      });
+
+      setContacts(merged);
+    } catch (err) {
+      console.error("Error loading contacts", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -41,22 +170,25 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityId]);
 
-  /* ======================================================
-     Handlers
-  ====================================================== */
+  // --------------------------------------------------------------------------
+  // HANDLERS
+  // --------------------------------------------------------------------------
+
   const handleNew = () => {
     setEditingContact(null);
     setShowModal(true);
   };
 
-  const handleEdit = (c: Contact) => {
+  const handleEdit = (c: DisplayContact) => {
+    if (c.isVirtual) return;
     setEditingContact(c);
     setShowModal(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (c: DisplayContact) => {
+    if (c.isVirtual) return;
     if (!confirm("¿Eliminar este contacto?")) return;
-    await deleteContact(entityId, id);
+    await deleteContact(entityId, c.id);
     loadContacts();
   };
 
@@ -65,77 +197,106 @@ export default function ContactsPage() {
     loadContacts();
   };
 
-  /* ======================================================
-     Filters
-  ====================================================== */
+  /** Promote a virtual contact to the contacts collection */
+  const handlePromote = async (c: DisplayContact) => {
+    setSavingVirtualId(c.id);
+    try {
+      // Build payload without undefined fields — Firestore rejects them
+      const payload: Parameters<typeof saveContact>[1] = {
+        entityId,
+        role: c.role,
+        identificationType: c.identificationType,
+        identification: c.identification,
+        name: c.name,
+        email: c.email || "",
+        address: c.address || "",
+        activo: true,
+      };
+      if (c.phone) payload.phone = c.phone;
+
+      await saveContact(entityId, payload);
+      await loadContacts();
+    } catch (err: any) {
+      alert(err?.message ?? "No se pudo guardar el contacto.");
+    } finally {
+      setSavingVirtualId(null);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // FILTERS
+  // --------------------------------------------------------------------------
+
   const filteredContacts = useMemo(() => {
     return contacts.filter((c) => {
-      const text = `${c.name} ${c.identification} ${
-        c.email ?? ""
-      }`.toLowerCase();
-
+      const text = `${c.name} ${c.identification} ${c.email ?? ""}`.toLowerCase();
       const matchesSearch = text.includes(search.toLowerCase());
-
       const matchesRole =
-        roleFilter === "all" || 
+        roleFilter === "all" ||
         c.role === roleFilter ||
         c.role === "ambos";
-
       return matchesSearch && matchesRole;
     });
   }, [contacts, search, roleFilter]);
 
-  /* ======================================================
-     Guards
-  ====================================================== */
+  const totalReal    = contacts.filter((c) => !c.isVirtual).length;
+  const totalVirtual = contacts.filter((c) => c.isVirtual).length;
+
+  // --------------------------------------------------------------------------
+  // GUARD
+  // --------------------------------------------------------------------------
+
   if (!entityId) {
     return (
       <div className="p-6">
-        <h1 className="text-xl font-semibold text-gray-700">
-          Selecciona una empresa para administrar los contactos.
-        </h1>
+        <p className="text-gray-500">Selecciona una empresa para administrar los contactos.</p>
       </div>
     );
   }
 
-  /* ======================================================
-     Render
-  ====================================================== */
+  // --------------------------------------------------------------------------
+  // RENDER
+  // --------------------------------------------------------------------------
+
   return (
-    <div className="flex flex-col w-full h-full px-4 sm:px-8 py-6">
+    <div className="w-full px-3 sm:px-6 py-4 max-w-5xl mx-auto">
+
       {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contactos</h1>
-          <p className="text-gray-500">
-            Clientes y Proveedores unificados
+          <p className="text-sm text-gray-500">
+            Clientes y proveedores unificados
+            {!loading && (
+              <span className="ml-2 text-gray-400">
+                · {totalReal} guardados
+                {totalVirtual > 0 && `, ${totalVirtual} de facturas`}
+              </span>
+            )}
           </p>
         </div>
 
         <button
           onClick={handleNew}
-          className="w-full sm:w-auto bg-[#0A3558] text-white px-5 py-3 rounded-lg shadow hover:bg-[#0c426f] transition font-semibold"
+          className="bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-800 transition"
         >
           + Nuevo Contacto
         </button>
       </div>
 
-      {/* SEARCH & FILTER */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      {/* SEARCH + FILTER */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-5">
         <input
           type="text"
-          placeholder="Buscar por nombre, identificación o email..."
+          placeholder="Buscar por nombre, identificación o email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
-
         <select
           value={roleFilter}
-          onChange={(e) =>
-            setRoleFilter(e.target.value as RoleFilter)
-          }
-          className="px-4 py-3 rounded-xl border border-gray-300 bg-white focus:outline-none"
+          onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+          className="px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-sm focus:outline-none"
         >
           <option value="all">Todos</option>
           <option value="cliente">Clientes</option>
@@ -143,130 +304,96 @@ export default function ContactsPage() {
         </select>
       </div>
 
-      {/* MOBILE VIEW */}
-      <div className="space-y-4 md:hidden">
-        {loading ? (
-          <p className="text-center text-gray-500 py-10">
-            Cargando contactos...
-          </p>
-        ) : filteredContacts.length === 0 ? (
-          <p className="text-center text-gray-500 py-10">
-            No hay contactos que coincidan con tu búsqueda.
-          </p>
-        ) : (
-          filteredContacts.map((c) => (
+      {/* LOADING */}
+      {loading && (
+        <p className="text-center text-gray-400 py-12 animate-pulse">Cargando contactos…</p>
+      )}
+
+      {/* EMPTY */}
+      {!loading && filteredContacts.length === 0 && (
+        <div className="text-center py-14 text-gray-400">
+          <p className="text-3xl mb-2">👤</p>
+          <p className="font-medium">No hay contactos que coincidan</p>
+        </div>
+      )}
+
+      {/* CARD LIST */}
+      {!loading && filteredContacts.length > 0 && (
+        <div className="space-y-3">
+          {filteredContacts.map((c) => (
             <div
               key={c.id}
-              className="bg-white rounded-2xl shadow p-4 space-y-2"
+              className={`bg-white rounded-xl border p-4 transition ${
+                c.isVirtual
+                  ? "border-dashed border-gray-300"
+                  : "border-gray-200 shadow-sm"
+              }`}
             >
-              <div>
-                <p className="font-semibold text-gray-900">
-                  {c.name}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {c.role === "ambos"
-                    ? "Cliente / Proveedor"
-                    : c.role}
-                </p>
-              </div>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                {/* Info */}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <p className="font-semibold text-gray-900 truncate">{c.name}</p>
+                    {roleBadge(c.role)}
+                    {c.isVirtual && (
+                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                        De facturas
+                      </span>
+                    )}
+                  </div>
 
-              <div className="text-sm text-gray-600 space-y-1">
-                <p>
-                  <strong>ID:</strong> {c.identification}
-                </p>
-                <p>
-                  <strong>Email:</strong> {c.email || "—"}
-                </p>
-                <p>
-                  <strong>Tel:</strong> {c.phone || "—"}
-                </p>
-              </div>
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p>
+                      <span className="font-medium text-gray-600">RUC/ID:</span>{" "}
+                      {c.identification}
+                    </p>
+                    {c.email && (
+                      <p>
+                        <span className="font-medium text-gray-600">Email:</span>{" "}
+                        {c.email}
+                      </p>
+                    )}
+                    {c.phone && (
+                      <p>
+                        <span className="font-medium text-gray-600">Tel:</span>{" "}
+                        {c.phone}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => handleEdit(c)}
-                  className="flex-1 py-2 rounded-lg border text-blue-700 font-medium"
-                >
-                  ✏️ Editar
-                </button>
-
-                <button
-                  onClick={() => handleDelete(c.id)}
-                  className="flex-1 py-2 rounded-lg border text-red-600 font-medium"
-                >
-                  🗑️ Eliminar
-                </button>
+                {/* Actions */}
+                <div className="flex gap-2 shrink-0 mt-1">
+                  {c.isVirtual ? (
+                    <button
+                      onClick={() => handlePromote(c)}
+                      disabled={savingVirtualId === c.id}
+                      className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition disabled:opacity-50"
+                    >
+                      {savingVirtualId === c.id ? "Guardando…" : "💾 Guardar"}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleEdit(c)}
+                        className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(c)}
+                        className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition"
+                      >
+                        🗑 Eliminar
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          ))
-        )}
-      </div>
-
-      {/* DESKTOP TABLE */}
-      <div className="hidden md:block bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full border-collapse">
-          <thead className="bg-gray-100 text-left text-gray-600 text-sm">
-            <tr>
-              <th className="px-4 py-3">Nombre / Razón Social</th>
-              <th className="px-4 py-3">Identificación</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Rol</th>
-              <th className="px-4 py-3 text-center">Acciones</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="text-center py-10 text-gray-500"
-                >
-                  Cargando contactos...
-                </td>
-              </tr>
-            ) : filteredContacts.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="text-center py-10 text-gray-500"
-                >
-                  No hay contactos que coincidan con tu búsqueda.
-                </td>
-              </tr>
-            ) : (
-              filteredContacts.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50 text-sm">
-                  <td className="px-4 py-3">{c.name}</td>
-                  <td className="px-4 py-3">{c.identification}</td>
-                  <td className="px-4 py-3">{c.email || "—"}</td>
-                  <td className="px-4 py-3 capitalize">
-                    {c.role === "ambos"
-                        ? "Cliente / Proveedor"
-                        : c.role}
-                  </td>
-
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      className="text-blue-600 hover:underline mr-4"
-                      onClick={() => handleEdit(c)}
-                    >
-                      ✏️ Editar
-                    </button>
-
-                    <button
-                      className="text-red-600 hover:underline"
-                      onClick={() => handleDelete(c.id)}
-                    >
-                      🗑️ Eliminar
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* MODAL */}
       <ContactFormModal

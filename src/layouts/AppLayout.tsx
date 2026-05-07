@@ -1,6 +1,6 @@
 // src/layouts/AppLayout.tsx
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 
 import Sidebar from "@/components/sidebar/Sidebar";
@@ -9,6 +9,12 @@ import Footer from "@/components/footer/Footer";
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sidebarOpen]);
 
   return (
     <div className="min-h-screen flex bg-gray-100">
@@ -26,16 +32,15 @@ export default function AppLayout() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setSidebarOpen(false)}
           />
-
           {/* Drawer */}
-          <div className="absolute left-0 top-0 h-full w-64 bg-[#0b3a5a] shadow-xl">
+          <div className="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-[#0b3a5a] shadow-xl">
             <Sidebar onClose={() => setSidebarOpen(false)} />
           </div>
         </div>
       )}
 
       {/* Main content wrapper */}
-      <div className="flex flex-col flex-1 md:ml-64 min-h-screen">
+      <div className="flex flex-col flex-1 md:ml-64 min-h-screen min-w-0">
 
         {/* NAVBAR */}
         <header className="sticky top-0 z-20">
@@ -43,7 +48,7 @@ export default function AppLayout() {
         </header>
 
         {/* PAGE CONTENT */}
-        <main className="flex-1 pt-6 pb-6 px-4 sm:px-6 md:px-8">
+        <main className="flex-1 pt-4 pb-8 px-3 sm:px-4 md:px-6 lg:px-8 min-w-0">
           <Outlet />
         </main>
 

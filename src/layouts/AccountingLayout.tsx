@@ -1,5 +1,5 @@
 // src/layouts/AccountingLayout.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "@/components/sidebar/Sidebar";
 import NavBar from "@/components/navbar/NavBar";
@@ -7,6 +7,12 @@ import Footer from "@/components/footer/Footer";
 
 export default function AccountingLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sidebarOpen]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -22,19 +28,21 @@ export default function AccountingLayout() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setSidebarOpen(false)}
           />
-          <div className="absolute left-0 top-0 h-full w-64 bg-[#0A3558] shadow-xl">
+          <div className="absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-[#0A3558] shadow-xl">
             <Sidebar onClose={() => setSidebarOpen(false)} />
           </div>
         </div>
       )}
 
       {/* Main */}
-      <div className="flex flex-col min-h-screen md:ml-64">
-        {/* ✅ NAVBAR (needed for menu + logout) */}
-        <NavBar onMenuClick={() => setSidebarOpen(true)} />
+      <div className="flex flex-col min-h-screen md:ml-64 min-w-0">
+        {/* Sticky navbar */}
+        <header className="sticky top-0 z-20">
+          <NavBar onMenuClick={() => setSidebarOpen(true)} />
+        </header>
 
-        {/* Content */}
-        <main className="flex-1 pt-16 px-3 sm:px-4 md:px-6">
+        {/* Content — no pt-16 needed; sticky header handles the offset */}
+        <main className="flex-1 pt-4 pb-8 px-3 sm:px-4 md:px-6 min-w-0">
           <div className="mx-auto w-full max-w-6xl">
             <Outlet />
           </div>

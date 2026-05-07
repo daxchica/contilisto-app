@@ -607,6 +607,33 @@ export async function fetchJournalEntriesByDateRange(
   }));
 }
 // ============================================================================
+// FETCH INITIAL BALANCE DATE
+// Returns the date of the opening balance entry, or null if none exists.
+// ============================================================================
+
+export async function fetchInitialBalanceDate(
+  entityId: string
+): Promise<string | null> {
+  requireEntityId(entityId, "cargar fecha de saldo inicial");
+
+  const txId = `INITIAL_BALANCE:${entityId}`;
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    col,
+    where("transactionId", "==", txId),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) return null;
+
+  const data = snap.docs[0].data() as JournalEntry;
+  return data.date ?? null;
+}
+
+// ============================================================================
 // CREATE BANK TRANSFER JOURNAL ENTRY
 // ============================================================================
 

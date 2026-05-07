@@ -9,7 +9,10 @@ import {
   exportFullLedgerToPDF,
 } from "../utils/exportUtils";
 import { Link } from "react-router-dom";
-import { fetchJournalEntriesByDateRange } from "@/services/journalService";
+import {
+  fetchJournalEntriesByDateRange,
+  fetchInitialBalanceDate,
+} from "@/services/journalService";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -57,9 +60,29 @@ export default function LedgerPage() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [defaultFromDate, setDefaultFromDate] = useState("");
+
   const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [toDate, setToDate] = useState(today);
   const [searchTerm, setSearchTerm] = useState("");
+
+  /* -------------------------------------------------------------------------- */
+  /* LOAD DEFAULT DATE FROM INITIAL BALANCE                                     */
+  /* -------------------------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!entityId) return;
+
+    fetchInitialBalanceDate(entityId).then((date) => {
+      // Fall back to Jan 1 of current year if no initial balance exists
+      const fallback = `${new Date().getFullYear()}-01-01`;
+      const resolved = date ?? fallback;
+      setDefaultFromDate(resolved);
+      // Only set fromDate if the user hasn't already chosen one
+      setFromDate((prev) => (prev === "" ? resolved : prev));
+    });
+  }, [entityId]);
 
   /* -------------------------------------------------------------------------- */
   /* FETCH                                                                      */
@@ -71,14 +94,16 @@ export default function LedgerPage() {
       return;
     }
 
+    if (!fromDate || !toDate) return; // wait until defaults are resolved
+
     (async () => {
       try {
         setLoading(true);
 
         const data = await fetchJournalEntriesByDateRange(
           entityId,
-          fromDate ?? "",
-          toDate ?? "",
+          fromDate,
+          toDate,
         );
 
         setEntries(data);
@@ -154,8 +179,8 @@ export default function LedgerPage() {
   /* -------------------------------------------------------------------------- */
 
   const handleClearFilters = () => {
-    setFromDate("");
-    setToDate("");
+    setFromDate(defaultFromDate);
+    setToDate(today);
     setSearchTerm("");
   };
 
@@ -167,7 +192,7 @@ export default function LedgerPage() {
 
   if (!entityId) {
     return (
-      <div className="pt-20 p-6">
+      <div className="p-4">
         <h2 className="text-xl font-bold text-blue-700 mb-3">📚 Libro Mayor</h2>
 
         <p className="mb-4">
@@ -186,7 +211,7 @@ export default function LedgerPage() {
   /* -------------------------------------------------------------------------- */
 
   return (
-    <div className="pt-8">
+    <div className="pt-2">
       <div className="mx-auto w-full max-w-7xl px-4 lg:px-6">
 
         {/* HEADER */}

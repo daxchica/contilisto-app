@@ -584,7 +584,7 @@ const stableJournal = useMemo(() =>
 
   return (
     <>
-      <div className="pt-4 pb-8 px-6 space-y-4">
+      <div className="pb-8 space-y-4">
         <div className="flex flex-col gap-3">
           {/* ACTION BAR */}
           <div className="flex justify-between items-center">

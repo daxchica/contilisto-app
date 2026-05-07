@@ -76,6 +76,8 @@ export interface BankBookEntry {
   type: BankMovementType;
   payee?: string;
   description?: string;
+  reference?: string;
+  balance: number;          // running balance
   status: "Conciliado" | "Pendiente";
   relatedTo?: "accountsPayable" | "expense";
   linkedDocumentId?: string;
