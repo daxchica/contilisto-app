@@ -577,12 +577,18 @@ export default function Declaraciones() {
         open={showRetPreview}
         summary={retSummary}
         onClose={() => setShowRetPreview(false)}
+        entityName={selectedEntity?.name ?? ""}
+        entityRuc={selectedEntity?.ruc ?? ""}
       />
 
       <Iva104PreviewModal
         open={showIvaPreview}
         onClose={() => setShowIvaPreview(false)}
         summary={ivaSummary}
+        entityName={selectedEntity?.name ?? ""}
+        entityRuc={selectedEntity?.ruc ?? ""}
+        period={period}
+        ivaDetailLines={retSummary?.ivaDetailLines ?? []}
       />
 
       <AtsPreviewModal
@@ -590,6 +596,11 @@ export default function Declaraciones() {
         documents={atsDocuments}
         onClose={() => setShowAtsPreview(false)}
         onExportXml={handleExportAtsXml}
+        ledger={taxEngineResult?.ledger ?? []}
+        entityId={entityId ?? ""}
+        period={period}
+        entityName={selectedEntity?.name ?? ""}
+        entityRuc={selectedEntity?.ruc ?? ""}
       />
     </div>
   );
