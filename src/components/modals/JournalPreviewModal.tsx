@@ -41,6 +41,7 @@ interface Props {
 
   // Queue navigation (SRI TXT batch mode)
   queuePosition?: { current: number; total: number };
+  confirmedCount?: number;   // how many have already been saved in this session
   onSkip?: () => void;
 }
 
@@ -143,12 +144,28 @@ export default function JournalPreviewModal({
   onClose,
   onSave,
   queuePosition,
+  confirmedCount = 0,
   onSkip,
 }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
+  // Guarded close: warn user when they have confirmed entries but haven't
+  // finished the queue — so they know their work IS already saved.
+  const handleClose = () => {
+    if (queuePosition && confirmedCount > 0) {
+      const remaining = queuePosition.total - queuePosition.current + 1;
+      const ok = window.confirm(
+        `Se han guardado ${confirmedCount} asiento(s) exitosamente.\n\n` +
+        `Quedan ${remaining} factura(s) sin revisar en esta sesión.\n\n` +
+        `¿Desea cerrar? Los asientos ya confirmados están guardados y no se perderán.`
+      );
+      if (!ok) return;
+    }
+    onClose();
+  };
 
   const invoiceType: "sale" | "expense" =
     metadata.invoiceType ?? "expense";
@@ -479,8 +496,13 @@ export default function JournalPreviewModal({
                 Factura {queuePosition.current} de {queuePosition.total}
               </span>
             )}
+            {queuePosition && confirmedCount > 0 && (
+              <span className="bg-emerald-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">
+                ✔ {confirmedCount} guardada{confirmedCount !== 1 ? "s" : ""}
+              </span>
+            )}
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl leading-none">×</button>
+          <button onClick={handleClose} className="text-white/80 hover:text-white text-2xl leading-none">×</button>
         </div>
 
         {/* BODY */}
@@ -709,7 +731,7 @@ export default function JournalPreviewModal({
 
             <div className="flex gap-3 ml-4">
               <button
-                onClick={onClose}
+                onClick={handleClose}
                 className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
               >
                 {queuePosition ? "Cancelar todo" : "Cancelar"}

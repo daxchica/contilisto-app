@@ -28,6 +28,7 @@ import {
 
 import { requireEntityId } from "./requireEntityId";
 import { requireNonEmpty } from "./requireNonEmpty";
+import { getNextJournalId } from "./journalCounterService";
 
 import { updateAccountBalancesFromJournalEntries } from "./accountBalanceService";
 
@@ -255,6 +256,9 @@ export async function saveJournalEntries(
   const transactionNature: "purchase" | "sale" =
     isPurchase ? "purchase" : "sale";
 
+  // Assign a sequential human-readable ID shared by all lines of this transaction.
+  const journalId = await getNextJournalId(entityId);
+
   const col = collection(db, "entities", entityId, "journalEntries");
   const batch = writeBatch(db);
 
@@ -291,6 +295,8 @@ export async function saveJournalEntries(
       id,
       entityId,
       uid: userIdSafe,
+
+      journalId,
 
       debit: n2(e.debit),
       credit: n2(e.credit),

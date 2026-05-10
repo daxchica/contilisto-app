@@ -218,8 +218,9 @@ export default function JournalTable({
     doc.text(`Registros de Diario - ${entityName || "Empresa"}`, 14, 16);
 
     autoTable(doc, {
-      head: [["Fecha", "Factura", "Código", "Cuenta", "Débito", "Crédito"]],
+      head: [["Asiento", "Fecha", "Factura", "Código", "Cuenta", "Débito", "Crédito"]],
       body: data.map((e) => [
+        e.journalId ?? "-",
         e.date,
         e.invoice_number || e.documentRef || e.description || "-",
         e.account_code,
@@ -236,7 +237,7 @@ export default function JournalTable({
   return (
     <div className="w-full">
       <div className="bg-white border-b border-gray-200 rounded-t-xl shadow-sm">
-        <div className="px-3 py-3 flex justify-between">
+        <div className="px-6 py-3 flex justify-between">
           <div className="text-sm">
             Seleccionados: <b>{selectedCount}</b> / {sortedRows.length}
           </div>
@@ -259,22 +260,29 @@ export default function JournalTable({
         </div>
       </div>
 
-      <div className="bg-white border rounded-b-xl overflow-x-auto">
-        <table className="min-w-[950px] w-full text-sm">
+      <div className="bg-white border rounded-b-xl overflow-x-auto px-4">
+        <table className="min-w-[1000px] w-full text-sm">
           <thead className="bg-gray-50">
-            <tr>
-              <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th onClick={() => handleSort("date")}>Fecha{sortIcon("date")}</th>
-              <th onClick={() => handleSort("invoice")}>Factura{sortIcon("invoice")}</th>
-              <th>Código</th>
-              <th>Cuenta</th>
-              <th className="text-right">Débito</th>
-              <th className="text-right">Crédito</th>
+            <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <th className="pl-2 pr-3 py-3 w-8">
+                <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+              </th>
+              <th className="px-3 py-3 w-[96px]">Asiento</th>
+              <th className="px-3 py-3 w-[100px] cursor-pointer" onClick={() => handleSort("date")}>
+                Fecha{sortIcon("date")}
+              </th>
+              <th className="px-3 py-3 w-[160px] cursor-pointer" onClick={() => handleSort("invoice")}>
+                Factura{sortIcon("invoice")}
+              </th>
+              <th className="px-3 py-3 w-[100px]">Código</th>
+              <th className="px-3 py-3 max-w-[180px]">Cuenta</th>
+              <th className="px-3 py-3 text-right w-[100px]">Débito</th>
+              <th className="px-3 py-3 text-right w-[100px] pr-2">Crédito</th>
             </tr>
           </thead>
 
           <tbody>
-            {sortedRows.map((row, index) => {
+            {sortedRows.map((row) => {
               const { e, rowId, groupIndex, isFirst } = row;
 
               const isDebit = (e.debit ?? 0) > 0;
@@ -282,33 +290,28 @@ export default function JournalTable({
 
               return (
                 <React.Fragment key={rowId}>
-                  
-                  {/* ✅ TRANSACTION HEADER (only first row of group) */}
+
+                  {/* TRANSACTION HEADER (only first row of group) */}
                   {isFirst && (
                     <tr className="bg-blue-50 border-t-2 border-blue-300">
-                      <td colSpan={7} className="px-3 py-2 text-xs font-semibold text-blue-900">
-                        📄 {e.invoice_number || e.documentRef || "Sin documento"} 
-                        &nbsp;|&nbsp; 📅 {e.date} 
+                      <td colSpan={8} className="pl-2 pr-4 py-1.5 text-xs font-semibold text-blue-900">
+                        📄 {e.invoice_number || e.documentRef || "Sin documento"}
+                        &nbsp;|&nbsp; 📅 {e.date}
                         &nbsp;|&nbsp; 🔁 {(e as any).transactionId || "TX"}
                       </td>
                     </tr>
                   )}
 
-                  {/* ✅ DATA ROW */}
+                  {/* DATA ROW */}
                   <tr
-                    className={`
-                      border-b
-                      transition-colors
-
+                    className={`border-b transition-colors hover:bg-blue-50
                       ${groupIndex % 2 === 0 ? "bg-gray-50" : "bg-white"}
-
-                      ${isDebit ? "bg-green-50" : ""}
-                      ${isCredit ? "bg-red-50" : ""}
-
-                      hover:bg-blue-100
+                      ${isDebit ? "!bg-green-50" : ""}
+                      ${isCredit ? "!bg-red-50" : ""}
                     `}
                   >
-                    <td>
+                    {/* Checkbox */}
+                    <td className="pl-2 pr-3 py-2">
                       <input
                         type="checkbox"
                         checked={!!selectedMap[rowId]}
@@ -316,25 +319,38 @@ export default function JournalTable({
                       />
                     </td>
 
-                    <td>{e.date}</td>
+                    {/* Asiento ID — shown only on first line of each group */}
+                    <td className="px-3 py-2 w-[96px]">
+                      {isFirst && e.journalId ? (
+                        <span className="inline-block bg-blue-700 text-white rounded px-1.5 py-0.5 font-mono text-xs tracking-wide whitespace-nowrap">
+                          {e.journalId}
+                        </span>
+                      ) : null}
+                    </td>
 
-                    <td className="font-medium">
+                    {/* Fecha */}
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
+
+                    {/* Factura */}
+                    <td className="px-3 py-2 font-medium text-gray-800 truncate max-w-[160px]">
                       {e.invoice_number || e.documentRef || "-"}
                     </td>
 
-                    <td className="text-gray-700">{e.account_code}</td>
+                    {/* Código */}
+                    <td className="px-3 py-2 font-mono text-gray-600">{e.account_code}</td>
 
-                    <td className="font-medium text-gray-900">
+                    {/* Cuenta — constrained width with truncation */}
+                    <td className="px-3 py-2 font-medium text-gray-900 max-w-[180px] truncate" title={e.account_name}>
                       {e.account_name}
                     </td>
 
-                    {/* ✅ DEBIT */}
-                    <td className="text-right font-semibold text-green-700">
+                    {/* Débito */}
+                    <td className="px-3 py-2 text-right font-semibold text-green-700 tabular-nums">
                       {isDebit ? fmtMoney(e.debit) : ""}
                     </td>
 
-                    {/* ✅ CREDIT */}
-                    <td className="text-right font-semibold text-red-700">
+                    {/* Crédito */}
+                    <td className="px-3 py-2 pr-2 text-right font-semibold text-red-700 tabular-nums">
                       {isCredit ? fmtMoney(e.credit) : ""}
                     </td>
                   </tr>

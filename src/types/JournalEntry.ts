@@ -34,6 +34,11 @@ export interface JournalEntry {
   id?: string;
   entityId: string;
 
+  /** Sequential human-readable journal ID, e.g. "AS-00042". Assigned once at
+   *  save time via journalCounterService.  All lines of the same transaction
+   *  share the same journalId. */
+  journalId?: string;
+
   uid?: string;
   userIdSafe?: string;
 

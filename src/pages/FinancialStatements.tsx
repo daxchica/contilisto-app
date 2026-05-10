@@ -18,7 +18,6 @@ import { JournalEntry } from "../types/JournalEntry";
 import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import { hasInitial } from "@/utils/journalGuards";
 import ChartOfAccountsModal from "@/components/modals/ChartOfAccountsModal";
-import { filterEntries } from "@/utils/filterEntries";
 
 type Tab = "comprobacion" | "estado" | "balance";
 
@@ -125,82 +124,137 @@ export default function FinancialStatements() {
   // -------------------------------------------
   // ENTITY-SCOPED ENTRIES
   // -------------------------------------------
-  
 
   const entityEntries = useMemo(
     () => entries.filter((e) => e.entityId === entityId),
     [entries, entityId]
   );
 
-  const allEntries = useMemo(
+  // All historical entries: explicit initial balance + all journal lines
+  const allHistoricalEntries = useMemo(
     () => [...initialEntries, ...entityEntries],
     [initialEntries, entityEntries]
   );
 
   /* --------------------------------------------------------------------- */
-  /* AUTO-SET START DATE FROM INITIAL BALANCE                               */
+  /* AUTO-SET START DATE FROM EARLIEST ENTRY                                */
   /* --------------------------------------------------------------------- */
 
   useEffect(() => {
-    if (!entityEntries.length) return;
     if (startDate) return;
 
-    const initialDate = entityEntries
-      .filter(
-        (e) => e.source === "initial" && typeof e.date === "string")  
-        .map((e) => e.date!.slice(0, 10))
-        .sort()[0];
+    const dates = allHistoricalEntries
+      .map((e) => (typeof e.date === "string" ? e.date.slice(0, 10) : ""))
+      .filter(Boolean)
+      .sort();
 
-    if (initialDate) {
-      setStartDate(initialDate);
-    }
-  }, [entityEntries, startDate]);
+    if (dates.length) setStartDate(dates[0]);
+  }, [allHistoricalEntries, startDate]);
 
   /* --------------------------------------------------------------------- */
-  /* ACCOUNTING SAFETY FLAGS                                                */
+  /* ACCOUNTING SAFETY FLAG                                                 */
   /* --------------------------------------------------------------------- */
 
+  // True when there is any data to display — explicit initial balance OR
+  // any journal entries (we can compute the opening balance from them).
   const hasInitialBalance = useMemo(
-    () => hasInitial(entityEntries),
-    [entityEntries]
+    () => initialEntries.length > 0 || hasInitial(entityEntries) || entityEntries.length > 0,
+    [initialEntries, entityEntries]
   );
 
   /* --------------------------------------------------------------------- */
-  /* PNL SHOULD IGNORE INITIAL ENTRIES            */
+  /* COMPUTED OPENING BALANCE                                               */
+  /* Accumulates the net balance of ALL prior entries (initial config +     */
+  /* journal entries before startDate) into synthetic "initial" lines.     */
+  /* This is how the previous year's closing balance becomes the new year's */
+  /* opening balance automatically.                                         */
   /* --------------------------------------------------------------------- */
-  
-  const pnlEntries = useMemo(
-    () => entityEntries.filter((e) => e.source !== "initial"),
-    [entityEntries]
+
+  const computedOpeningEntries = useMemo((): JournalEntry[] => {
+    // Collect entries that fall before the selected period
+    const priorEntries = allHistoricalEntries.filter((e) => {
+      if (e.source === "initial") return true;          // always include explicit initial
+      return startDate ? (e.date ?? "") < startDate : false;
+    });
+
+    if (priorEntries.length === 0) return [];
+
+    // Net debit–credit per account
+    const netByCode = new Map<string, { name: string; net: number }>();
+    for (const e of priorEntries) {
+      const code = (e.account_code ?? "").trim();
+      if (!code) continue;
+      const existing = netByCode.get(code) ?? { name: e.account_name ?? "", net: 0 };
+      existing.net += (e.debit ?? 0) - (e.credit ?? 0);
+      if (!existing.name && e.account_name) existing.name = e.account_name;
+      netByCode.set(code, existing);
+    }
+
+    // Convert to synthetic initial entries (source = "initial")
+    const result: JournalEntry[] = [];
+    for (const [code, { name, net }] of netByCode.entries()) {
+      if (Math.abs(net) < 0.001) continue;
+      result.push({
+        id: `opening-${code}`,
+        entityId,
+        transactionId: "computed-opening",
+        transactionType: "initial_balance",
+        documentNature: "opening",
+        account_code: code,
+        account_name: name,
+        date: startDate || "1900-01-01",
+        description: "Saldo de apertura (calculado)",
+        debit:  net > 0 ?  net : 0,
+        credit: net < 0 ? -net : 0,
+        source: "initial",
+        createdAt: 0,
+        updatedAt: 0,
+      });
+    }
+
+    return result;
+  }, [allHistoricalEntries, startDate, entityId]);
+
+  /* --------------------------------------------------------------------- */
+  /* PERIOD ENTRIES (movements within the selected date range)              */
+  /* --------------------------------------------------------------------- */
+
+  const periodEntries = useMemo(() => {
+    return entityEntries.filter((e) => {
+      if (e.source === "initial") return false;
+      if (startDate && (e.date ?? "") < startDate) return false;
+      if (endDate   && (e.date ?? "") > endDate)   return false;
+      return true;
+    });
+  }, [entityEntries, startDate, endDate]);
+
+  /* --------------------------------------------------------------------- */
+  /* COMBINED ENTRIES FOR EACH REPORT                                       */
+  /* --------------------------------------------------------------------- */
+
+  // Trial Balance & Balance Sheet: opening snapshot + period movements
+  const trialBalanceEntries = useMemo(
+    () => [...computedOpeningEntries, ...periodEntries],
+    [computedOpeningEntries, periodEntries]
   );
 
-  /* --------------------------------------------------------------------- */
-  /* FILTERED ENTRIES
-  /* --------------------------------------------------------------------- */
-  
-  const filteredAllEntries = useMemo(() => {
-  return filterEntries(allEntries, {
-    startDate,
-    endDate,
-    excludeInitial: false,
-  });
-}, [allEntries, startDate, endDate]);
-
-const filteredPnLEntries = useMemo(() => {
-  return filteredAllEntries.filter((e) => e.source !== "initial");
-}, [filteredAllEntries]);
+  // P&L / Estado de Resultados: only period movements (no balance-sheet opening)
+  const filteredPnLEntries = useMemo(
+    () => periodEntries.filter((e) => e.source !== "initial"),
+    [periodEntries]
+  );
 
   // -------------------------------------------
   // Calculate the PnL result (needed for Balance Sheet)
   // -------------------------------------------
   const resultadoDelEjercicio = useMemo(() => {
-  const sum = (prefix: string, side: "debit" | "credit") =>
-    filteredPnLEntries
-      .filter((e) => (e.account_code || "").startsWith(prefix))
-      .reduce((a, e) => a + Number(e[side] || 0), 0);
+    const sum = (prefix: string, side: "debit" | "credit") =>
+      filteredPnLEntries
+        .filter((e) => (e.account_code || "").startsWith(prefix))
+        .reduce((a, e) => a + Number(e[side] || 0), 0);
 
-  return sum("7", "credit") - sum("5", "debit");
-}, [filteredPnLEntries]);
+    return sum("7", "credit") - sum("5", "debit");
+  }, [filteredPnLEntries]);
 
   // ------------------------------------
   // Render the selected tab content
@@ -222,7 +276,7 @@ const filteredPnLEntries = useMemo(() => {
     return (
       <TrialBalance
         entityId={entityId}
-        entries={filteredAllEntries}
+        entries={trialBalanceEntries}
       />
     );
   }
@@ -238,7 +292,7 @@ const filteredPnLEntries = useMemo(() => {
   if (activeTab === "balance") {
     return (
       <BalanceSheet
-        entries={filteredAllEntries}
+        entries={trialBalanceEntries}
         entityId={entityId}
         resultadoDelEjercicio={resultadoDelEjercicio}
       />
@@ -250,7 +304,7 @@ const filteredPnLEntries = useMemo(() => {
   activeTab,
   loading,
   hasInitialBalance,
-  filteredAllEntries,
+  trialBalanceEntries,
   filteredPnLEntries,
   resultadoDelEjercicio,
   startDate,

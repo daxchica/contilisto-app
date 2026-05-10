@@ -122,6 +122,7 @@ export default function AccountingDashboard() {
     Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }>
   >([]);
   const [sriQueueIdx, setSriQueueIdx] = useState(0);
+  const [sriConfirmedCount, setSriConfirmedCount] = useState(0);
   const [ignoredInvoices, setIgnoredInvoices] = useState<
     Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }>
   >([]);
@@ -517,6 +518,7 @@ const stableJournal = useMemo(() =>
 
         setSriQueue(queue);
         setSriQueueIdx(0);
+        setSriConfirmedCount(0);
       } catch (err: unknown) {
         console.error(err);
         alert(`Error procesando TXT: ${getErrorMessage(err)}`);
@@ -692,6 +694,7 @@ const stableJournal = useMemo(() =>
             entries={current.entries}
             metadata={current.metadata}
             queuePosition={{ current: sriQueueIdx + 1, total: sriQueue.length }}
+            confirmedCount={sriConfirmedCount}
             entityId={entityId}
             userIdSafe={userIdSafe}
             accounts={accounts}
@@ -701,6 +704,7 @@ const stableJournal = useMemo(() =>
               const pending = ignoredInvoices;
               setSriQueue([]);
               setSriQueueIdx(0);
+              setSriConfirmedCount(0);
               setIgnoredInvoices([]);
               if (pending.length > 0) {
                 setTimeout(() => {
@@ -717,6 +721,7 @@ const stableJournal = useMemo(() =>
                 await saveJournalEntries(entityId, authUid, entries);
                 const invoiceNumber = current.metadata.invoice_number ?? "";
                 if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
+                setSriConfirmedCount((c) => c + 1);
                 advanceQueue(true);
               } catch (err: unknown) {
                 console.error("SRI QUEUE SAVE ERROR", err);
