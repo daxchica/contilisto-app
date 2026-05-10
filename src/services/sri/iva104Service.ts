@@ -353,13 +353,18 @@ export function buildIva104SummaryFromLedger(
       ventas12 += l.base12 || 0;
       ventas0 += l.base0 || 0;
       ivaVentas += l.iva || 0;
+      // IVA retentions received from customers (field 615 in Ecuador Form 104)
+      // These are debits to account 1130202 (Ret. IVA por cobrar) recorded on
+      // sale transactions — reduce the IVA payable by the company.
+      retIvaRecibidas += l.ivaRetentionReceived || 0;
     }
 
     if (l.type === "purchase") {
       compras12 += l.base12 || 0;
       compras0 += l.base0 || 0;
       ivaCompras += l.iva || 0;
-      retIvaRecibidas += l.retentionIva || 0;
+      // NOTE: ivaRetentionPaid (201020202) belongs on Form 103, NOT Form 104.
+      // The corresponding IVA credit (133xx) is already in ivaCompras above.
     }
   }
 

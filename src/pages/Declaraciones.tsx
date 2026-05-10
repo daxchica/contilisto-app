@@ -267,21 +267,39 @@ export default function Declaraciones() {
       return;
     }
 
-    console.log("🚀 GENERATING IVA WITH ENTRIES:", entries.length);
-    console.log("🚀 PERIOD ENTRIES USED:", periodEntries.length);
-    
-    const safeEntityId = entityId;
-
     setActiveAction("iva");
     try {
-      const summary = await generateIva104(
-        periodEntries, 
-        safeEntityId, 
-        period
-      );
+      // Prefer the unified tax engine result (already computed in background).
+      // Map retIvaRecibidas → retenciones so the modal's local type is satisfied.
+      console.log("[IVA104] handleGenerateIva — taxEngineResult:", taxEngineResult);
+      console.log("[IVA104] ivaDetailLines available:", taxEngineResult?.ret103Summary?.ivaDetailLines?.length ?? 0);
 
-      console.log("IVA SUMMARY:", summary);
+      if (taxEngineResult?.ivaSummary) {
+        const eng = taxEngineResult.ivaSummary;
+        setIvaSummary({
+          ventas12:    eng.ventas12,
+          compras12:   eng.compras12,
+          ivaVentas:   eng.ivaVentas,
+          ivaCompras:  eng.ivaCompras,
+          retenciones: eng.retIvaRecibidas ?? 0,
+          ivaPagar:    eng.ivaPagar,
+          documents:   [],
+        });
 
+        // Sync retSummary so ivaDetailLines is available without
+        // the user having to open Form 103 first.
+        // Always overwrite so it stays in sync with the current period engine result.
+        if (taxEngineResult.ret103Summary) {
+          setRetSummary(taxEngineResult.ret103Summary);
+        }
+
+        setShowIvaPreview(true);
+        return;
+      }
+
+      // Fallback: old direct-entry path (used if engine hasn't finished yet).
+      console.warn("[IVA104] taxEngineResult not ready — falling back to generateIva104");
+      const summary = await generateIva104(periodEntries, entityId, period);
       setIvaSummary(summary);
       setShowIvaPreview(true);
     } catch (err) {
@@ -588,7 +606,9 @@ export default function Declaraciones() {
         entityName={selectedEntity?.name ?? ""}
         entityRuc={selectedEntity?.ruc ?? ""}
         period={period}
-        ivaDetailLines={retSummary?.ivaDetailLines ?? []}
+        ivaDetailLines={
+          (retSummary ?? taxEngineResult?.ret103Summary)?.ivaDetailLines ?? []
+        }
       />
 
       <AtsPreviewModal

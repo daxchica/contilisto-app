@@ -20,6 +20,7 @@ import type { BankAccount } from "@/types/bankTypes";
 import {
   createPayablePaymentJournalEntry,
   fetchJournalEntriesByTransactionId,
+  checkRetentionsRecorded,
 } from "@/services/journalService";
 
 import {
@@ -167,6 +168,7 @@ export default function RegisterPayablePaymentModal({
 
   const [expenseBase, setExpenseBase] = useState(0);
   const [invoiceIVA, setInvoiceIVA] = useState(0);
+  const [retentionsAlreadyRecorded, setRetentionsAlreadyRecorded] = useState(false);
 
   const [modalPosition, setModalPosition] = useState({
     x: 0,
@@ -209,6 +211,7 @@ export default function RegisterPayablePaymentModal({
     setNeedsRepair(false);
     setExpenseBase(0);
     setInvoiceIVA(0);
+    setRetentionsAlreadyRecorded(false);
   }, [isOpen, payable, bankAccounts]);
 
   /* ------------------------------------------------------------------------ */
@@ -222,6 +225,7 @@ export default function RegisterPayablePaymentModal({
       try {
         setLoadingBases(true);
 
+        // Fetch original invoice entries for expense base + IVA
         const journalEntries = await fetchJournalEntriesByTransactionId(
           entityId,
           payable.transactionId
@@ -232,6 +236,17 @@ export default function RegisterPayablePaymentModal({
 
         setExpenseBase(expenseBase);
         setInvoiceIVA(ivaAmount);
+
+        // Ground-truth check: query Firestore for any retention credits
+        // already posted against this invoice number (in any payment entry).
+        // This is more reliable than reading payable.payments which may be stale.
+        if (payable.invoiceNumber) {
+          const alreadyHasRetentions = await checkRetentionsRecorded(
+            entityId,
+            payable.invoiceNumber
+          );
+          setRetentionsAlreadyRecorded(alreadyHasRetentions);
+        }
       } catch (err) {
         console.error("No se pudieron cargar las bases de retención:", err);
         setExpenseBase(0);
@@ -294,6 +309,19 @@ export default function RegisterPayablePaymentModal({
   const isPartial     = totalApplied > 0 && totalApplied < invoiceBalance - 0.009;
   const isFull        = Math.abs(difference) < 0.01;
 
+  // Sum of retentions already applied — read from payable.payments for display
+  const alreadyRetainedIR = useMemo(() => {
+    const pmts: Array<{ retentionIR?: number }> =
+      (currentPayable as any)?.payments ?? [];
+    return round2(Array.isArray(pmts) ? pmts.reduce((s, p) => s + (p.retentionIR ?? 0), 0) : 0);
+  }, [currentPayable]);
+
+  const alreadyRetainedIVA = useMemo(() => {
+    const pmts: Array<{ retentionIVA?: number }> =
+      (currentPayable as any)?.payments ?? [];
+    return round2(Array.isArray(pmts) ? pmts.reduce((s, p) => s + (p.retentionIVA ?? 0), 0) : 0);
+  }, [currentPayable]);
+
   /* ------------------------------------------------------------------------ */
   /* Guard after hooks                                                        */
   /* ------------------------------------------------------------------------ */
@@ -334,7 +362,10 @@ export default function RegisterPayablePaymentModal({
       if (!userIdSafe) throw new Error("Usuario no válido");
       if (!p.id) throw new Error("Cuenta por pagar inválida");
       if (!paymentDate) throw new Error("Fecha requerida");
-      if (!selectedBank) throw new Error("Cuenta bancaria requerida");
+
+      // Bank account is only required when there is an actual cash payment
+      const hasCashPayment = paymentAmountNum > 0;
+      if (hasCashPayment && !selectedBank) throw new Error("Cuenta bancaria requerida");
 
       if (invoiceBalance <= 0) {
         throw new Error("La factura no tiene saldo pendiente.");
@@ -381,10 +412,6 @@ export default function RegisterPayablePaymentModal({
         p.transactionId
       );
 
-      
-
-      
-
       if (journalEntries.length === 0) {
         throw new Error(
           "No se encontró el asiento contable original de esta factura."
@@ -420,20 +447,20 @@ export default function RegisterPayablePaymentModal({
         payableAccountName = recovered.account_name;
       }
 
-      if (!selectedBank.id) {
-        throw new Error("La cuenta bancaria no tiene ID válido.");
-      }
+      // Resolve bank GL code — only needed when amount > 0
+      let bankGL = "";
+      if (hasCashPayment && selectedBank) {
+        bankGL = String(
+          selectedBank.account_code ??
+          (selectedBank as any).code ??
+          ""
+        ).trim();
 
-      const bankGL = String(
-        selectedBank.account_code ??
-        (selectedBank as any).code ??
-        ""
-      ).trim();
-
-      if (!bankGL) {
-        throw new Error(
-          `La cuenta bancaria "${selectedBank.name}" no tiene cuenta contable asignada.`
-        );
+        if (!bankGL) {
+          throw new Error(
+            `La cuenta bancaria "${selectedBank.name}" no tiene cuenta contable asignada.`
+          );
+        }
       }
 
       const payableForSave: Payable = {
@@ -449,13 +476,16 @@ export default function RegisterPayablePaymentModal({
         paymentAmountNum,
         paymentDate,
         {
-          account_code: bankGL,
-          name: selectedBank.name ?? "Cuenta bancaria",
+          account_code: bankGL || "000000000",   // placeholder when retention-only
+          name: selectedBank?.name ?? "Banco",
         },
         userIdSafe,
         {
           retentionIR: applyIR ? numericRetentionIR : 0,
           retentionIVA: applyIVA ? numericRetentionIVA : 0,
+          supplierRUC: p.supplierRUC ?? "",
+          expenseBase,
+          invoiceIVA,
         },
       );
 
@@ -666,118 +696,142 @@ export default function RegisterPayablePaymentModal({
 
             {/* RETENTIONS */}
             <div className="mt-2 border-t pt-2">
-              <h3 className="mb-2 text-sm font-semibold">Retenciones (opcional)</h3>
-
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                {/* IR */}
-                <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={applyIR}
-                      onChange={(e) => {
-                        setApplyIR(e.target.checked);
-                        if (!e.target.checked) { setRetentionIR(""); setActiveIRPercent(null); }
-                      }}
-                    />
-                    Aplicar retención IR
-                  </label>
-
-                  {applyIR && (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {[1, 1.75, 2, 3, 5, 10].map((percent) => (
-                          <button
-                            key={percent}
-                            type="button"
-                            onClick={() => applyIRPreset(percent)}
-                            disabled={expenseBase <= 0}
-                            className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                              activeIRPercent === percent
-                                ? "bg-blue-600 border-blue-600 text-white"
-                                : "hover:bg-gray-100 text-gray-700"
-                            }`}
-                          >
-                            {percent}%
-                          </button>
-                        ))}
-                      </div>
-
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={retentionIR}
-                        onChange={(e) =>
-                          setRetentionIR(sanitizeDecimalInput(e.target.value))
-                        }
-                        placeholder="Valor retención IR"
-                        className="w-full rounded border px-3 py-2 text-sm"
-                      />
+              {retentionsAlreadyRecorded ? (
+                /* ── Retentions already posted — show read-only info ── */
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <p className="font-semibold mb-1">Retenciones ya registradas</p>
+                  <p className="text-xs text-amber-700">
+                    Las retenciones IR y/o IVA de esta factura ya fueron contabilizadas
+                    en un asiento previo. Solo puede registrar el pago restante por banco o efectivo.
+                  </p>
+                  {(alreadyRetainedIR > 0 || alreadyRetainedIVA > 0) && (
+                    <div className="mt-2 flex gap-4 text-xs font-medium">
+                      {alreadyRetainedIR > 0 && (
+                        <span>Ret. IR aplicada: <strong>${alreadyRetainedIR.toFixed(2)}</strong></span>
+                      )}
+                      {alreadyRetainedIVA > 0 && (
+                        <span>Ret. IVA aplicada: <strong>${alreadyRetainedIVA.toFixed(2)}</strong></span>
+                      )}
                     </div>
                   )}
                 </div>
+              ) : (
+                /* ── No retentions recorded yet — show normal retention controls ── */
+                <>
+                  <h3 className="mb-2 text-sm font-semibold">Retenciones (opcional)</h3>
 
-                {/* IVA */}
-                <div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={applyIVA}
-                      onChange={(e) => {
-                        setApplyIVA(e.target.checked);
-                        if (!e.target.checked) { setRetentionIVA(""); setActiveIVAPercent(null); }
-                      }}
-                    />
-                    Aplicar retención IVA
-                  </label>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {/* IR */}
+                    <div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={applyIR}
+                          onChange={(e) => {
+                            setApplyIR(e.target.checked);
+                            if (!e.target.checked) { setRetentionIR(""); setActiveIRPercent(null); }
+                          }}
+                        />
+                        Aplicar retención IR
+                      </label>
 
-                  {applyIVA && (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {[30, 70, 100].map((percent) => (
-                          <button
-                            key={percent}
-                            type="button"
-                            onClick={() => applyIVAPreset(percent)}
-                            disabled={invoiceIVA <= 0}
-                            className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                              activeIVAPercent === percent
-                                ? "bg-blue-600 border-blue-600 text-white"
-                                : "hover:bg-gray-100 text-gray-700"
-                            }`}
-                          >
-                            {percent}%
-                          </button>
-                        ))}
-                      </div>
+                      {applyIR && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {[1, 1.75, 2, 3, 5, 10].map((percent) => (
+                              <button
+                                key={percent}
+                                type="button"
+                                onClick={() => applyIRPreset(percent)}
+                                disabled={expenseBase <= 0}
+                                className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                  activeIRPercent === percent
+                                    ? "bg-blue-600 border-blue-600 text-white"
+                                    : "hover:bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {percent}%
+                              </button>
+                            ))}
+                          </div>
 
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={retentionIR}
+                            onChange={(e) =>
+                              setRetentionIR(sanitizeDecimalInput(e.target.value))
+                            }
+                            placeholder="Valor retención IR"
+                            className="w-full rounded border px-3 py-2 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* IVA */}
+                    <div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={applyIVA}
+                          onChange={(e) => {
+                            setApplyIVA(e.target.checked);
+                            if (!e.target.checked) { setRetentionIVA(""); setActiveIVAPercent(null); }
+                          }}
+                        />
+                        Aplicar retención IVA
+                      </label>
+
+                      {applyIVA && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {[30, 70, 100].map((percent) => (
+                              <button
+                                key={percent}
+                                type="button"
+                                onClick={() => applyIVAPreset(percent)}
+                                disabled={invoiceIVA <= 0}
+                                className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                  activeIVAPercent === percent
+                                    ? "bg-blue-600 border-blue-600 text-white"
+                                    : "hover:bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {percent}%
+                              </button>
+                            ))}
+                          </div>
+
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={retentionIVA}
+                            onChange={(e) =>
+                              setRetentionIVA(sanitizeDecimalInput(e.target.value))
+                            }
+                            placeholder="Valor retención IVA"
+                            className="w-full rounded border px-3 py-2 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {(applyIR || applyIVA) && (
+                    <div className="mt-4">
+                      <label className="text-sm font-medium">
+                        Certificado de Retención
+                      </label>
                       <input
-                        type="text"
-                        inputMode="decimal"
-                        value={retentionIVA}
-                        onChange={(e) =>
-                          setRetentionIVA(sanitizeDecimalInput(e.target.value))
-                        }
-                        placeholder="Valor retención IVA"
-                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={certificate}
+                        onChange={(e) => setCertificate(e.target.value)}
+                        placeholder="Ingrese número del certificado"
+                        className="mt-1 w-full rounded border px-3 py-2 text-sm"
                       />
                     </div>
                   )}
-                </div>
-              </div>
-
-              {(applyIR || applyIVA) && (
-                <div className="mt-4">
-                  <label className="text-sm font-medium">
-                    Certificado de Retención
-                  </label>
-                  <input
-                    value={certificate}
-                    onChange={(e) => setCertificate(e.target.value)}
-                    placeholder="Ingrese número del certificado"
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
-                  />
-                </div>
+                </>
               )}
             </div>
 

@@ -362,18 +362,33 @@ export async function createPayablePaymentJournalEntry(
   paymentDate: string,
   bankAccount: { account_code: string; name?: string },
   userIdSafe: string,
-  options?: { retentionIR?: number; retentionIVA?: number }
+  options?: {
+    retentionIR?: number;
+    retentionIVA?: number;
+    /** Supplier RUC — needed for Form 103/104 retention reports */
+    supplierRUC?: string;
+    /** Taxable base of the original invoice (expense amount, excl. IVA) */
+    expenseBase?: number;
+    /** IVA amount of the original invoice */
+    invoiceIVA?: number;
+  }
 ) {
 
   requireEntityId(entityId, "pago proveedor");
 
-  const retentionIR = n2(options?.retentionIR ?? 0);
+  const retentionIR  = n2(options?.retentionIR  ?? 0);
   const retentionIVA = n2(options?.retentionIVA ?? 0);
+  const supplierRUC  = options?.supplierRUC?.trim() ?? "";
+  const expenseBase  = n2(options?.expenseBase ?? 0);
+  const invoiceIVA   = n2(options?.invoiceIVA  ?? 0);
 
   const amount = n2(amountPaid);
-  if (amount <= 0) throw new Error("Monto inválido");
 
   const totalApplied = n2(amount + retentionIR + retentionIVA);
+
+  // Allow amount = 0 when retentions alone cover the payment (retention-only entry)
+  if (amount < 0) throw new Error("El pago por banco no puede ser negativo.");
+  if (totalApplied <= 0) throw new Error("El valor total aplicado debe ser mayor que cero.");
 
   if (totalApplied > n2(payable.balance) + 0.01) {
     throw new Error("Pago excede saldo");
@@ -384,6 +399,13 @@ export async function createPayablePaymentJournalEntry(
   const paymentDesc = payable.supplierName
     ? `Pago fact. ${payable.invoiceNumber} — ${payable.supplierName}`
     : `Pago fact. ${payable.invoiceNumber}`;
+
+  // Tax metadata stored on the AP-debit line so the tax engine can recover
+  // the original invoice base and IVA when building retention reports.
+  const taxMeta =
+    expenseBase > 0
+      ? { bases: [{ rate: 12, base: expenseBase, iva: invoiceIVA }] }
+      : undefined;
 
   const entries: JournalEntry[] = [
     {
@@ -396,12 +418,18 @@ export async function createPayablePaymentJournalEntry(
       credit: 0,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
+      supplier_ruc: supplierRUC || undefined,
       description: paymentDesc,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
+      tax: taxMeta,
     },
-    {
+  ];
+
+  // Only add a bank credit entry when actual cash is being transferred
+  if (amount > 0) {
+    entries.push({
       entityId,
       transactionId: tx,
       date: paymentDate,
@@ -411,12 +439,13 @@ export async function createPayablePaymentJournalEntry(
       credit: amount,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
+      supplier_ruc: supplierRUC || undefined,
       description: paymentDesc,
       transactionType: "payment",
       documentNature: "purchase",
       source: "manual",
-    },
-  ];
+    });
+  }
 
   if (retentionIR > 0) {
     entries.push({
@@ -429,6 +458,7 @@ export async function createPayablePaymentJournalEntry(
       credit: retentionIR,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
+      supplier_ruc: supplierRUC || undefined,
       description: `Retención IR — ${payable.invoiceNumber}`,
       transactionType: "payment",
       documentNature: "purchase",
@@ -447,6 +477,7 @@ export async function createPayablePaymentJournalEntry(
       credit: retentionIVA,
       invoice_number: payable.invoiceNumber,
       supplier_name: payable.supplierName,
+      supplier_ruc: supplierRUC || undefined,
       description: `Retención IVA — ${payable.invoiceNumber}`,
       transactionType: "payment",
       documentNature: "purchase",
@@ -457,15 +488,18 @@ export async function createPayablePaymentJournalEntry(
   await saveJournalEntries(entityId, userIdSafe, entries);
   await applyPayablePayment(entityId, payable, totalApplied, userIdSafe, tx);
 
-  await createBankMovement({
-    entityId,
-    bankAccountId: bankAccount.account_code,
-    relatedJournalTransactionId: tx,
-    amount,
-    date: paymentDate,
-    type: "withdrawal",
-    description: paymentDesc,
-  });
+  // Only register a bank movement when cash actually left the account
+  if (amount > 0) {
+    await createBankMovement({
+      entityId,
+      bankAccountId: bankAccount.account_code,
+      relatedJournalTransactionId: tx,
+      amount,
+      date: paymentDate,
+      type: "withdrawal",
+      description: paymentDesc,
+    });
+  }
 
   return tx;
 }
@@ -516,6 +550,40 @@ export async function invoiceAlreadyExists(
   const snap = await getDocs(q);
 
   return !snap.empty;
+}
+
+/**
+ * Returns true if any journal entry for this invoice already credits a
+ * retention account (201020201 = Ret IR por pagar, 201020202 = Ret IVA por pagar).
+ * Queries by invoice_number_normalized so it catches both the original invoice
+ * entry AND any subsequent payment entries that share the same invoice number.
+ */
+export async function checkRetentionsRecorded(
+  entityId: string,
+  invoiceNumber: string
+): Promise<boolean> {
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
+  if (!normalized) return false;
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+
+  const q = query(
+    col,
+    where("invoice_number_normalized", "==", normalized),
+    limit(200)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.some((d) => {
+    const data = d.data() as JournalEntry;
+    const code = String(data.account_code ?? "").replace(/\./g, "").trim();
+    const credit = Number(data.credit ?? 0);
+    return (
+      credit > 0 &&
+      (code.startsWith("201020201") || code.startsWith("201020202"))
+    );
+  });
 }
 
 export async function fetchJournalEntries(

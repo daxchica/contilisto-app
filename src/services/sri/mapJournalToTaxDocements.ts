@@ -108,13 +108,20 @@ export function mapJournalToTaxDocuments(
     // RETENTIONS
     // =========================
 
-    // IVA RETENTION
-    if (code.startsWith("213") && e.credit) {
-      doc.ivaRetention += e.credit;
+    // IVA RETENTION RECEIVED from customers (1130202 = Ret. IVA por cobrar)
+    // These are debits when a customer retains IVA from our sale invoice.
+    if (code.startsWith("1130202") && e.debit) {
+      doc.ivaRetention += e.debit;
     }
 
-    // RENTA RETENTION
-    if (code.startsWith("303") && e.credit) {
+    // IVA RETENTION PAID to SRI as retention agent (201020202 = Ret. IVA por pagar)
+    // These go on the SUPPLIER's Form 104, not ours — tracked only for Form 103.
+    // (no accumulation here — belongs to generateRet103, not Form 104)
+
+    // RENTA RETENTION PAID to SRI (201020201 = Ret. IR por pagar)
+    // Belongs to Form 103, not Form 104.
+    // Legacy code used "303" (wrong prefix) — kept commented for reference.
+    if (code.startsWith("201020201") && e.credit) {
       doc.rentaRetention += e.credit;
     }
   }

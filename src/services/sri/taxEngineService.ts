@@ -199,8 +199,20 @@ export function buildTaxLedger(
     // =========================
     // PURCHASES
     // =========================
-    const purchaseIva = sumDebitByPrefix(txEntries, ["133"]);
-    const purchaseBase12 = inferPurchaseBase12(txEntries, purchaseIva);
+    // For payment transactions the original IVA (133xx) and expense (5xx/6xx)
+    // debits are on the invoice entry, not the payment entry.  We store the
+    // original base/IVA in tax.bases on the AP-debit line when creating the
+    // payment journal — fall back to that when the account-based sums are 0.
+    const storedBase = n2(
+      txEntries.find((e) => (e.tax?.bases?.length ?? 0) > 0)?.tax?.bases?.[0]?.base
+    );
+    const storedIva = n2(
+      txEntries.find((e) => (e.tax?.bases?.length ?? 0) > 0)?.tax?.bases?.[0]?.iva
+    );
+    const purchaseIvaRaw = sumDebitByPrefix(txEntries, ["133"]);
+    const purchaseIva = purchaseIvaRaw > 0 ? purchaseIvaRaw : storedIva;
+    const purchaseBase12Raw = inferPurchaseBase12(txEntries, purchaseIvaRaw);
+    const purchaseBase12 = purchaseBase12Raw > 0 ? purchaseBase12Raw : storedBase;
     const purchaseBase0 = inferPurchaseBase0(txEntries, purchaseIva);
 
     // =========================

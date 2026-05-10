@@ -1,11 +1,10 @@
 // ============================================================================
-// CONTILISTO — IVA 104 PREVIEW MODAL — with Reporte IVA detail tab
+// CONTILISTO — IVA 104 PREVIEW MODAL — Reporte de Retenciones del IVA Sri
 // ============================================================================
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { TaxDocument } from "@/types/TaxDocument";
 import type { Ret104LineDetail } from "@/services/sri/generateRet103";
 
 /* =============================================================================
@@ -19,7 +18,7 @@ type Iva104Summary = {
   ivaCompras: number;
   retenciones?: number;
   ivaPagar: number;
-  documents?: TaxDocument[];
+  documents?: unknown[];
 };
 
 type Props = {
@@ -33,7 +32,6 @@ type Props = {
   ivaDetailLines?: Ret104LineDetail[];
 };
 
-type TabId = "summary" | "reporte";
 
 /* =============================================================================
    HELPERS
@@ -65,14 +63,8 @@ function groupByIvaPercent(lines: Ret104LineDetail[]): IvaGroup[] {
     if (!map.has(pct)) {
       const label =
         pct === 0
-          ? "Sin retención IVA (0%)"
-          : pct === 30
-          ? "Retención IVA 30%"
-          : pct === 70
-          ? "Retención IVA 70%"
-          : pct === 100
-          ? "Retención IVA 100%"
-          : `Retención IVA ${pct}%`;
+          ? "0.00 % Retenciones"
+          : `${pct.toFixed(2)} % Retenciones`;
       map.set(pct, { percent: pct, label, lines: [] });
     }
     map.get(pct)!.lines.push(line);
@@ -93,10 +85,7 @@ export default function Iva104PreviewModal({
   period = "",
   ivaDetailLines = [],
 }: Props) {
-  if (!open || !summary) return null;
-
-  const [activeTab, setActiveTab] = useState<TabId>("summary");
-
+  // ── All hooks MUST run before any conditional return (Rules of Hooks) ──
   const {
     ventas12 = 0,
     compras12 = 0,
@@ -104,8 +93,7 @@ export default function Iva104PreviewModal({
     ivaCompras = 0,
     retenciones = 0,
     ivaPagar = 0,
-    documents = [],
-  } = summary;
+  } = summary ?? {};
 
   const isCredit = ivaPagar < 0;
   const { fromDate, toDate } = useMemo(() => periodToDates(period || "2000-01"), [period]);
@@ -113,10 +101,10 @@ export default function Iva104PreviewModal({
 
   const groups = useMemo(() => groupByIvaPercent(ivaDetailLines), [ivaDetailLines]);
 
-  const grandBase = ivaDetailLines.reduce((s, l) => s + l.base, 0);
-  const grandIva = ivaDetailLines.reduce((s, l) => s + l.iva, 0);
-  const grandTotal = ivaDetailLines.reduce((s, l) => s + l.total, 0);
-  const grandRetAmount = ivaDetailLines.reduce((s, l) => s + l.retentionAmount, 0);
+  const grandBase = useMemo(() => ivaDetailLines.reduce((s, l) => s + l.base, 0), [ivaDetailLines]);
+  const grandIva = useMemo(() => ivaDetailLines.reduce((s, l) => s + l.iva, 0), [ivaDetailLines]);
+  const grandTotal = useMemo(() => ivaDetailLines.reduce((s, l) => s + l.total, 0), [ivaDetailLines]);
+  const grandRetAmount = useMemo(() => ivaDetailLines.reduce((s, l) => s + l.retentionAmount, 0), [ivaDetailLines]);
 
   const summaryByPercent: Map<number, number> = useMemo(() => {
     const m = new Map<number, number>();
@@ -128,57 +116,10 @@ export default function Iva104PreviewModal({
     return m;
   }, [ivaDetailLines]);
 
-  // ── PDF Export (Summary) ──
-  function handleExportSummaryPDF() {
-    const doc = new jsPDF();
+  // ── Guard: render nothing when closed or no summary ──
+  if (!open || !summary) return null;
 
-    doc.setFontSize(14);
-    doc.text("Formulario 104 - IVA", 14, 15);
-
-    doc.setFontSize(10);
-    doc.text(`Periodo: ${period || "—"}`, 14, 22);
-
-    const summaryRows = [
-      ["Ventas gravadas 12%", fmt2(ventas12)],
-      ["IVA en ventas", fmt2(ivaVentas)],
-      ["Compras gravadas 12%", fmt2(compras12)],
-      ["IVA crédito tributario", fmt2(ivaCompras)],
-      ["Retenciones IVA", fmt2(retenciones)],
-      [
-        ivaPagar < 0 ? "Saldo a favor" : "IVA a pagar",
-        fmt2(Math.abs(ivaPagar)),
-      ],
-    ];
-
-    autoTable(doc, {
-      startY: 28,
-      head: [["Concepto", "Valor"]],
-      body: summaryRows,
-    });
-
-    const tableRows = documents.map((docItem) => [
-      docItem.type === "sale" ? "Venta" : "Compra",
-      docItem.documentNumber || "-",
-      docItem.date,
-      fmt2(docItem.base12),
-      fmt2(docItem.type === "sale" ? docItem.ivaVentas : docItem.ivaCompras),
-      fmt2(docItem.ivaRetention),
-    ]);
-
-    const lastY =
-      (doc as jsPDF & { lastAutoTable?: { finalY: number } })
-        .lastAutoTable?.finalY ?? 40;
-
-    autoTable(doc, {
-      startY: lastY + 10,
-      head: [["Tipo", "Factura", "Fecha", "Base 12%", "IVA", "Ret IVA"]],
-      body: tableRows,
-    });
-
-    doc.save(`Formulario_104_IVA_${period}.pdf`);
-  }
-
-  // ── PDF Export (Reporte IVA detail) ──
+  // ── PDF Export (Reporte IVA) ──
   function handleExportReportePDF() {
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -206,7 +147,7 @@ export default function Iva104PreviewModal({
 
       doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.text(`${group.percent}%  ${group.label}`, 30, startY);
+      doc.text(`${group.percent.toFixed(2)}  % Retenciones`, 30, startY);
       startY += 6;
 
       autoTable(doc, {
@@ -217,12 +158,14 @@ export default function Iva104PreviewModal({
         footStyles: { fillColor: [240, 240, 240], fontStyle: "bold", fontSize: 7 },
         head: [[
           "No.", "Fecha", "Factura", "Proveedor", "RUC / C.I",
-          "Base Imponible", "I.V.A.", "Total", "% Ret.IVA", "Imp.Retenido", "Número Ret.",
+          "Base Imponible", "I.V.A.", "Total", "% Ret.Fte.", "Imp.Retenido", "Número Ret.",
         ]],
         body: group.lines.map((l) => [
           l.no, l.date, l.invoiceNumber, l.supplierName, l.supplierRUC,
           fmt2(l.base), fmt2(l.iva), fmt2(l.total),
-          `${l.retentionPercent}%`, fmt2(l.retentionAmount), l.retentionCertNumber,
+          l.retentionPercent.toFixed(2),
+          fmt2(l.retentionAmount),
+          l.retentionCertNumber !== "-" ? l.retentionCertNumber : "0",
         ]),
         foot: [[
           `Total ${group.percent}%:`, "", "", "", "",
@@ -240,7 +183,7 @@ export default function Iva104PreviewModal({
       margin: { left: 30, right: 30 },
       headStyles: { fillColor: [30, 60, 100], textColor: 255, fontSize: 7 },
       bodyStyles: { fontStyle: "bold", fontSize: 8 },
-      head: [["TOTAL GENERAL", "", "", "", "", "Base", "IVA", "Total", "", "Imp.Retenido", ""]],
+      head: [["Total Final", "", "", "", "", "Base Imponible", "I.V.A.", "Total", "", "Imp.Retenido", ""]],
       body: [["", "", "", "", "", fmt2(grandBase), fmt2(grandIva), fmt2(grandTotal), "", fmt2(grandRetAmount), ""]],
     });
 
@@ -248,17 +191,18 @@ export default function Iva104PreviewModal({
     startY += 14;
 
     // Summary
-    const summaryRows: [string, string][] = [];
-    if (summaryByPercent.has(30)) summaryRows.push(["Retención 30%", fmt2(summaryByPercent.get(30)!)]);
-    if (summaryByPercent.has(70)) summaryRows.push(["Retención 70%", fmt2(summaryByPercent.get(70)!)]);
-    if (summaryByPercent.has(100)) summaryRows.push(["Retención 100%", fmt2(summaryByPercent.get(100)!)]);
+    const summaryRows: [string, string][] = [
+      ["Retención 30%",  fmt2(summaryByPercent.get(30)  ?? 0)],
+      ["Retención 70%",  fmt2(summaryByPercent.get(70)  ?? 0)],
+      ["Retención 100%", fmt2(summaryByPercent.get(100) ?? 0)],
+    ];
     const sortedOthers = Array.from(summaryByPercent.entries())
       .filter(([p]) => p !== 0 && p !== 30 && p !== 70 && p !== 100)
       .sort((a, b) => a[0] - b[0]);
     for (const [pct, amt] of sortedOthers) {
       summaryRows.push([`Retención ${pct}%`, fmt2(amt)]);
     }
-    summaryRows.push(["Total Final", fmt2(grandRetAmount)]);
+    summaryRows.push(["Total:", fmt2(grandRetAmount)]);
 
     autoTable(doc, {
       startY,
@@ -275,249 +219,179 @@ export default function Iva104PreviewModal({
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-[1100px] max-h-[90vh] overflow-y-auto p-6">
+      <div className="bg-white rounded-xl shadow-xl w-[1120px] max-h-[90vh] overflow-y-auto p-6">
 
-        {/* TABS */}
-        <div className="flex gap-3 mb-5 border-b pb-2">
-          <button
-            onClick={() => setActiveTab("summary")}
-            className={`px-4 py-1.5 rounded-t text-sm font-medium transition ${
-              activeTab === "summary"
-                ? "bg-[#0A3558] text-white"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Formulario 104
-          </button>
-          <button
-            onClick={() => setActiveTab("reporte")}
-            className={`px-4 py-1.5 rounded-t text-sm font-medium transition ${
-              activeTab === "reporte"
-                ? "bg-[#0A3558] text-white"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            Reporte IVA
-          </button>
+        {/* ── Header — matches template layout ── */}
+        <div className="text-center border-b pb-4 mb-5">
+          <p className="font-bold text-sm">{entityName} — {entityRuc}</p>
+          <p className="font-bold text-lg text-[#0A3558]">Reporte de Retenciones del IVA Sri</p>
+          <p className="text-sm text-gray-600">Desde: {fromDate} &nbsp;&nbsp; Hasta: {toDate}</p>
+          <p className="text-sm text-gray-600">Fecha: {printDate}</p>
         </div>
 
-        {/* ════════ TAB: SUMMARY ════════ */}
-        {activeTab === "summary" && (
+        {/* ── IVA totals band (compact, for accountant context) ── */}
+        <div className="flex flex-wrap gap-3 mb-5 text-xs">
+          <span className="bg-gray-50 border rounded px-3 py-1.5">
+            Ventas 12%: <strong className="tabular-nums">${fmt2(ventas12)}</strong>
+          </span>
+          <span className="bg-gray-50 border rounded px-3 py-1.5">
+            IVA Ventas: <strong className="tabular-nums">${fmt2(ivaVentas)}</strong>
+          </span>
+          <span className="bg-gray-50 border rounded px-3 py-1.5">
+            Compras 12%: <strong className="tabular-nums">${fmt2(compras12)}</strong>
+          </span>
+          <span className="bg-gray-50 border rounded px-3 py-1.5">
+            IVA Compras: <strong className="tabular-nums">${fmt2(ivaCompras)}</strong>
+          </span>
+          {retenciones > 0 && (
+            <span className="bg-gray-50 border rounded px-3 py-1.5">
+              Ret. IVA recibidas: <strong className="tabular-nums">${fmt2(retenciones)}</strong>
+            </span>
+          )}
+          <span className={`border rounded px-3 py-1.5 font-bold ${isCredit ? "bg-green-50 text-green-700 border-green-300" : "bg-red-50 text-red-700 border-red-300"}`}>
+            {isCredit ? "Saldo a favor" : "IVA a pagar"}: <span className="tabular-nums">${fmt2(Math.abs(ivaPagar))}</span>
+          </span>
+        </div>
+
+        {/* ── Main table ── */}
+        {ivaDetailLines.length === 0 ? (
+          <p className="text-center text-gray-500 py-12">
+            No existen compras en el periodo.
+          </p>
+        ) : (
           <>
-            <h2 className="text-xl font-bold text-[#0A3558] mb-4">
-              Formulario 104 - IVA
-            </h2>
+            {groups.map((group) => {
+              const gBase  = group.lines.reduce((s, l) => s + l.base, 0);
+              const gIva   = group.lines.reduce((s, l) => s + l.iva, 0);
+              const gTotal = group.lines.reduce((s, l) => s + l.total, 0);
+              const gRet   = group.lines.reduce((s, l) => s + l.retentionAmount, 0);
+              return (
+                <div key={group.percent} className="mb-6">
+                  {/* Group header */}
+                  <div className="bg-gray-100 border border-b-0 rounded-t px-3 py-1.5 flex items-center gap-2">
+                    <span className="font-bold text-sm text-gray-800">{group.percent.toFixed(2)}</span>
+                    <span className="font-semibold text-sm text-gray-700">% Retenciones</span>
+                  </div>
 
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>Ventas gravadas 12%</span>
-                <span>${fmt2(ventas12)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>IVA en ventas</span>
-                <span>${fmt2(ivaVentas)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Compras gravadas 12%</span>
-                <span>${fmt2(compras12)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>IVA crédito tributario</span>
-                <span>${fmt2(ivaCompras)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Retenciones IVA</span>
-                <span>${fmt2(retenciones)}</span>
-              </div>
-              <hr />
-              <div className="flex justify-between font-bold text-base">
-                <span>{isCredit ? "Saldo a favor" : "IVA a pagar"}</span>
-                <span className={isCredit ? "text-green-600" : "text-red-600"}>
-                  ${fmt2(Math.abs(ivaPagar))}
-                </span>
-              </div>
-            </div>
-
-            {documents.length > 0 && (
-              <div className="mt-6">
-                <h3 className="font-semibold text-sm mb-2">Detalle de comprobantes</h3>
-                <div className="max-h-[260px] overflow-y-auto border rounded">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="p-2 text-left">Tipo</th>
-                        <th className="p-2 text-left">Factura</th>
-                        <th className="p-2 text-left">Fecha</th>
-                        <th className="p-2 text-left">Base 12%</th>
-                        <th className="p-2 text-left">IVA</th>
-                        <th className="p-2 text-left">Ret IVA</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documents.map((doc) => (
-                        <tr key={doc.transactionId} className="border-t">
-                          <td className="p-2 font-medium">{doc.type === "sale" ? "Venta" : "Compra"}</td>
-                          <td className="p-2 font-mono text-xs">{doc.documentNumber || "-"}</td>
-                          <td className="p-2">{doc.date}</td>
-                          <td className="p-2">{`$${fmt2(doc.base12)}`}</td>
-                          <td className="p-2">{`$${fmt2(doc.type === "sale" ? doc.ivaVentas : doc.ivaCompras)}`}</td>
-                          <td className="p-2">{`$${fmt2(doc.ivaRetention)}`}</td>
+                  <div className="overflow-x-auto border rounded-b">
+                    <table className="w-full text-xs min-w-[1000px]">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          {[
+                            "No.", "Fecha", "Factura", "Proveedor",
+                            "RUC / C.I", "Base Imponible", "I.V.A.", "Total",
+                            "% Ret.Fte.", "Imp.Retenido", "Número Ret.",
+                          ].map((h) => (
+                            <th
+                              key={h}
+                              className="px-2 py-1.5 text-left font-semibold text-gray-600 whitespace-nowrap border-r last:border-r-0"
+                            >
+                              {h}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-between">
-              <button
-                onClick={handleExportSummaryPDF}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-              >
-                Exportar PDF
-              </button>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 border rounded hover:bg-gray-100 text-sm"
-              >
-                Cerrar
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* ════════ TAB: REPORTE IVA ════════ */}
-        {activeTab === "reporte" && (
-          <>
-            {/* Header */}
-            <div className="text-center border-b pb-4 mb-5">
-              <p className="font-bold text-sm">{entityName} — {entityRuc}</p>
-              <p className="font-bold text-lg text-[#0A3558]">Reporte de Retenciones del IVA Sri</p>
-              <p className="text-sm text-gray-600">Desde: {fromDate} &nbsp; Hasta: {toDate}</p>
-              <p className="text-sm text-gray-600">Fecha: {printDate}</p>
-            </div>
-
-            {ivaDetailLines.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No existen compras con retención IVA en el periodo.</p>
-            ) : (
-              <>
-                {groups.map((group) => {
-                  const gBase = group.lines.reduce((s, l) => s + l.base, 0);
-                  const gIva = group.lines.reduce((s, l) => s + l.iva, 0);
-                  const gTotal = group.lines.reduce((s, l) => s + l.total, 0);
-                  const gRet = group.lines.reduce((s, l) => s + l.retentionAmount, 0);
-                  return (
-                    <div key={group.percent} className="mb-6">
-                      <p className="font-semibold text-sm bg-gray-100 px-3 py-1 rounded-t border border-b-0">
-                        {group.percent}% — {group.label}
-                      </p>
-                      <div className="overflow-x-auto border rounded-b">
-                        <table className="w-full text-xs min-w-[900px]">
-                          <thead className="bg-gray-50 border-b">
-                            <tr>
-                              {["No.", "Fecha", "Factura", "Proveedor", "RUC / C.I", "Base Imponible", "I.V.A.", "Total", "% Ret.IVA", "Imp.Retenido", "Número Ret."].map((h) => (
-                                <th key={h} className="px-2 py-1 text-left font-medium text-gray-700 whitespace-nowrap">{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {group.lines.map((line) => (
-                              <tr key={line.no} className="border-t hover:bg-gray-50">
-                                <td className="px-2 py-1">{line.no}</td>
-                                <td className="px-2 py-1 whitespace-nowrap">{line.date}</td>
-                                <td className="px-2 py-1 font-mono">{line.invoiceNumber}</td>
-                                <td className="px-2 py-1">{line.supplierName}</td>
-                                <td className="px-2 py-1 font-mono">{line.supplierRUC}</td>
-                                <td className="px-2 py-1 text-right">{fmt2(line.base)}</td>
-                                <td className="px-2 py-1 text-right">{fmt2(line.iva)}</td>
-                                <td className="px-2 py-1 text-right">{fmt2(line.total)}</td>
-                                <td className="px-2 py-1 text-right">{line.retentionPercent}%</td>
-                                <td className="px-2 py-1 text-right font-medium">{fmt2(line.retentionAmount)}</td>
-                                <td className="px-2 py-1 font-mono">{line.retentionCertNumber}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot className="bg-gray-100 border-t font-semibold text-xs">
-                            <tr>
-                              <td className="px-2 py-1" colSpan={5}>Total {group.percent}%:</td>
-                              <td className="px-2 py-1 text-right">{fmt2(gBase)}</td>
-                              <td className="px-2 py-1 text-right">{fmt2(gIva)}</td>
-                              <td className="px-2 py-1 text-right">{fmt2(gTotal)}</td>
-                              <td></td>
-                              <td className="px-2 py-1 text-right">{fmt2(gRet)}</td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Grand total */}
-                <div className="bg-[#0A3558] text-white rounded px-4 py-2 text-sm font-semibold flex gap-8 mt-2">
-                  <span>TOTAL GENERAL</span>
-                  <span>Base: {fmt2(grandBase)}</span>
-                  <span>IVA: {fmt2(grandIva)}</span>
-                  <span>Total: {fmt2(grandTotal)}</span>
-                  <span>Imp.Retenido: {fmt2(grandRetAmount)}</span>
-                </div>
-
-                {/* Summary */}
-                <div className="mt-6">
-                  <p className="font-semibold text-sm mb-2">Resumen de Retenciones IVA</p>
-                  <table className="text-xs border w-full max-w-xs">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-1 text-left">Concepto</th>
-                        <th className="px-3 py-1 text-right">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[30, 70, 100].map((pct) =>
-                        summaryByPercent.has(pct) ? (
-                          <tr key={pct} className="border-t">
-                            <td className="px-3 py-1">Retención {pct}%</td>
-                            <td className="px-3 py-1 text-right">{fmt2(summaryByPercent.get(pct)!)}</td>
-                          </tr>
-                        ) : null
-                      )}
-                      {Array.from(summaryByPercent.entries())
-                        .filter(([p]) => p !== 0 && p !== 30 && p !== 70 && p !== 100)
-                        .sort((a, b) => a[0] - b[0])
-                        .map(([pct, amt]) => (
-                          <tr key={pct} className="border-t">
-                            <td className="px-3 py-1">Retención {pct}%</td>
-                            <td className="px-3 py-1 text-right">{fmt2(amt)}</td>
+                      </thead>
+                      <tbody>
+                        {group.lines.map((line) => (
+                          <tr key={line.no} className="border-t hover:bg-blue-50">
+                            <td className="px-2 py-1 text-gray-500">{line.no}</td>
+                            <td className="px-2 py-1 whitespace-nowrap">{line.date}</td>
+                            <td className="px-2 py-1 font-mono text-[11px]">{line.invoiceNumber}</td>
+                            <td className="px-2 py-1 max-w-[180px] truncate" title={line.supplierName}>{line.supplierName}</td>
+                            <td className="px-2 py-1 font-mono">{line.supplierRUC}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{fmt2(line.base)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{fmt2(line.iva)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{fmt2(line.total)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums">{line.retentionPercent.toFixed(2)}</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-semibold">{fmt2(line.retentionAmount)}</td>
+                            <td className="px-2 py-1 font-mono text-[11px]">
+                              {line.retentionCertNumber !== "-" ? line.retentionCertNumber : "0"}
+                            </td>
                           </tr>
                         ))}
-                      <tr className="border-t font-bold bg-gray-50">
-                        <td className="px-3 py-1">Total Final</td>
-                        <td className="px-3 py-1 text-right">{fmt2(grandRetAmount)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      </tbody>
+                      <tfoot className="bg-gray-100 border-t-2 font-semibold text-xs">
+                        <tr>
+                          <td className="px-2 py-1.5 text-right" colSpan={5}>
+                            Total &nbsp;{group.percent.toFixed(2)}:
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmt2(gBase)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmt2(gIva)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmt2(gTotal)}</td>
+                          <td></td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmt2(gRet)}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
-              </>
-            )}
+              );
+            })}
 
-            <div className="mt-6 flex justify-between">
-              <button
-                onClick={handleExportReportePDF}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-              >
-                Exportar PDF
-              </button>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 border rounded hover:bg-gray-100 text-sm"
-              >
-                Cerrar
-              </button>
+            {/* Total Final — matches template */}
+            <div className="border rounded overflow-hidden mt-2">
+              <table className="w-full text-xs min-w-[1000px]">
+                <tbody>
+                  <tr className="bg-[#0A3558] text-white font-bold">
+                    <td className="px-3 py-2 text-right" colSpan={5}>Total Final</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt2(grandBase)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt2(grandIva)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt2(grandTotal)}</td>
+                    <td></td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt2(grandRetAmount)}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Summary box — matches template bottom-left */}
+            <div className="mt-6">
+              <table className="text-xs border w-full max-w-[240px]">
+                <tbody>
+                  {[30, 70, 100].map((pct) => (
+                    <tr key={pct} className="border-t">
+                      <td className="px-3 py-1">Retención {pct}%</td>
+                      <td className="px-3 py-1 text-right tabular-nums">
+                        {fmt2(summaryByPercent.get(pct) ?? 0)}
+                      </td>
+                    </tr>
+                  ))}
+                  {Array.from(summaryByPercent.entries())
+                    .filter(([p]) => p !== 0 && p !== 30 && p !== 70 && p !== 100)
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([pct, amt]) => (
+                      <tr key={pct} className="border-t">
+                        <td className="px-3 py-1">Retención {pct}%</td>
+                        <td className="px-3 py-1 text-right tabular-nums">{fmt2(amt)}</td>
+                      </tr>
+                    ))}
+                  <tr className="border-t-2 font-bold">
+                    <td className="px-3 py-1">Total:</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{fmt2(grandRetAmount)}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </>
         )}
+
+        {/* ── Footer buttons ── */}
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={handleExportReportePDF}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+          >
+            Exportar PDF
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border rounded hover:bg-gray-100 text-sm"
+          >
+            Cerrar
+          </button>
+        </div>
 
       </div>
     </div>
