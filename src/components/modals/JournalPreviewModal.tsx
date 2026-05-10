@@ -656,9 +656,43 @@ export default function JournalPreviewModal({
                   </td>
 
                   <td className="text-center">
-                    {totals.mathBalanced ? "✔" : "⚠"}
+                    {totals.mathBalanced
+                      ? <span className="text-emerald-600">✔</span>
+                      : <span className="text-amber-500">⚠</span>
+                    }
                   </td>
                 </tr>
+
+                {/* BALANCE DIFFERENCE HINT */}
+                {!totals.mathBalanced && (() => {
+                  const diff = Math.abs(totals.debit - totals.credit);
+                  const needsDebit = totals.credit > totals.debit;
+                  return (
+                    <tr className="bg-amber-50 border-t border-amber-200">
+                      <td colSpan={5} className="px-3 py-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-amber-700 font-medium">
+                            ⚠ Diferencia:{" "}
+                            <span className="font-mono font-bold">
+                              ${formatMoney(diff)}
+                            </span>
+                          </span>
+                          <span className="text-amber-600">
+                            Añade{" "}
+                            <span className="font-mono font-bold">
+                              ${formatMoney(diff)}
+                            </span>{" "}
+                            al{" "}
+                            <span className="font-bold">
+                              {needsDebit ? "Débito" : "Crédito"}
+                            </span>{" "}
+                            para balancear
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           </div>

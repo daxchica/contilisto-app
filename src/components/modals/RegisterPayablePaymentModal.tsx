@@ -149,10 +149,13 @@ export default function RegisterPayablePaymentModal({
   const [bankAccountId, setBankAccountId] = useState("");
 
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [payFull, setPayFull] = useState(false);
   const [applyIR, setApplyIR] = useState(false);
   const [applyIVA, setApplyIVA] = useState(false);
   const [retentionIR, setRetentionIR] = useState("");
   const [retentionIVA, setRetentionIVA] = useState("");
+  const [activeIRPercent, setActiveIRPercent] = useState<number | null>(null);
+  const [activeIVAPercent, setActiveIVAPercent] = useState<number | null>(null);
   const [certificate, setCertificate] = useState("");
 
   const [saving, setSaving] = useState(false);
@@ -169,8 +172,6 @@ export default function RegisterPayablePaymentModal({
     x: 0,
     y: 0,
   });
-
-  const [payFull, setPayFull] = useState(false);
 
   /* ------------------------------------------------------------------------ */
   /* Init                                                                     */
@@ -195,10 +196,13 @@ export default function RegisterPayablePaymentModal({
     };
 
     setPaymentAmount("");
+    setPayFull(false);
     setApplyIR(false);
     setApplyIVA(false);
     setRetentionIR("");
     setRetentionIVA("");
+    setActiveIRPercent(null);
+    setActiveIVAPercent(null);
     setCertificate("");
 
     setError("");
@@ -257,11 +261,6 @@ export default function RegisterPayablePaymentModal({
 
   const invoiceTotal = round2(Number(currentPayable?.total ?? 0));
 
-  const paymentAmountNum = useMemo(
-    () => safeMoney(paymentAmount),
-    [paymentAmount]
-  );
-
   const numericRetentionIR = useMemo(
     () => safeMoney(retentionIR),
     [retentionIR]
@@ -272,33 +271,28 @@ export default function RegisterPayablePaymentModal({
     [retentionIVA]
   );
 
-  const totalApplied = useMemo(() => {
-    return round2(
-      paymentAmountNum +
-        (applyIR ? numericRetentionIR : 0) +
-        (applyIVA ? numericRetentionIVA : 0)
-    );
-  }, [
-    paymentAmountNum,
-    applyIR,
-    applyIVA,
-    numericRetentionIR,
-    numericRetentionIVA,
-  ]);
+  // When "Pagar saldo total" is active, bank payment auto-computes so that
+  // bank + IR + IVA = invoiceBalance exactly.
+  // When unchecked, the user enters the bank amount freely.
+  const paymentAmountNum = useMemo(() => {
+    if (payFull) {
+      const ir  = applyIR  ? numericRetentionIR  : 0;
+      const iva = applyIVA ? numericRetentionIVA : 0;
+      return Math.max(0, round2(invoiceBalance - ir - iva));
+    }
+    return safeMoney(paymentAmount);
+  }, [payFull, paymentAmount, invoiceBalance, applyIR, applyIVA, numericRetentionIR, numericRetentionIVA]);
 
-  const difference = useMemo(() => {
-    return round2(invoiceBalance - totalApplied);
-  }, [invoiceBalance, totalApplied]);
+  const totalApplied = useMemo(() => round2(
+    paymentAmountNum +
+    (applyIR  ? numericRetentionIR  : 0) +
+    (applyIVA ? numericRetentionIVA : 0)
+  ), [paymentAmountNum, applyIR, applyIVA, numericRetentionIR, numericRetentionIVA]);
 
+  const difference    = useMemo(() => round2(invoiceBalance - totalApplied), [invoiceBalance, totalApplied]);
   const isOverApplied = difference < -0.009;
-  const isPartial = totalApplied > 0 && totalApplied < invoiceBalance - 0.009;
-  const isFull = Math.abs(difference) < 0.01;
-
-  useEffect(() => {
-        if (payFull) {
-          setPaymentAmount(invoiceBalance.toFixed(2));
-        }
-      }, [payFull, invoiceBalance]);
+  const isPartial     = totalApplied > 0 && totalApplied < invoiceBalance - 0.009;
+  const isFull        = Math.abs(difference) < 0.01;
 
   /* ------------------------------------------------------------------------ */
   /* Guard after hooks                                                        */
@@ -315,11 +309,13 @@ export default function RegisterPayablePaymentModal({
   function applyIRPreset(percent: number) {
     const value = calcRetentionFromPercent(expenseBase, percent);
     setRetentionIR(value.toFixed(2));
+    setActiveIRPercent(percent);
   }
 
   function applyIVAPreset(percent: number) {
     const value = calcRetentionFromPercent(invoiceIVA, percent);
     setRetentionIVA(value.toFixed(2));
+    setActiveIVAPercent(percent);
   }
 
   console.log("Selected Bank FULL:", selectedBank);
@@ -524,9 +520,9 @@ export default function RegisterPayablePaymentModal({
       <Rnd
         default={{
           x: Math.max(12, window.innerWidth / 2 - 320),
-          y: 24,
+          y: Math.max(12, window.innerHeight / 2 - 300),
           width: 820,
-          height: 600,
+          height: "auto",
         }}
         onDragStop={(_, d) => {
           setModalPosition({ x: d.x, y: d.y });
@@ -537,7 +533,7 @@ export default function RegisterPayablePaymentModal({
         dragCancel="input, textarea, select, button"
         bounds="window"
       >
-        <div className="w-full rounded-xl bg-white shadow-xl">
+        <div className="w-full rounded-xl bg-white shadow-xl flex flex-col" style={{ maxHeight: "90vh" }}>
           {/* HEADER */}
           
           <div className="drag-header flex cursor-move active:cursor-grabbing justify-between border-b px-6 py-3 select-none">
@@ -555,7 +551,7 @@ export default function RegisterPayablePaymentModal({
           </div>
 
           {/* BODY */}
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-4 overflow-y-auto flex-1">
             {/* SUMMARY */}
             <div className="grid grid-cols-4 sm:grid-cols-4 gap-2 rounded-lg border bg-gray-50 p-3 text-sm">
               <div>
@@ -642,19 +638,28 @@ export default function RegisterPayablePaymentModal({
               <div className="col-span-1 md:col-span-1">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-sm font-medium">Pago por banco</label>
+                  <label className="flex items-center gap-1.5 text-xs font-medium cursor-pointer text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={payFull}
+                      onChange={(e) => setPayFull(e.target.checked)}
+                      className="accent-blue-600"
+                    />
+                    Pagar saldo total
+                  </label>
                 </div>
-                  
                 <input
                   type="text"
                   inputMode="decimal"
-                  value={paymentAmount}
+                  value={payFull ? paymentAmountNum.toFixed(2) : paymentAmount}
                   disabled={payFull}
-                  onChange={(e) =>
-                    setPaymentAmount(sanitizeDecimalInput(e.target.value))
-                  }
+                  onChange={(e) => setPaymentAmount(sanitizeDecimalInput(e.target.value))}
                   placeholder="0.00"
-                  className="w-full rounded border px-2 py-1.5 text-sm disabled:bg-gray-100"
+                  className="w-full rounded border px-2 py-1.5 text-sm font-mono disabled:bg-gray-100"
                 />
+                {payFull && (
+                  <p className="mt-1 text-xs text-gray-400">Calculado: saldo − retenciones</p>
+                )}
               </div>
               
             </div>
@@ -672,7 +677,7 @@ export default function RegisterPayablePaymentModal({
                       checked={applyIR}
                       onChange={(e) => {
                         setApplyIR(e.target.checked);
-                        if (!e.target.checked) setRetentionIR("");
+                        if (!e.target.checked) { setRetentionIR(""); setActiveIRPercent(null); }
                       }}
                     />
                     Aplicar retención IR
@@ -687,7 +692,11 @@ export default function RegisterPayablePaymentModal({
                             type="button"
                             onClick={() => applyIRPreset(percent)}
                             disabled={expenseBase <= 0}
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-100 disabled:opacity-50"
+                            className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                              activeIRPercent === percent
+                                ? "bg-blue-600 border-blue-600 text-white"
+                                : "hover:bg-gray-100 text-gray-700"
+                            }`}
                           >
                             {percent}%
                           </button>
@@ -716,7 +725,7 @@ export default function RegisterPayablePaymentModal({
                       checked={applyIVA}
                       onChange={(e) => {
                         setApplyIVA(e.target.checked);
-                        if (!e.target.checked) setRetentionIVA("");
+                        if (!e.target.checked) { setRetentionIVA(""); setActiveIVAPercent(null); }
                       }}
                     />
                     Aplicar retención IVA
@@ -731,7 +740,11 @@ export default function RegisterPayablePaymentModal({
                             type="button"
                             onClick={() => applyIVAPreset(percent)}
                             disabled={invoiceIVA <= 0}
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-100 disabled:opacity-50"
+                            className={`rounded border px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                              activeIVAPercent === percent
+                                ? "bg-blue-600 border-blue-600 text-white"
+                                : "hover:bg-gray-100 text-gray-700"
+                            }`}
                           >
                             {percent}%
                           </button>
@@ -796,13 +809,7 @@ export default function RegisterPayablePaymentModal({
 
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-gray-600">Diferencia</span>
-                <span
-                  className={
-                    isOverApplied
-                      ? "font-semibold text-red-600"
-                      : "font-semibold text-gray-900"
-                  }
-                >
+                <span className={isOverApplied ? "font-semibold text-red-600" : "font-semibold text-gray-900"}>
                   ${difference.toFixed(2)}
                 </span>
               </div>
@@ -819,13 +826,11 @@ export default function RegisterPayablePaymentModal({
                   Este pago es parcial. La factura quedará con saldo pendiente.
                 </div>
               )}
-
               {isFull && (
                 <div className="mt-2 text-xs text-green-700">
                   Este pago liquida completamente la factura.
                 </div>
               )}
-
               {isOverApplied && (
                 <div className="mt-2 text-xs text-red-700">
                   El valor aplicado excede el saldo pendiente de la factura.
@@ -856,18 +861,6 @@ export default function RegisterPayablePaymentModal({
                 </button>
               </div>
             )}
-          </div>
-
-          {/* FULL PAYMENT TOGGLE */}
-          <div className="flex justify-center mt-2">
-            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-              <input
-                type="checkbox"
-                checked={payFull}
-                onChange={(e) => setPayFull(e.target.checked)}
-              />
-              Pagar saldo total
-            </label>
           </div>
 
           {/* FOOTER */}
