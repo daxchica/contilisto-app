@@ -1,8 +1,8 @@
 // netlify/functions/_lib/loadP12FromStorage.ts
-import { adminBucket } from "../_server/firebaseAdmin";
+import { getAdminBucket } from "../_server/firebaseAdmin";
 
 export async function loadP12FromStorage(storagePath: string) {
-  const file = adminBucket.file(storagePath);
+  const file = getAdminBucket().file(storagePath);
   
   const [buffer] = await file.download();
   
