@@ -1383,8 +1383,11 @@
     const vh = window.innerHeight;
     const sx = vw / 1280;
     const sy = vh / 720;
-    // Portrait (phone): scale to fill width. Landscape: fit both axes.
-    const s = (vh > vw) ? sx * 0.98 : Math.min(sx, sy) * 0.96;
+    // Portrait (phone): scale to fill ~90% of screen HEIGHT so the stage
+    // fills most of the vertical space; horizontal edges are clipped by
+    // stage-wrap overflow:hidden (promo content is centered so it stays visible).
+    // Landscape/desktop: fit both axes without clipping.
+    const s = (vh > vw) ? sy * 0.90 : Math.min(sx, sy) * 0.96;
     stage.style.transform = `scale(${s})`;
   }
   window.addEventListener('resize', fitStage);
