@@ -929,35 +929,6 @@
   body.playing .scene-7 .final-url { animation: fadeUp 0.6s ease 85s forwards; }
 
   /* =========================================================
-     MOBILE CAPTION BAR  (rendered outside the scaled stage)
-     ========================================================= */
-  #caption-bar {
-    display: none;
-    position: fixed;
-    left: 0; right: 0;
-    background: rgba(8, 20, 40, 0.85);
-    backdrop-filter: blur(6px);
-    padding: 10px 16px;
-    text-align: center;
-    z-index: 100;
-    pointer-events: none;
-    min-height: 52px;
-  }
-  #caption-bar .cb-text {
-    color: #e2eaf6;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 1.4;
-    display: block;
-  }
-  /* iOS / no-audio notice */
-  .audio-warn {
-    margin-top: 4px;
-    font-size: 11px;
-    color: #94a3b8;
-  }
-
-  /* =========================================================
      PLAY OVERLAY
      ========================================================= */
   .play-overlay {
@@ -1404,60 +1375,20 @@
     </div>
   </div>
 
-  <!-- MOBILE CAPTION BAR (outside scaled stage, full-width readable text) -->
-  <div id="caption-bar">
-    <span id="caption-bar-text" class="cb-text"></span>
-    <span id="audio-warn-msg" class="audio-warn" style="display:none">🔇 Audio no disponible en este dispositivo</span>
-  </div>
-
 <script>
   /* ===== Fit stage to viewport ===== */
-  const captionBar     = document.getElementById('caption-bar');
-  const captionBarText = document.getElementById('caption-bar-text');
-  const audioWarnMsg   = document.getElementById('audio-warn-msg');
-
   function fitStage() {
     const stage = document.getElementById('stage');
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const sx = vw / 1280;
     const sy = vh / 720;
-    // Portrait (phone): scale to fill width so content is readable.
-    // Landscape (desktop/tablet): fit both axes.
-    const isPortrait = vh > vw;
-    const s = isPortrait ? sx * 0.98 : Math.min(sx, sy) * 0.96;
+    // Portrait (phone): scale to fill width. Landscape: fit both axes.
+    const s = (vh > vw) ? sx * 0.98 : Math.min(sx, sy) * 0.96;
     stage.style.transform = `scale(${s})`;
-
-    // Position the caption bar just below the scaled stage
-    if (captionBar) {
-      const stageH   = 720 * s;
-      const stageTop = (vh - stageH) / 2;
-      const barTop   = Math.max(stageTop + stageH, 0);
-      if (isPortrait) {
-        captionBar.style.display = 'block';
-        captionBar.style.top     = barTop + 'px';
-      } else {
-        captionBar.style.display = 'none';
-      }
-    }
   }
   window.addEventListener('resize', fitStage);
   fitStage();
-
-  /* ===== iOS / audio availability detection ===== */
-  const audioSupported = (function() {
-    if (!('speechSynthesis' in window)) return false;
-    // iOS Safari blocks speechSynthesis in iframes; detect by user-agent
-    const ua = navigator.userAgent || '';
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
-    return !isIOS;
-  })();
-  if (!audioSupported && audioWarnMsg) {
-    audioWarnMsg.style.display = 'block';
-    // Also update play overlay note
-    const audioNote = document.querySelector('.audio-note');
-    if (audioNote) audioNote.textContent = '🔇 Audio no disponible en este dispositivo — lee los subtítulos';
-  }
 
   /* ===== Timing constants ===== */
   const TOTAL = 90;
@@ -1589,9 +1520,7 @@
   function checkNarration() {
     for (let i = spokenIndex + 1; i < NARRATION.length; i++) {
       if (elapsed >= NARRATION[i].t) {
-        if (audioSupported) speak(NARRATION[i].text);
-        // Push text to the mobile caption bar
-        if (captionBarText) captionBarText.textContent = NARRATION[i].text;
+        speak(NARRATION[i].text);
         spokenIndex = i;
       } else {
         break;
@@ -1627,7 +1556,6 @@
     spokenIndex = -1;
     try { window.speechSynthesis.cancel(); } catch(e){}
     document.body.classList.remove('playing', 'paused', 'ended');
-    if (captionBarText) captionBarText.textContent = '';
     updateTimeReadouts();
     updateProcTimers();
     // Force CSS animations to restart on next play
@@ -1658,13 +1586,18 @@
     document.body.classList.remove('paused', 'ended');
     document.body.classList.add('playing');
 
-    if (audioSupported) {
+    if ('speechSynthesis' in window) {
       try {
         if (wasPaused) {
+          // Resuming from pause — just un-pause the engine
           if (window.speechSynthesis.paused) window.speechSynthesis.resume();
         } else {
+          // Fresh play: cancel any stale browser TTS state first (this is
+          // what reset() does on replay, and is why replay always works).
           window.speechSynthesis.cancel();
           preferredVoice = preferredVoice || pickSpanishVoice();
+          // Warm-up utterance: primes the engine from within this user-gesture
+          // so subsequent RAF-tick calls to speak() are accepted by the browser.
           const warm = new SpeechSynthesisUtterance(' ');
           warm.volume = 0;
           window.speechSynthesis.speak(warm);
