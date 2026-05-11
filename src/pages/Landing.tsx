@@ -726,11 +726,12 @@ export default function Landing() {
        * ============================================================== */}
       {showDemo && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer"
+          className="fixed inset-0 z-50 bg-black/90 sm:bg-black/80 flex items-center justify-center sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
+          {/* Full-screen on mobile, contained on sm+ */}
           <div
-            className="w-[90vw] h-[80vh] max-w-6xl bg-black rounded-xl overflow-hidden relative"
+            className="w-full h-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
             <iframe
