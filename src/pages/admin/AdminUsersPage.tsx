@@ -103,23 +103,97 @@ export default function AdminUsersPage() {
   if (loading) return <p className="p-6">Cargando usuarios…</p>;
 
   return (
-    <div className="bg-white rounded-xl shadow p-6">
+    <div className="bg-white rounded-xl shadow p-4 sm:p-6">
 
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Usuarios</h1>
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-xl sm:text-2xl font-bold">Usuarios</h1>
         {isMaster && (
           <button
             onClick={() => { setShowAddModal(true); setFormError(""); setForm(emptyForm); }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
           >
-            + Agregar usuario
+            + Agregar
           </button>
         )}
       </div>
 
-      {/* TABLE */}
-      <div className="overflow-x-auto">
+      {/* ── MOBILE: card list ── */}
+      <div className="sm:hidden flex flex-col gap-3">
+        {users.map(u => {
+          const isSelf = u.uid === currentUser?.uid;
+          const isProtected = isSelf && (u.role === "master" || u.role === "owner");
+          const isSaving = savingUid === u.uid;
+
+          return (
+            <div key={u.uid} className="border rounded-xl p-4 bg-gray-50 space-y-3">
+              {/* Email row */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm truncate">{u.email}</span>
+                {isSelf && <span className="text-xs text-slate-400 shrink-0">(tú)</span>}
+              </div>
+
+              {/* Rol + Plan */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Rol</p>
+                  <select
+                    value={u.role}
+                    disabled={isProtected || isSaving}
+                    onChange={e => handleUpdate(u.uid, { role: e.target.value as UserRole })}
+                    className="w-full border rounded px-2 py-1 text-sm bg-white"
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  {isProtected && <p className="text-xs text-slate-400 mt-0.5">protegida</p>}
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Plan</p>
+                  <select
+                    value={u.planKey ?? "estudiante"}
+                    disabled={isSaving}
+                    onChange={e => handleUpdate(u.uid, { planKey: e.target.value })}
+                    className="w-full border rounded px-2 py-1 text-sm bg-white"
+                  >
+                    {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Estado + Delete */}
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  disabled={isSaving || isProtected}
+                  onClick={() => toggleStatus(u)}
+                  className={`px-3 py-1 rounded text-xs font-medium ${
+                    u.planStatus === "active"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {isSaving ? "Guardando…" : (u.planStatus ?? "active")}
+                </button>
+
+                {isMaster && !isSelf && (
+                  <button
+                    disabled={deletingUid === u.uid}
+                    onClick={() => handleDelete(u)}
+                    className="px-3 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {deletingUid === u.uid ? "Eliminando…" : "Eliminar"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {users.length === 0 && (
+          <p className="text-center text-slate-400 text-sm py-6">Sin usuarios</p>
+        )}
+      </div>
+
+      {/* ── DESKTOP: table ── */}
+      <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-100">
             <tr className="border-b">
@@ -138,14 +212,10 @@ export default function AdminUsersPage() {
 
               return (
                 <tr key={u.uid} className="border-b hover:bg-gray-50">
-
-                  {/* EMAIL */}
                   <td className="py-2 px-3 font-medium">
                     {u.email}
                     {isSelf && <span className="ml-2 text-xs text-slate-400">(tú)</span>}
                   </td>
-
-                  {/* ROL */}
                   <td className="px-3">
                     <select
                       value={u.role}
@@ -158,8 +228,6 @@ export default function AdminUsersPage() {
                     {savingUid === u.uid && <span className="ml-2 text-xs text-blue-500">Guardando…</span>}
                     {isProtected && <span className="ml-2 text-xs text-slate-400">(protegida)</span>}
                   </td>
-
-                  {/* PLAN */}
                   <td className="px-3">
                     <select
                       value={u.planKey ?? "estudiante"}
@@ -170,8 +238,6 @@ export default function AdminUsersPage() {
                       {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </td>
-
-                  {/* ESTADO */}
                   <td className="px-3">
                     <button
                       disabled={savingUid === u.uid || isProtected}
@@ -185,8 +251,6 @@ export default function AdminUsersPage() {
                       {savingUid === u.uid ? "Guardando…" : (u.planStatus ?? "active")}
                     </button>
                   </td>
-
-                  {/* DELETE */}
                   {isMaster && (
                     <td className="px-3 text-right">
                       {!isSelf && (
