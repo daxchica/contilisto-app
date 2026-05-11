@@ -729,9 +729,10 @@ export default function Landing() {
           className="fixed inset-0 z-50 bg-black/90 sm:bg-black/80 flex items-center justify-center sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
-          {/* Full-screen on mobile, contained on sm+ */}
+          {/* Mobile: full-width 16:9 box (matches the promo stage ratio).
+               sm+: contained 90vw × 80vh modal. */}
           <div
-            className="w-full h-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            className="w-full [aspect-ratio:16/9] sm:w-[90vw] sm:h-[80vh] sm:aspect-auto sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
             <iframe
