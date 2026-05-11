@@ -123,7 +123,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
   }) => {
     // Si requiere empresa, no usamos href "#": usamos navegación controlada
     if (requiresEntity) {
-      const isActive = location.pathname.startsWith(to);
+      const isActive =
+        location.pathname === to || location.pathname.startsWith(to + "/");
       return (
         <button
           type="button"
