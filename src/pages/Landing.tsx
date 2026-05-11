@@ -181,7 +181,7 @@ export default function Landing() {
                     className="w-full py-3 rounded-xl bg-gray-900 text-white font-semibold flex items-center justify-center gap-2"
                   >
                     <PlayCircleIcon className="w-5 h-5" />
-                    Ver Demo (2 min)
+                    Ver Demo · 1 min 30 seg
                   </button>
                   <button
                     onClick={openLogin}
@@ -249,7 +249,7 @@ export default function Landing() {
                     className="group flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition"
                   >
                     <PlayCircleIcon className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
-                    Ver Demo · 2 min
+                    Ver Demo · 1 min 30 seg
                   </button>
                 </div>
 
@@ -311,7 +311,7 @@ export default function Landing() {
                     className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 text-white rounded-xl text-lg font-semibold"
                   >
                     <PlayCircleIcon className="w-6 h-6" />
-                    Ver Demo · 2 min
+                    Ver Demo · 1 min 30 seg
                   </button>
                   <button
                     onClick={openLogin}
