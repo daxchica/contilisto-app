@@ -3,7 +3,7 @@
 // Landing Page profesional para Contilisto.com
 // ============================================================================
 import { Link } from "react-router-dom";
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { auth } from "@/firebase-config";
 import { PlanType } from "@/config/plans";
 import { useNavigate } from "react-router-dom";
@@ -20,7 +20,6 @@ export default function Landing() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [showCTA, setShowCTA] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanType | null>(null);
   const [showRegister, setShowRegister] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PlanType | null>(null);
@@ -86,15 +85,11 @@ export default function Landing() {
     }
   };
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
   const closeDemo = useCallback(() => {
-    if (videoRef.current) videoRef.current.pause();
     setShowDemo(false);
   }, []);
 
   const openDemo = useCallback(() => {
-    setShowCTA(false);
     setShowDemo(true);
   }, []);
 
@@ -116,15 +111,6 @@ export default function Landing() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const handleTimeUpdate = () => {
-      if (video.currentTime / video.duration > 0.8) setShowCTA(true);
-    };
-    video.addEventListener("timeupdate", handleTimeUpdate);
-    return () => video.removeEventListener("timeupdate", handleTimeUpdate);
-  }, [showDemo]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
@@ -567,7 +553,7 @@ export default function Landing() {
               {/* Bottom label */}
               <div className="bg-black/60 backdrop-blur-sm px-6 py-3 flex items-center justify-between text-sm">
                 <span className="text-white font-semibold">Demo de Contilisto</span>
-                <span className="text-gray-400">2:00 min · Sin registro</span>
+                <span className="text-gray-400">1:30 min · Sin registro</span>
               </div>
             </button>
 
@@ -747,14 +733,12 @@ export default function Landing() {
             className="w-[90vw] h-[80vh] max-w-6xl bg-black rounded-xl overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <video
-              ref={videoRef}
-              controls
-              autoPlay
-              className="w-full h-full object-contain"
-            >
-              <source src="/videos/contilisto_vs_others.mp4" type="video/mp4" />
-            </video>
+            <iframe
+              src="/videos/contilisto-promo.html"
+              className="w-full h-full border-0"
+              title="Demo de Contilisto"
+              allow="autoplay"
+            />
 
             <button
               onClick={closeDemo}
@@ -762,21 +746,6 @@ export default function Landing() {
             >
               ✕
             </button>
-
-            {showCTA && (
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 text-center animate-[fadeIn_0.5s_ease]">
-                <p className="text-white text-lg mb-3 font-semibold">
-                  Empieza a ahorrar horas de trabajo hoy
-                </p>
-                <button
-                  onClick={() => { closeDemo(); scrollToPricing(); }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-lg font-semibold shadow-lg"
-                >
-                  Activa tu Cuenta
-                </button>
-                <p className="text-sm text-gray-300 mt-2">Empieza en menos de 1 minuto</p>
-              </div>
-            )}
           </div>
         </div>
       )}
