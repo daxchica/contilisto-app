@@ -1503,6 +1503,9 @@
   }
   function speak(text) {
     if (!('speechSynthesis' in window)) return;
+    // Chrome bug: after an utterance ends the engine can get stuck in a
+    // "paused" state (paused=true, speaking=false). resume() un-sticks it.
+    try { if (window.speechSynthesis.paused) window.speechSynthesis.resume(); } catch(e){}
     const u = new SpeechSynthesisUtterance(text);
     u.lang   = (preferredVoice && preferredVoice.lang) || 'es-ES';
     u.rate   = 1.18;   // slightly quicker than default → more natural cadence
@@ -1582,15 +1585,19 @@
 
     if ('speechSynthesis' in window) {
       try {
-        if (wasPaused && window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
-        // Warm-up utterance on first play of a fresh session
-        if (spokenIndex < 0 && !wasPaused) {
-          const warm = new SpeechSynthesisUtterance(' ');
+        if (wasPaused) {
+          // Resuming from pause — just un-pause the engine
+          if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+        } else {
+          // Fresh play: cancel any stale browser TTS state first (this is
+          // what reset() does on replay, and is why replay always works).
+          window.speechSynthesis.cancel();
+          preferredVoice = preferredVoice || pickSpanishVoice();
+          // Warm-up utterance: primes the engine from within this user-gesture
+          // so subsequent RAF-tick calls to speak() are accepted by the browser.
+          const warm = new SpeechSynthesisUtterance(' ');
           warm.volume = 0;
           window.speechSynthesis.speak(warm);
-          preferredVoice = preferredVoice || pickSpanishVoice();
         }
       } catch(e){}
     }
