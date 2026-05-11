@@ -20,7 +20,26 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const location = useLocation();
 
   const [open, setOpen] = useState(false);
-  const [openSection, setOpenSection] = useState<string | null>("contabilidad");
+
+  /** Map any route to its parent section id */
+  const getSectionForPath = (pathname: string): string | null => {
+    if (["/accountsreceivable", "/accountspayable", "/accountsreceivables", "/ap-aging"].some(p => pathname.startsWith(p))) return "cartera";
+    if (["/contabilidad", "/libros-auxiliares", "/libro-bancos", "/estados-financieros", "/saldo-inicial"].some(p => pathname.startsWith(p))) return "contabilidad";
+    if (pathname.startsWith("/impuestos")) return "impuestos";
+    if (["/empresas", "/admin", "/configuracionSri"].some(p => pathname.startsWith(p))) return "config";
+    return null;
+  };
+
+  const [openSection, setOpenSection] = useState<string | null>(
+    () => getSectionForPath(location.pathname)
+  );
+
+  // Keep the active section in sync when the user navigates
+  useEffect(() => {
+    const section = getSectionForPath(location.pathname);
+    if (section) setOpenSection(section);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
