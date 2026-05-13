@@ -734,13 +734,13 @@ export default function Landing() {
        * ============================================================== */}
       {showDemo && (
         <div
-          className="fixed inset-0 z-50 bg-black sm:bg-black/80 sm:flex sm:items-center sm:justify-center sm:p-4 cursor-pointer"
+          className="fixed inset-0 z-50 bg-black flex items-center justify-center sm:bg-black/80 sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
-          {/* Mobile: full-screen. Desktop: 90vw×80vh 16:9 box */}
+          {/* Mobile: full-width 16:9 box. Desktop: 90vw×80vh 16:9 box */}
           <div
-            className="w-full h-screen sm:h-[80vh] sm:w-[90vw] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
-            style={isMobile ? undefined : { aspectRatio: "16/9" }}
+            className="w-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            style={{ aspectRatio: isMobile ? "9/16" : "16/9" }}
             onClick={(e) => e.stopPropagation()}
           >
             <video
@@ -752,8 +752,8 @@ export default function Landing() {
             >
               <source
                 src={isMobile
-                  ? "/videos/Contilisto_promo_male_mobile.mp4"
-                  : "/videos/Contilisto_promo_male.mp4"}
+                  ? "/videos/contilisto_promo_female_mobile.mp4"
+                  : "/videos/contilisto_promo_female_desktop.mp4"}
                 type="video/mp4"
               />
             </video>
@@ -761,7 +761,7 @@ export default function Landing() {
             {/* CTA button — bottom-right, below the video caption area */}
             <button
               onClick={() => { closeDemo(); scrollToPricing(); }}
-              className="absolute bottom-[30px] sm:bottom-[106px] right-[13px] sm:right-6 z-50 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm sm:text-base px-5 py-2.5 sm:px-6 sm:py-3 rounded-full shadow-lg transition whitespace-nowrap opacity-90 hover:opacity-100"
+              className="absolute bottom-[17px] sm:bottom-[106px] right-[29px] sm:right-6 z-50 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm sm:text-base px-5 py-2.5 sm:px-6 sm:py-3 rounded-full shadow-lg transition whitespace-nowrap opacity-90 hover:opacity-100"
             >
               🚀 Empezar gratis →
             </button>
