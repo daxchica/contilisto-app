@@ -734,12 +734,12 @@ export default function Landing() {
        * ============================================================== */}
       {showDemo && (
         <div
-          className="fixed inset-0 z-50 bg-black flex items-center justify-center sm:bg-black/80 sm:p-4 cursor-pointer"
+          className="fixed inset-0 z-50 bg-black sm:bg-black/80 sm:flex sm:items-center sm:justify-center sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
           {/* Mobile: full-screen. Desktop: 90vw×80vh 16:9 box */}
           <div
-            className="w-full h-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            className="w-full h-screen sm:h-[80vh] sm:w-[90vw] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
             style={isMobile ? undefined : { aspectRatio: "16/9" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -748,7 +748,7 @@ export default function Landing() {
               autoPlay
               controls
               playsInline
-              className="w-full h-full object-contain"
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
             >
               <source
                 src={isMobile
