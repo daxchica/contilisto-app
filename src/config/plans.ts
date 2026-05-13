@@ -28,7 +28,7 @@ export const PLANS: Record<PlanType, PlanConfig> = {
     stripePriceId: null,
 
     limits: {
-      maxEntities: 1,
+      maxEntities: 2,
       maxInvoicesPerMonth: 50,
       maxUsers: 1,
     },

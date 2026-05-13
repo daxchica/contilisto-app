@@ -207,13 +207,24 @@ export async function saveJournalEntries(
   entityId: string,
   userIdSafe: string,
   entries: JournalEntry[],
-  document?: AccountingDocument
+  document?: AccountingDocument,
+  monthlyLimit?: number
 ): Promise<JournalEntry[]> {
 
   requireEntityId(entityId, "guardar diario");
 
   if (!userIdSafe?.trim()) throw new Error("UID requerido");
   if (!entries?.length) throw new Error("No entries provided");
+
+  // ── Plan limit: count unique transactions this month ──
+  if (monthlyLimit !== undefined && monthlyLimit > 0) {
+    const used = await countMonthlyTransactions(entityId);
+    if (used >= monthlyLimit) {
+      throw new Error(
+        `Límite de ${monthlyLimit} asientos mensuales alcanzado. Actualiza tu plan para continuar.`
+      );
+    }
+  }
 
   const txIds = new Set(entries.map(e => e.transactionId).filter(Boolean));
   if (txIds.size !== 1) throw new Error("Todas las líneas deben tener el mismo transactionId");
@@ -584,6 +595,33 @@ export async function checkRetentionsRecorded(
       (code.startsWith("201020201") || code.startsWith("201020202"))
     );
   });
+}
+
+// ============================================================================
+// MONTHLY TRANSACTION COUNTER — used to enforce plan limits
+// ============================================================================
+
+export async function countMonthlyTransactions(entityId: string): Promise<number> {
+  requireEntityId(entityId, "contar transacciones del mes");
+
+  const now = new Date();
+  const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const year = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+  const month = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+  const endOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+  const q = query(
+    col,
+    where("date", ">=", startOfMonth),
+    where("date", "<",  endOfMonth)
+  );
+
+  const snap = await getDocs(q);
+  const uniqueTxIds = new Set(
+    snap.docs.map(d => (d.data() as JournalEntry).transactionId).filter(Boolean)
+  );
+  return uniqueTxIds.size;
 }
 
 export async function fetchJournalEntries(

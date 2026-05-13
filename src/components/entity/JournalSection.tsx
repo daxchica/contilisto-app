@@ -4,6 +4,7 @@ import React from "react";
 import type { JournalEntry } from "../../types/JournalEntry";
 import JournalTable from "@/components/journal/JournalTable";
 import { saveJournalEntries } from "../../services/journalService";
+import { usePlan } from "@/hooks/usePlan";
 
 interface Props {
   entries: JournalEntry[];
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function JournalSection({ entries, entityId, entityName, userIdSafe, onSaved }: Props) {
+  const { plan } = usePlan();
   const isBalanced = (): boolean => {
     const debit = Number(
       entries.reduce((sum, e) => sum + Number(e.debit ?? 0), 0).toFixed(2));
@@ -37,7 +39,7 @@ export default function JournalSection({ entries, entityId, entityName, userIdSa
         createdAt: Date.now(),
         source: e.source ?? "manual",
       }));
-      await saveJournalEntries(entityId, userIdSafe, withMeta);
+      await saveJournalEntries(entityId, userIdSafe, withMeta, undefined, plan.limits.maxInvoicesPerMonth);
       onSaved();
     } catch (err) {
       console.error("Error al guardar asientos:", err);

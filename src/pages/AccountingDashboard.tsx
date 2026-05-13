@@ -26,6 +26,7 @@ import { getAuth } from "firebase/auth";
 
 import { useAuth } from "@/context/AuthContext";
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
+import { usePlan } from "@/hooks/usePlan";
 
 import JournalTable from "@/components/journal/JournalTable";
 import ManualEntryModal from "@/components/modals/ManualEntryModal";
@@ -96,6 +97,7 @@ export default function AccountingDashboard() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { selectedEntity } = useSelectedEntity();
+  const { plan } = usePlan();
 
   const userIdSafe = user?.uid ?? "";
   const entityId = selectedEntity?.id ?? "";
@@ -642,7 +644,7 @@ const stableJournal = useMemo(() =>
             if (!authUid) return;
 
             try {
-              await saveJournalEntries(entityId, authUid, entries);
+              await saveJournalEntries(entityId, authUid, entries, undefined, plan.limits.maxInvoicesPerMonth);
 
               const invoiceNumber =
                 previewMetadata.invoice_number ??
@@ -718,7 +720,7 @@ const stableJournal = useMemo(() =>
               const authUid = getAuth().currentUser?.uid;
               if (!authUid) return;
               try {
-                await saveJournalEntries(entityId, authUid, entries);
+                await saveJournalEntries(entityId, authUid, entries, undefined, plan.limits.maxInvoicesPerMonth);
                 const invoiceNumber = current.metadata.invoice_number ?? "";
                 if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
                 setSriConfirmedCount((c) => c + 1);
@@ -763,7 +765,7 @@ const stableJournal = useMemo(() =>
             }
 
             try {
-              await saveJournalEntries(entityId, authUid, entries);
+              await saveJournalEntries(entityId, authUid, entries, undefined, plan.limits.maxInvoicesPerMonth);
               setLogRefreshTrigger((v) => v + 1);
             } catch (err: unknown) {
               console.error("MANUAL SAVE ERROR", err);

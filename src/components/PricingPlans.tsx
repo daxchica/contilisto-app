@@ -113,7 +113,7 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
 
           <div className="mt-4 text-sm space-y-2 text-left bg-emerald-600/10 rounded-2xl p-4">
             <p>✅ Hasta 2 empresas</p>
-            <p>✅ 100 movimientos / mes</p>
+            <p>✅ 50 asientos / mes</p>
             <p>✅ Estados financieros</p>
             <p>✅ Libro Bancos</p>
             <p>✅ Exportación PDF / CSV</p>
