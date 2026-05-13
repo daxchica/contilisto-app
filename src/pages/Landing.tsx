@@ -734,12 +734,13 @@ export default function Landing() {
        * ============================================================== */}
       {showDemo && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 sm:bg-black/80 flex items-center justify-center sm:p-4 cursor-pointer"
+          className="fixed inset-0 z-50 bg-black flex items-center justify-center sm:bg-black/80 sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
+          {/* Mobile: full-screen. Desktop: 90vw×80vh 16:9 box */}
           <div
-            className="w-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
-            style={{ aspectRatio: "16/9" }}
+            className="w-full h-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            style={isMobile ? undefined : { aspectRatio: "16/9" }}
             onClick={(e) => e.stopPropagation()}
           >
             <video
