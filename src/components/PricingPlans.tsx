@@ -93,7 +93,7 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-8">
 
         {/* =======================
             PLAN ESTUDIANTE
@@ -107,8 +107,8 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
           <h3 className="text-xl sm:text-2xl font-bold">Estudiante</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-5xl font-extrabold text-emerald-700">$0</span>
-            <span className="text-base ml-2">/ mes</span>
+            <span className="text-4xl sm:text-5xl font-extrabold text-emerald-700">$0</span>
+            <span className="text-sm sm:text-base ml-2">/ mes</span>
           </div>
 
           <div className="mt-4 text-sm space-y-2 text-left bg-emerald-600/10 rounded-2xl p-4">
@@ -139,7 +139,7 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
         {/* =======================
             PLAN CONTADOR
         ======================= */}
-        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30 scale-105">
+        <Wrapper className="bg-gradient-to-br from-indigo-700 to-indigo-800 text-white flex flex-col text-center ring-4 ring-indigo-400/30 md:scale-105">
 
           <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-400 text-xs px-3 py-1">
             Más elegido
@@ -149,11 +149,11 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
             ✨
           </div>
 
-          <h3 className="text-2xl font-bold">Contador</h3>
+          <h3 className="text-xl sm:text-2xl font-bold">Contador</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-5xl font-extrabold">$29</span>
-            <span className="ml-2">/ mes</span>
+            <span className="text-4xl sm:text-5xl font-extrabold">$29</span>
+            <span className="text-sm sm:text-base ml-2">/ mes</span>
           </div>
 
           <div className="mt-4 text-sm space-y-2 text-left bg-indigo-500/30 rounded-2xl p-4">
@@ -185,11 +185,11 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
             🚀
           </div>
 
-          <h3 className="text-2xl font-bold">Corporativo</h3>
+          <h3 className="text-xl sm:text-2xl font-bold">Corporativo</h3>
 
           <div className="flex justify-center items-baseline mt-3">
-            <span className="text-5xl font-extrabold">$69</span>
-            <span className="ml-2">/ mes</span>
+            <span className="text-4xl sm:text-5xl font-extrabold">$69</span>
+            <span className="text-sm sm:text-base ml-2">/ mes</span>
           </div>
 
           <div className="mt-4 text-sm space-y-2 text-left bg-white/10 rounded-2xl p-4">

@@ -13,17 +13,17 @@ type CardProps = {
 function FeatureCard({ title, blurb, Icon, bgColor, hoverColor, iconBg, iconColor }: CardProps) {
   return (
     <div
-      className={`group relative rounded-2xl border border-slate-200 ${bgColor} p-6 shadow-sm ring-1 ring-black/5 transition hover:scale-[1.03] hover:shadow-xl hover:border-transparent hover:${hoverColor}`}
+      className={`group relative rounded-2xl border border-slate-200 ${bgColor} p-4 sm:p-6 shadow-sm ring-1 ring-black/5 transition hover:scale-[1.03] hover:shadow-xl hover:border-transparent hover:${hoverColor}`}
       role="article"
       aria-label={title}
     >
       <div className="relative flex items-start gap-3">
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-          <Icon className={`h-6 w-6 ${iconColor}`} aria-hidden />
+        <div className={`flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+          <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${iconColor}`} aria-hidden />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <p className="mt-1 text-slate-700">{blurb}</p>
+          <h3 className="text-sm sm:text-lg font-semibold text-slate-900">{title}</h3>
+          <p className="mt-1 text-xs sm:text-sm text-slate-700">{blurb}</p>
         </div>
       </div>
     </div>

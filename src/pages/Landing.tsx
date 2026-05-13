@@ -189,7 +189,7 @@ export default function Landing() {
                     className="w-full py-3 rounded-xl bg-gray-900 text-white font-semibold flex items-center justify-center gap-2"
                   >
                     <PlayCircleIcon className="w-5 h-5" />
-                    Ver Demo · 1 min 30 seg
+                    Ver Demo
                   </button>
                   <button
                     onClick={openLogin}
@@ -221,7 +221,7 @@ export default function Landing() {
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-white" />
 
-          <div className="relative max-w-7xl mx-auto px-6 py-14 lg:py-20">
+          <div className="relative max-w-7xl mx-auto px-6 py-8 sm:py-14 lg:py-20">
             <div className="grid lg:grid-cols-2 gap-10 xl:gap-16 items-start">
 
               {/* TEXT */}
@@ -230,7 +230,7 @@ export default function Landing() {
                   ● Impulsado por Inteligencia Artificial
                 </span>
 
-                <h1 className="text-4xl sm:text-5xl xl:text-6xl font-extrabold leading-tight">
+                <h1 className="text-3xl sm:text-5xl xl:text-6xl font-extrabold leading-tight">
                   Contabilidad más rápida.{" "}
                   Más precisa.
                   <span className="block text-blue-700 mt-1">
@@ -238,7 +238,7 @@ export default function Landing() {
                   </span>
                 </h1>
 
-                <p className="mt-5 text-lg text-gray-600 max-w-xl mx-auto lg:mx-0">
+                <p className="mt-5 text-base sm:text-lg text-gray-600 max-w-xl mx-auto lg:mx-0">
                   La plataforma contable más moderna para Ecuador. Sube tus
                   facturas y deja que la IA genere asientos contables, IVA,
                   conciliaciones bancarias y reportes SRI — en minutos.
@@ -257,7 +257,7 @@ export default function Landing() {
                     className="group flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition"
                   >
                     <PlayCircleIcon className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
-                    Ver Demo · 1 min 30 seg
+                    Ver Demo
                   </button>
                 </div>
 
@@ -316,20 +316,20 @@ export default function Landing() {
                 <div className="md:hidden mt-7 space-y-3">
                   <button
                     onClick={openDemo}
-                    className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 text-white rounded-xl text-lg font-semibold"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white rounded-xl text-base font-semibold"
                   >
-                    <PlayCircleIcon className="w-6 h-6" />
-                    Ver Demo · 1 min 30 seg
+                    <PlayCircleIcon className="w-5 h-5" />
+                    Ver Demo
                   </button>
                   <button
                     onClick={openLogin}
-                    className="w-full py-4 bg-blue-600 text-white rounded-xl text-lg font-semibold"
+                    className="w-full py-3 bg-blue-600 text-white rounded-xl text-base font-semibold"
                   >
                     Iniciar sesión
                   </button>
                   <button
                     onClick={scrollToPricing}
-                    className="block w-full py-4 text-center border rounded-xl text-lg font-semibold"
+                    className="block w-full py-3 text-center border rounded-xl text-base font-semibold"
                   >
                     Crear Cuenta Gratis
                   </button>
@@ -502,15 +502,15 @@ export default function Landing() {
         {/* ================================================================
          * DEMO VIDEO SECTION — first-timer CTA
          * ============================================================== */}
-        <section className="bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 py-14 md:py-16">
+        <section className="bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 py-8 sm:py-14 md:py-16">
           <div className="max-w-4xl mx-auto px-6 text-center">
             <p className="text-blue-400 font-semibold text-sm uppercase tracking-widest mb-3">
               Mira cómo funciona
             </p>
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            <h2 className="text-2xl md:text-4xl font-bold text-white mb-4">
               ¿Primera vez aquí? Ve el demo en 2 minutos
             </h2>
-            <p className="text-gray-400 mb-10 text-lg max-w-2xl mx-auto">
+            <p className="text-gray-400 mb-10 text-base sm:text-lg max-w-2xl mx-auto">
               Desde subir una factura hasta generar el asiento contable automáticamente — todo en un solo clip.
             </p>
 
@@ -578,33 +578,33 @@ export default function Landing() {
         {/* ================================================================
          * HOW IT WORKS
          * ============================================================== */}
-        <section id="como-funciona" className="py-14 md:py-20">
+        <section id="como-funciona" className="py-8 sm:py-14 md:py-20">
           <div className="max-w-6xl mx-auto px-6 text-center">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+            <h2 className="text-2xl md:text-4xl font-bold mb-4">
               Cómo funciona Contilisto
             </h2>
-            <p className="text-gray-600 max-w-2xl mx-auto mb-12">
+            <p className="text-gray-600 max-w-2xl mx-auto mb-8 sm:mb-12 text-sm sm:text-base">
               Automatiza el proceso contable en segundos.
               Solo sube tu factura y la inteligencia artificial hace el resto.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr] gap-6 items-center">
-              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
-                <div className="text-blue-600 text-3xl font-bold mb-3">1</div>
-                <h3 className="font-semibold text-lg mb-2">📄 Subes la factura</h3>
-                <p className="text-gray-600 text-sm">Arrastra tu factura PDF o XML al sistema.</p>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr] gap-4 sm:gap-6 items-center">
+              <div className="p-4 sm:p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-2xl sm:text-3xl font-bold mb-2 sm:mb-3">1</div>
+                <h3 className="font-semibold text-base sm:text-lg mb-1 sm:mb-2">📄 Subes la factura</h3>
+                <p className="text-gray-600 text-xs sm:text-sm">Arrastra tu factura PDF o XML al sistema.</p>
               </div>
               <div className="hidden md:flex items-center justify-center text-gray-300 text-3xl">→</div>
-              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
-                <div className="text-blue-600 text-3xl font-bold mb-3">2</div>
-                <h3 className="font-semibold text-lg mb-2">🤖 La IA analiza</h3>
-                <p className="text-gray-600 text-sm">Contilisto identifica proveedor, impuestos y cuentas contables.</p>
+              <div className="p-4 sm:p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-2xl sm:text-3xl font-bold mb-2 sm:mb-3">2</div>
+                <h3 className="font-semibold text-base sm:text-lg mb-1 sm:mb-2">🤖 La IA analiza</h3>
+                <p className="text-gray-600 text-xs sm:text-sm">Contilisto identifica proveedor, impuestos y cuentas contables.</p>
               </div>
               <div className="hidden md:flex items-center justify-center text-gray-300 text-3xl">→</div>
-              <div className="p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
-                <div className="text-blue-600 text-3xl font-bold mb-3">3</div>
-                <h3 className="font-semibold text-lg mb-2">📊 Asiento generado</h3>
-                <p className="text-gray-600 text-sm">El asiento contable se crea automáticamente según el PUC.</p>
+              <div className="p-4 sm:p-6 rounded-xl border bg-white shadow-sm hover:shadow-md transition text-center">
+                <div className="text-blue-600 text-2xl sm:text-3xl font-bold mb-2 sm:mb-3">3</div>
+                <h3 className="font-semibold text-base sm:text-lg mb-1 sm:mb-2">📊 Asiento generado</h3>
+                <p className="text-gray-600 text-xs sm:text-sm">El asiento contable se crea automáticamente según el PUC.</p>
               </div>
             </div>
           </div>
@@ -615,12 +615,12 @@ export default function Landing() {
         {/* ================================================================
          * BENEFICIOS
          * ============================================================== */}
-        <section id="beneficios" className="bg-gray-50 py-14 md:py-20">
+        <section id="beneficios" className="bg-gray-50 py-8 sm:py-14 md:py-20">
           <div className="max-w-6xl mx-auto px-6">
-            <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
+            <h2 className="text-2xl md:text-4xl font-bold text-center mb-4">
               Funciones diseñadas para contadores
             </h2>
-            <p className="text-gray-600 text-center max-w-2xl mx-auto mb-14">
+            <p className="text-gray-600 text-center max-w-2xl mx-auto mb-8 sm:mb-14 text-sm sm:text-base">
               Todo lo que necesitas para automatizar tu contabilidad,
               desde generación de asientos hasta conciliación bancaria.
             </p>
@@ -631,15 +631,15 @@ export default function Landing() {
         {/* ================================================================
          * PRECIOS
          * ============================================================== */}
-        <section id="precios" className="py-16 md:py-20">
+        <section id="precios" className="py-8 sm:py-16 md:py-20">
           <div className="max-w-6xl mx-auto px-6">
-            <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">
+            <h2 className="text-2xl md:text-4xl font-bold text-center mb-4">
               Planes diseñados para contadores
             </h2>
-            <p className="text-gray-600 text-center mb-2">
+            <p className="text-gray-600 text-center mb-2 text-sm sm:text-base">
               Automatiza tu contabilidad y ahorra horas de trabajo cada semana.
             </p>
-            <p className="text-gray-600 text-center mb-14">
+            <p className="text-gray-600 text-center mb-8 sm:mb-14 text-sm sm:text-base">
               Un contador puede ahorrar más de 10 horas al mes automatizando el registro de facturas.
             </p>
           </div>
@@ -666,9 +666,9 @@ export default function Landing() {
         {/* ================================================================
          * FAQ
          * ============================================================== */}
-        <section id="faq" className="py-16 md:py-20 bg-gray-50">
+        <section id="faq" className="py-8 sm:py-16 md:py-20 bg-gray-50">
           <div className="max-w-3xl mx-auto px-6">
-            <h2 className="text-3xl md:text-4xl font-bold text-center mb-3">
+            <h2 className="text-2xl md:text-4xl font-bold text-center mb-3">
               Preguntas frecuentes
             </h2>
             <p className="text-gray-600 text-center mb-10">
@@ -781,7 +781,7 @@ export default function Landing() {
       <LoginModal isOpen={loginOpen} onClose={closeLogin} />
 
       {/* BOTTOM CTA BANNER */}
-      <section className="py-20 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center px-6">
+      <section className="py-10 sm:py-20 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-center px-6">
         <h2 className="text-3xl font-bold mb-4">
           Empieza a usar Contilisto hoy
         </h2>
