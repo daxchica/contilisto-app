@@ -93,6 +93,14 @@ export default function Landing() {
     setShowDemo(true);
   }, []);
 
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeDemo();
@@ -729,19 +737,35 @@ export default function Landing() {
           className="fixed inset-0 z-50 bg-black/90 sm:bg-black/80 flex items-center justify-center sm:p-4 cursor-pointer"
           onClick={closeDemo}
         >
-          {/* Mobile: full-width 16:9 box (matches the promo stage ratio).
-               sm+: contained 90vw × 80vh modal. */}
           <div
-            className="w-full [aspect-ratio:16/9] sm:w-[90vw] sm:h-[80vh] sm:aspect-auto sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            className="w-full sm:w-[90vw] sm:h-[80vh] sm:max-w-6xl bg-black sm:rounded-xl overflow-hidden relative"
+            style={{ aspectRatio: "16/9" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <iframe
-              src="/videos/contilisto-promo.html"
-              className="w-full h-full border-0"
-              title="Demo de Contilisto"
-              allow="autoplay"
-            />
+            <video
+              key={isMobile ? "mobile" : "desktop"}
+              autoPlay
+              controls
+              playsInline
+              className="w-full h-full object-contain"
+            >
+              <source
+                src={isMobile
+                  ? "/videos/Contilisto_promo_male_mobile.mp4"
+                  : "/videos/Contilisto_promo_male.mp4"}
+                type="video/mp4"
+              />
+            </video>
 
+            {/* CTA button overlay — bottom-right so it never covers centered captions */}
+            <button
+              onClick={() => { closeDemo(); scrollToPricing(); }}
+              className="absolute bottom-[96px] sm:bottom-[106px] right-4 sm:right-6 z-50 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm sm:text-base px-5 py-2.5 sm:px-6 sm:py-3 rounded-full shadow-lg transition whitespace-nowrap opacity-90 hover:opacity-100"
+            >
+              🚀 Empezar gratis →
+            </button>
+
+            {/* Close button */}
             <button
               onClick={closeDemo}
               className="absolute top-4 right-4 z-50 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white text-lg w-9 h-9 rounded-full flex items-center justify-center transition"
