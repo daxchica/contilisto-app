@@ -495,7 +495,9 @@ function extractInvoiceDate(text: string, items: TextItemLite[]): string {
 // TOTALS DETECTION (LAYOUT + OCR) — ECUADOR SRI 3-CATEGORY MODEL
 // ---------------------------------------------------------------------------
 
-const MONEY_GLOBAL = /([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/g;
+// Matches: 200.00  1200.00  1,200.00  1.200,00  12345.67
+// [0-9]+ instead of [0-9]{1,3} so 4-digit+ amounts without separators are captured
+const MONEY_GLOBAL = /([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/g;
 
 function emptyTotals(): Totals {
   return {
@@ -521,8 +523,21 @@ function inferTaxRateFromBaseAndIva(base: number, iva: number): 12 | 15 | 0 {
   return 0;
 }
 
+/** Merge digit-space-digit fragments that PDF.js splits across items.
+ *  "1 200.00" → "1200.00", "1 380.00" → "1380.00"
+ *  Applied repeatedly until no more merges are possible. */
+function mergeDigitSpaces(s: string): string {
+  let prev = "";
+  let cur = s;
+  while (cur !== prev) {
+    prev = cur;
+    cur = cur.replace(/(\d)\s+(\d)/g, "$1$2");
+  }
+  return cur;
+}
+
 function pickRightmostMoney(lineText: string): number {
-  const s = String(lineText || "");
+  const s = mergeDigitSpaces(String(lineText || ""));
   const matches = [...s.matchAll(MONEY_GLOBAL)].map((m) => m[1]).filter(Boolean);
   if (!matches.length) return 0;
   return parseMoney(matches[matches.length - 1]); // RIGHTMOST
@@ -621,7 +636,8 @@ function detectTotalsFromLayout(items: TextItemLite[]): Totals {
 // ✅ MULTIPAGE or fallback: OCR totals from full text
 function detectTotalsFromOCR(text: string): Totals {
   const res = emptyTotals();
-  const t = (text || "").replace(/\s+/g, " ").toUpperCase();
+  // Merge "1 200.00" → "1200.00" before regex matching
+  const t = mergeDigitSpaces((text || "").replace(/\s+/g, " ")).toUpperCase();
 
   const pick = (re: RegExp) => {
     const m = t.match(re);
@@ -629,33 +645,33 @@ function detectTotalsFromOCR(text: string): Totals {
   };
 
   // Priority: explicit subtotals by rate
-  const subtotal15 = pick(/SUBTOTAL\s*15\s*%?[\s\S]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/);
-  
+  const subtotal15 = pick(/SUBTOTAL\s*15\s*%?[\s\S]{0,40}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/);
+
   const subtotal12 =
-    pick(/SUBTOTAL\s*12\s*%?[\s\S]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/);
+    pick(/SUBTOTAL\s*12\s*%?[\s\S]{0,40}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/);
 
   // ✅ SAFE SUBTOTAL 0%
   const subtotal0 =
-    pick(/SUBTOTAL\s*0\s*%?[\s\S]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
-    
+    pick(/SUBTOTAL\s*0\s*%?[\s\S]{0,40}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
+
   // Non-taxable: both NO OBJETO and EXENTO may exist
   const noObjeto =
-    pick(/SUBTOTAL\s+NO\s+OBJETO\s+DE\s+IVA[\s\S]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
+    pick(/SUBTOTAL\s+NO\s+OBJETO\s+DE\s+IVA[\s\S]{0,40}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
   const exento =
-    pick(/SUBTOTAL\s+EXENTO\s+DE\s+IVA[\s\S]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
+    pick(/SUBTOTAL\s+EXENTO\s+DE\s+IVA[\s\S]{0,40}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
 
   // IVA
   const iva =
-    pick(/IVA\s*(?:12|15)\s*%?[\s\S]{0,30}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
+    pick(/IVA\s*(?:12|15)\s*%?[\s\S]{0,30}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
 
   // ICE (rare)
   const ice =
-    pick(/\bICE\b[\s\S]{0,30}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
+    pick(/\bICE\b[\s\S]{0,30}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) || 0;
 
   // Total: prefer "VALOR TOTAL"
   const total =
-    pick(/VALOR\s*TOTAL[\s\S]{0,30}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) ||
-    pick(/TOTAL\s*A\s*PAGAR[\s\S]{0,30}?([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2})/) ||
+    pick(/VALOR\s*TOTAL[\s\S]{0,30}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) ||
+    pick(/TOTAL\s*A\s*PAGAR[\s\S]{0,30}?([0-9]+(?:[.,][0-9]{3})*[.,][0-9]{2})/) ||
     0;
 
   // Set taxableWithVat & rate
