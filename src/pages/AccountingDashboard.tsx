@@ -46,7 +46,7 @@ import {
   annulInvoiceByTransaction,
 } from "@/services/journalService";
 
-import { logProcessedInvoice } from "@/services/firestoreLogService";
+import { logProcessedInvoice, checkProcessedInvoice } from "@/services/firestoreLogService";
 import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
 import { extractInvoiceVision } from "@/services/extractInvoiceVisionService";
 import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
@@ -473,10 +473,33 @@ const stableJournal = useMemo(() =>
           return;
         }
 
+        // ── Check which invoices are already saved ──
+        const alreadySaved: string[] = [];
+        const newRows: typeof rows = [];
+        await Promise.all(
+          rows.map(async (row) => {
+            const already = row.serie
+              ? await checkProcessedInvoice(entityId, row.serie)
+              : false;
+            if (already) alreadySaved.push(row.serie ?? row.issuerName ?? "?");
+            else newRows.push(row);
+          })
+        );
+
+        if (alreadySaved.length > 0) {
+          const list = alreadySaved.slice(0, 10).join("\n  • ");
+          const more = alreadySaved.length > 10 ? `\n  … y ${alreadySaved.length - 10} más` : "";
+          if (newRows.length === 0) {
+            alert(`Todas las facturas del archivo ya están registradas:\n\n  • ${list}${more}\n\nNo hay facturas nuevas para procesar.`);
+            return;
+          }
+          alert(`Las siguientes ${alreadySaved.length} factura(s) ya están registradas y se omitirán:\n\n  • ${list}${more}\n\nSe procesarán las ${newRows.length} factura(s) nuevas.`);
+        }
+
         // Build one queue item per invoice so user reviews each individually
         const queue: Array<{ entries: JournalEntry[]; metadata: InvoicePreviewMetadata }> = [];
 
-        for (const row of rows) {
+        for (const row of newRows) {
           const cacheKey = `${entityId}__${row.issuerRUC}`;
           let hint = hintCache.current.get(cacheKey);
 
@@ -791,6 +814,14 @@ const stableJournal = useMemo(() =>
           onClose={() => {
             setShowIgnoredReport(false);
             setIgnoredInvoices([]);
+          }}
+          onSaveIgnored={async (item) => {
+            const authUid = getAuth().currentUser?.uid;
+            if (!authUid) throw new Error("Sesión inválida.");
+            await saveJournalEntries(entityId, authUid, item.entries, undefined, plan.limits.maxInvoicesPerMonth);
+            const invoiceNumber = item.metadata.invoice_number ?? "";
+            if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
+            setLogRefreshTrigger((v) => v + 1);
           }}
         />
       )}

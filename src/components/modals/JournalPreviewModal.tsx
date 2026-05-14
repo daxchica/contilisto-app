@@ -151,6 +151,13 @@ export default function JournalPreviewModal({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [isPersonalExpense, setIsPersonalExpense] = useState(false);
+  const [personalCategory, setPersonalCategory] = useState("Otros");
+
+  const PERSONAL_CATEGORIES = [
+    "Vestimenta", "Alimentación", "Salud", "Educación",
+    "Vivienda", "Transporte", "Entretenimiento", "Otros",
+  ];
 
   // Guarded close: warn user when they have confirmed entries but haven't
   // finished the queue — so they know their work IS already saved.
@@ -191,6 +198,8 @@ export default function JournalPreviewModal({
   useEffect(() => {
     if (!open) {
       setRows([]);
+      setIsPersonalExpense(false);
+      setPersonalCategory("Otros");
       return;
     }
 
@@ -389,11 +398,15 @@ export default function JournalPreviewModal({
     try {
       const invoiceNumber = metadata.invoice_number ?? "";
 
+      const personalTag = isPersonalExpense ? `[Personal: ${personalCategory}]` : "";
+      const fullDescription = [personalTag, note.trim()].filter(Boolean).join(" ");
+
       const normalized: JournalEntry[] = rows.map((r) => ({
         ...r,
         transactionId,
         account_code: (r.account_code ?? "").replace(/\./g, "").trim(),
         account_name: (r.account_name ?? "").trim(),
+        description: fullDescription || r.description || "",
         entityId,
         uid: userIdSafe,
         invoice_number: r.invoice_number ?? invoiceNumber,
@@ -718,6 +731,48 @@ export default function JournalPreviewModal({
               </tbody>
             </table>
           </div>
+
+          {/* PERSONAL / BUSINESS TOGGLE (expenses only) */}
+          {invoiceType === "expense" && (
+            <div className="flex items-center gap-4 bg-gray-50 rounded-lg px-4 py-2.5 border">
+              <span className="text-sm font-medium text-gray-700">Tipo de gasto:</span>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm">
+                <input
+                  type="radio"
+                  name="expenseNature"
+                  checked={!isPersonalExpense}
+                  onChange={() => setIsPersonalExpense(false)}
+                  className="accent-blue-600"
+                />
+                <span className={!isPersonalExpense ? "font-semibold text-blue-700" : "text-gray-600"}>
+                  🏢 Empresarial
+                </span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm">
+                <input
+                  type="radio"
+                  name="expenseNature"
+                  checked={isPersonalExpense}
+                  onChange={() => setIsPersonalExpense(true)}
+                  className="accent-purple-600"
+                />
+                <span className={isPersonalExpense ? "font-semibold text-purple-700" : "text-gray-600"}>
+                  👤 Personal
+                </span>
+              </label>
+              {isPersonalExpense && (
+                <select
+                  value={personalCategory}
+                  onChange={(e) => setPersonalCategory(e.target.value)}
+                  className="ml-2 border rounded px-2 py-1 text-sm bg-white"
+                >
+                  {PERSONAL_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* FOOTER */}
 

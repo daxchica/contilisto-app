@@ -166,16 +166,16 @@ export default function Ret103PreviewModal({
         footStyles: { fillColor: [240, 240, 240], fontStyle: "bold", fontSize: 7 },
         head: [[
           "No.", "Fecha", "Factura", "Proveedor", "RUC / C.I",
-          "Base Imponible", "I.V.A.", "Total", "% Ret.Fte.", "Imp.Retenido", "Número Ret.",
+          "Base Imponible", "% Ret.Fte.", "Imp.Retenido", "Número Ret.",
         ]],
         body: group.lines.map((l) => [
           l.no, l.date, l.invoiceNumber, l.supplierName, l.supplierRUC,
-          fmt2(l.base), fmt2(l.iva), fmt2(l.total),
+          fmt2(l.base),
           `${l.retentionPercent}%`, fmt2(l.retentionAmount), l.retentionCertNumber,
         ]),
         foot: [[
           `Total ${group.code}:`, "", "", "", "",
-          fmt2(groupBase), fmt2(groupIva), fmt2(groupTotal), "", fmt2(groupRet), "",
+          fmt2(groupBase), "", fmt2(groupRet), "",
         ]],
       });
 
@@ -189,8 +189,8 @@ export default function Ret103PreviewModal({
       margin: { left: 30, right: 30 },
       headStyles: { fillColor: [30, 60, 100], textColor: 255, fontSize: 7 },
       bodyStyles: { fontStyle: "bold", fontSize: 8 },
-      head: [["TOTAL GENERAL", "", "", "", "", "Base", "IVA", "Total", "", "Imp.Retenido", ""]],
-      body: [["", "", "", "", "", fmt2(grandBase), fmt2(grandIva), fmt2(grandTotal), "", fmt2(grandRetAmount), ""]],
+      head: [["TOTAL GENERAL", "", "", "", "", "Base", "Imp.Retenido", ""]],
+      body: [["", "", "", "", "", fmt2(grandBase), fmt2(grandRetAmount), ""]],
     });
 
     startY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? startY + 20;
@@ -255,7 +255,7 @@ export default function Ret103PreviewModal({
                     <table className="w-full text-xs min-w-[900px]">
                       <thead className="bg-gray-50 border-b">
                         <tr>
-                          {["No.", "Fecha", "Factura", "Proveedor", "RUC / C.I", "Base Imponible", "I.V.A.", "Total", "% Ret.Fte.", "Imp.Retenido", "Número Ret."].map((h) => (
+                          {["No.", "Fecha", "Factura", "Proveedor", "RUC / C.I", "Base Imponible", "% Ret.Fte.", "Imp.Retenido", "Número Ret."].map((h) => (
                             <th key={h} className="px-2 py-1 text-left font-medium text-gray-700 whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -269,8 +269,6 @@ export default function Ret103PreviewModal({
                             <td className="px-2 py-1">{line.supplierName}</td>
                             <td className="px-2 py-1 font-mono">{line.supplierRUC}</td>
                             <td className="px-2 py-1 text-right">{fmt2(line.base)}</td>
-                            <td className="px-2 py-1 text-right">{fmt2(line.iva)}</td>
-                            <td className="px-2 py-1 text-right">{fmt2(line.total)}</td>
                             <td className="px-2 py-1 text-right">{line.retentionPercent}%</td>
                             <td className="px-2 py-1 text-right font-medium">{fmt2(line.retentionAmount)}</td>
                             <td className="px-2 py-1 font-mono">{line.retentionCertNumber}</td>
@@ -281,8 +279,6 @@ export default function Ret103PreviewModal({
                         <tr>
                           <td className="px-2 py-1" colSpan={5}>Total {group.code}:</td>
                           <td className="px-2 py-1 text-right">{fmt2(groupBase)}</td>
-                          <td className="px-2 py-1 text-right">{fmt2(groupIva)}</td>
-                          <td className="px-2 py-1 text-right">{fmt2(groupTotal)}</td>
                           <td></td>
                           <td className="px-2 py-1 text-right">{fmt2(groupRet)}</td>
                           <td></td>
@@ -298,8 +294,6 @@ export default function Ret103PreviewModal({
             <div className="bg-[#0A3558] text-white rounded px-4 py-2 text-sm font-semibold flex gap-8 mt-2">
               <span>TOTAL GENERAL</span>
               <span>Base: {fmt2(grandBase)}</span>
-              <span>IVA: {fmt2(grandIva)}</span>
-              <span>Total: {fmt2(grandTotal)}</span>
               <span>Imp.Retenido: {fmt2(grandRetAmount)}</span>
             </div>
 

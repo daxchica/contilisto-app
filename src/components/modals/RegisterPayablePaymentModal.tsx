@@ -29,6 +29,11 @@ import {
 } from "@/services/payablesService";
 
 import { normalizeAccountCode } from "@/utils/normalizeAccountCode";
+import {
+  getLastRetentionCertNumber,
+  saveLastRetentionCertNumber,
+  suggestNextCertNumber,
+} from "@/services/retentionsService";
 
 /* -------------------------------------------------------------------------- */
 /* Props                                                                      */
@@ -158,6 +163,7 @@ export default function RegisterPayablePaymentModal({
   const [activeIRPercent, setActiveIRPercent] = useState<number | null>(null);
   const [activeIVAPercent, setActiveIVAPercent] = useState<number | null>(null);
   const [certificate, setCertificate] = useState("");
+  const [suggestedCert, setSuggestedCert] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [loadingBases, setLoadingBases] = useState(false);
@@ -212,7 +218,13 @@ export default function RegisterPayablePaymentModal({
     setExpenseBase(0);
     setInvoiceIVA(0);
     setRetentionsAlreadyRecorded(false);
-  }, [isOpen, payable, bankAccounts]);
+
+    // Suggest next retention cert number
+    getLastRetentionCertNumber(entityId).then((last) => {
+      const next = suggestNextCertNumber(last);
+      setSuggestedCert(next);
+    });
+  }, [isOpen, payable, bankAccounts, entityId]);
 
   /* ------------------------------------------------------------------------ */
   /* Load invoice bases from original journal                                 */
@@ -488,6 +500,11 @@ export default function RegisterPayablePaymentModal({
           invoiceIVA,
         },
       );
+
+      // Persist cert number for next suggestion
+      if (certificate.trim()) {
+        await saveLastRetentionCertNumber(entityId, certificate.trim());
+      }
 
       onSaved?.();
       onClose();
@@ -826,9 +843,18 @@ export default function RegisterPayablePaymentModal({
                       <input
                         value={certificate}
                         onChange={(e) => setCertificate(e.target.value)}
-                        placeholder="Ingrese número del certificado"
+                        placeholder={suggestedCert || "Ej: 001-001-000000001"}
                         className="mt-1 w-full rounded border px-3 py-2 text-sm"
                       />
+                      {suggestedCert && !certificate && (
+                        <button
+                          type="button"
+                          onClick={() => setCertificate(suggestedCert)}
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-800 underline"
+                        >
+                          Usar sugerido: {suggestedCert}
+                        </button>
+                      )}
                     </div>
                   )}
                 </>

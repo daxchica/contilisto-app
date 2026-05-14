@@ -11,6 +11,7 @@ interface IgnoredItem {
 interface Props {
   invoices: IgnoredItem[];
   onClose: () => void;
+  onSaveIgnored?: (item: IgnoredItem) => Promise<void>;
 }
 
 function fmt(n: number) {
@@ -21,10 +22,25 @@ function totalFromEntries(entries: JournalEntry[]): number {
   return entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
 }
 
-export default function IgnoredInvoicesReportModal({ invoices, onClose }: Props) {
+export default function IgnoredInvoicesReportModal({ invoices, onClose, onSaveIgnored }: Props) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [savingIdx, setSavingIdx] = useState<number | null>(null);
+  const [savedSet, setSavedSet] = useState<Set<number>>(new Set());
 
   const toggle = (i: number) => setExpanded((prev) => (prev === i ? null : i));
+
+  const handleSaveIgnored = async (item: IgnoredItem, i: number) => {
+    if (!onSaveIgnored) return;
+    setSavingIdx(i);
+    try {
+      await onSaveIgnored(item);
+      setSavedSet((prev) => new Set([...prev, i]));
+    } catch (err: any) {
+      alert(err?.message || "Error al guardar el asiento.");
+    } finally {
+      setSavingIdx(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -89,6 +105,19 @@ export default function IgnoredInvoicesReportModal({ invoices, onClose }: Props)
                     <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
                       {m.invoiceType === "expense" ? "Gasto" : "Venta"}
                     </span>
+                    {savedSet.has(i) ? (
+                      <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                        ✔ Guardada
+                      </span>
+                    ) : onSaveIgnored && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleSaveIgnored(item, i); }}
+                        disabled={savingIdx === i}
+                        className="text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded-full transition disabled:opacity-50"
+                      >
+                        {savingIdx === i ? "Guardando…" : "💾 Guardar"}
+                      </button>
+                    )}
                     <span className="text-gray-400 text-xs">{isOpen ? "▲" : "▼"}</span>
                   </div>
                 </button>

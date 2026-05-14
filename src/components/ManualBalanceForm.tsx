@@ -248,6 +248,7 @@ export default function ManualBalanceForm({
           <tr>
             <th className="px-3 py-2 w-[140px]">Código</th>
             <th className="px-3 py-2">Cuenta</th>
+            <th className="px-3 py-2 w-[100px] text-center">Naturaleza</th>
             <th className="px-3 py-2 w-[140px]">Débito</th>
             <th className="px-3 py-2 w-[140px]">Crédito</th>
             <th />
@@ -268,6 +269,13 @@ export default function ManualBalanceForm({
               .filter((acc) => (query ? acc.score > 0 : true))
               .sort((a, b) => b.score - a.score)
               .slice(0, 20);
+
+            // Determine nature from account code group
+            const codeGroup = row.account_code?.trim().charAt(0);
+            const nature =
+              codeGroup === "1" ? "Deudor" :
+              codeGroup === "2" || codeGroup === "3" ? "Acreedor" :
+              null;
 
             return (
               <tr key={row.id} className="border-t">
@@ -304,6 +312,21 @@ export default function ManualBalanceForm({
                         </div>
                       ))}
                     </div>
+                  )}
+                </td>
+
+                {/* NATURE BADGE */}
+                <td className="px-3 py-2 text-center">
+                  {nature ? (
+                    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      nature === "Deudor"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-red-100 text-red-800"
+                    }`}>
+                      {nature === "Deudor" ? "D" : "A"} {nature}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
                   )}
                 </td>
 
@@ -393,6 +416,7 @@ export default function ManualBalanceForm({
             <tr className="bg-gray-100 font-semibold border-t-2">
               <td />
               <td className="text-center">Totales:</td>
+              <td />
               <td className="text-right">{moneyFmt.format(totalDebit)}</td>
               <td className="text-right">{moneyFmt.format(totalCredit)}</td>
               <td />

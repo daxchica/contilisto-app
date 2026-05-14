@@ -286,6 +286,34 @@ export default function JournalTable({
     ? new Set(displayRows.filter((r) => r.isMatch).map((r) => getTxKey(r.e))).size
     : 0;
 
+  // ── Invoice count with year-month filter ──
+  const currentYear = new Date().getFullYear();
+  const [periodFilter, setPeriodFilter] = useState(""); // "YYYY-MM" or "" = year-to-date
+
+  const periodTxCount = useMemo(() => {
+    const keys = new Set<string>();
+    const yearPrefix = `${currentYear}-`;
+    for (const { e } of rows) {
+      const date = e.date ?? "";
+      const matches = periodFilter
+        ? date.startsWith(periodFilter)           // specific month
+        : date.startsWith(yearPrefix);            // blank → all of current year
+      if (matches) keys.add(getTxKey(e));
+    }
+    return keys.size;
+  }, [rows, periodFilter, currentYear]);
+
+  // Build month options: Jan–Dec of current year
+  const monthOptions = useMemo(() => {
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      const val = `${currentYear}-${String(m).padStart(2, "0")}`;
+      const label = new Date(currentYear, m - 1, 1).toLocaleString("es-EC", { month: "long" });
+      months.push({ val, label });
+    }
+    return months;
+  }, [currentYear]);
+
   return (
     <div className="w-full">
       {/* ── Toolbar ── */}
@@ -326,6 +354,26 @@ export default function JournalTable({
             <span className="text-sm text-gray-500 whitespace-nowrap">
               Seleccionados: <b>{selectedCount}</b> / {displayRows.length}
             </span>
+
+            {/* ── Invoice counter with period selector ── */}
+            <div className="flex items-center gap-2 border-l pl-3 shrink-0">
+              <span className="text-xs text-gray-500 whitespace-nowrap">📊 Facturas:</span>
+              <select
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value)}
+                className="text-xs border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">Todo {currentYear}</option>
+                {monthOptions.map(({ val, label }) => (
+                  <option key={val} value={val}>
+                    {label.charAt(0).toUpperCase() + label.slice(1)} {currentYear}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm font-bold text-blue-700 whitespace-nowrap">
+                {periodTxCount} factura{periodTxCount !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -454,7 +502,9 @@ export default function JournalTable({
                       <td colSpan={8} className="pl-2 pr-4 py-1.5 text-xs font-semibold text-blue-900">
                         📄 {e.invoice_number || (e as any).documentRef || "Sin documento"}
                         &nbsp;|&nbsp; 📅 {e.date}
-                        &nbsp;|&nbsp; 🔁 {(e as any).transactionId || "TX"}
+                        {((e as any).description || (e as any).comment) && (
+                          <>&nbsp;|&nbsp; 📝 <span className="font-normal text-blue-700">{(e as any).description || (e as any).comment}</span></>
+                        )}
                         {hasSearch && isMatch && (
                           <span className="ml-2 inline-block bg-blue-600 text-white rounded px-1.5 py-0.5 text-[10px] font-bold">
                             coincidencia
