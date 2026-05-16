@@ -194,6 +194,10 @@ export function buildTaxLedger(
             retentionIva: totalRetentionIva,
             retentionRenta: totalRetentionRenta,
 
+            // Carry the per-line retention detail so Form 103 can compute
+            // accurate base/percentage/code without guessing from totals.
+            retenciones: doc.retenciones ?? [],
+
             authorizationNumber: doc.authorizationNumber,
             paymentMethod: doc.paymentMethod,
 

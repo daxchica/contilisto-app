@@ -7,6 +7,7 @@
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { Entity } from "@/types/Entity";
 import type { TaxLedgerEntry, TaxLedgerType, TaxTransactionType } from "@/types/TaxLedgerEntry";
+import type { AccountingDocumentTaxRetention } from "@/types/AccountingDocument";
 import type { IvaDeclarationSummary } from "@/types/sri";
 import type { AtsDocument } from "@/types/atsDocument";
 
@@ -152,6 +153,30 @@ function inferPurchaseBase0(entries: JournalEntry[], purchaseIva: number): numbe
   );
 }
 
+/**
+ * Extract SRI retention lines from any journal entry in the transaction that
+ * carries `tax.retenciones[]`.  These come from XML retention uploads or from
+ * the AP-payment builder and hold the authoritative `base`, `percentage`, and
+ * SRI `code` per retention line — avoiding the need to guess from aggregate totals.
+ */
+function extractRetenciones(
+  entries: JournalEntry[]
+): AccountingDocumentTaxRetention[] | undefined {
+  for (const e of entries) {
+    const lines = e.tax?.retenciones;
+    if (Array.isArray(lines) && lines.length > 0) {
+      return lines.map((r) => ({
+        taxType: r.taxType,
+        code: r.code,
+        percentage: n2(r.percentage),
+        base: n2(r.base),
+        amount: n2(r.amount),
+      }));
+    }
+  }
+  return undefined;
+}
+
 /* =============================================================================
    LEDGER BUILDER
 ============================================================================= */
@@ -258,6 +283,11 @@ export function buildTaxLedger(
     const base0 = documentNature === "sale" ? salesBase0 : purchaseBase0;
     const iva = documentNature === "sale" ? salesIva : purchaseIva;
 
+    // Extract per-line retention detail from tax.retenciones[] if present.
+    // This gives Form 103 the exact SRI code, authoritative base, and percentage
+    // for each retention line — avoiding the 12.88% guessing problem.
+    const retenciones = extractRetenciones(txEntries);
+
     ledger.push({
       entityId,
       transactionId,
@@ -299,6 +329,8 @@ export function buildTaxLedger(
 
       retentionIva: ivaRetentionPaid,
       retentionRenta: rentaRetentionPaid,
+
+      ...(retenciones ? { retenciones } : {}),
 
       sourceEntries: txEntries,
     });

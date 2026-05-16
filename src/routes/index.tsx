@@ -22,6 +22,7 @@ import LedgerPage from "@/pages/LedgerPage";
 import BankBookPage from "@/pages/BankBookPage";
 import Declaraciones from "@/pages/Declaraciones";
 import FlujoCaja from "@/pages/CashFlowPage";
+import EquityChangesPage from "@/pages/EquityChangesPage";
 import CompaniesPage from "@/pages/CompaniesPage";
 import ContactsPage from "@/pages/ContactsPage";
 import SriSettingsPage from "@/pages/SriSettingsPage";
@@ -94,6 +95,7 @@ export default function AppRoutes() {
         <Route path="/estados-financieros" element={<FinancialStatements />} />
         <Route path="/libro-bancos" element={<BankBookPage />} />
         <Route path="/saldo-inicial" element={<SaldoInicialPage />} />
+        <Route path="/patrimonio" element={<EquityChangesPage />} />
       </Route>
 
       {/* ============================================================

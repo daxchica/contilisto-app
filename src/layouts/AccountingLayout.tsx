@@ -4,6 +4,7 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "@/components/sidebar/Sidebar";
 import NavBar from "@/components/navbar/NavBar";
 import Footer from "@/components/footer/Footer";
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 export default function AccountingLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -50,6 +51,9 @@ export default function AccountingLayout() {
 
         <Footer />
       </div>
+
+      {/* Floating feedback widget */}
+      <FeedbackWidget />
     </div>
   );
 }

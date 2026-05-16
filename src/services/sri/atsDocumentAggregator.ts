@@ -211,10 +211,22 @@ export function buildAtsDocuments(
     if (ivaRet > 0) {
       doc.ivaRetention = n2(doc.ivaRetention + ivaRet);
 
+      const ivaPercent = baseForRetention > 0
+        ? n2((ivaRet / baseForRetention) * 100)
+        : 0;
+      // Resolve IVA retention code from percentage (SRI catalogue)
+      const ivaCode =
+        ivaPercent === 10  ? "440"  :
+        ivaPercent === 20  ? "440b" :
+        ivaPercent === 30  ? "441"  :
+        ivaPercent === 50  ? "441b" :
+        ivaPercent === 70  ? "442"  :
+        ivaPercent === 100 ? "443"  : "441";
+
       pushOrMergeRetention(doc.retenciones, {
         taxType: "IVA",
-        code: "441",
-        percentage: 0,
+        code: ivaCode,
+        percentage: ivaPercent,
         base: baseForRetention,
         amount: ivaRet,
       });
@@ -223,10 +235,22 @@ export function buildAtsDocuments(
     if (rentaRet > 0) {
       doc.rentaRetention = n2(doc.rentaRetention + rentaRet);
 
+      const rentaPercent = baseForRetention > 0
+        ? n2((rentaRet / baseForRetention) * 100)
+        : 0;
+      // Resolve Renta retention code from percentage (SRI catalogue)
+      const rentaCode =
+        rentaPercent === 1    ? "332"  :
+        rentaPercent === 1.75 ? "333"  :
+        rentaPercent === 2    ? "334"  :
+        rentaPercent === 2.75 ? "3440" :
+        rentaPercent === 8    ? "344"  :
+        rentaPercent === 10   ? "303"  : "332";
+
       pushOrMergeRetention(doc.retenciones, {
         taxType: "RENTA",
-        code: "332",
-        percentage: 0,
+        code: rentaCode,
+        percentage: rentaPercent,
         base: baseForRetention,
         amount: rentaRet,
       });

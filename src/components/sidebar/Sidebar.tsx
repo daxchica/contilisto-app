@@ -24,7 +24,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   /** Map any route to its parent section id */
   const getSectionForPath = (pathname: string): string | null => {
     if (["/accountsreceivable", "/accountspayable", "/accountsreceivables", "/ap-aging"].some(p => pathname.startsWith(p))) return "cartera";
-    if (["/contabilidad", "/libros-auxiliares", "/libro-bancos", "/estados-financieros", "/saldo-inicial"].some(p => pathname.startsWith(p))) return "contabilidad";
+    if (["/contabilidad", "/libros-auxiliares", "/libro-bancos", "/estados-financieros", "/saldo-inicial", "/flujo-caja", "/patrimonio"].some(p => pathname.startsWith(p))) return "contabilidad";
     if (pathname.startsWith("/impuestos")) return "impuestos";
     if (["/empresas", "/admin", "/configuracionSri"].some(p => pathname.startsWith(p))) return "config";
     return null;
@@ -293,6 +293,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
           <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
           <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
           <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
+          <LinkRow to="/flujo-caja" icon="💧" label="Flujo de Efectivo" requiresEntity />
+          <LinkRow to="/patrimonio" icon="🏛️" label="Cambios en Patrimonio" requiresEntity />
           <LinkRow to="/saldo-inicial" icon="🏁" label="Saldo Inicial" requiresEntity />
         </Section>
 

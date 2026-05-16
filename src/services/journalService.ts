@@ -382,6 +382,13 @@ export async function createPayablePaymentJournalEntry(
     expenseBase?: number;
     /** IVA amount of the original invoice */
     invoiceIVA?: number;
+    /** IR retention percentage selected by the user (e.g. 1, 2, 10).
+     *  When provided, the authoritative base is derived from retentionIR / (irPercent/100)
+     *  instead of expenseBase, which avoids 12.88%-style mismatches caused by
+     *  slight base-amount discrepancies. */
+    irPercent?: number | null;
+    /** IVA retention percentage selected by the user (e.g. 30, 70, 100). */
+    ivaPercent?: number | null;
   }
 ) {
 
@@ -392,6 +399,8 @@ export async function createPayablePaymentJournalEntry(
   const supplierRUC  = options?.supplierRUC?.trim() ?? "";
   const expenseBase  = n2(options?.expenseBase ?? 0);
   const invoiceIVA   = n2(options?.invoiceIVA  ?? 0);
+  const irPercent    = options?.irPercent  ?? null;
+  const ivaPercent   = options?.ivaPercent ?? null;
 
   const amount = n2(amountPaid);
 
@@ -411,11 +420,86 @@ export async function createPayablePaymentJournalEntry(
     ? `Pago fact. ${payable.invoiceNumber} — ${payable.supplierName}`
     : `Pago fact. ${payable.invoiceNumber}`;
 
+  // ── Build per-line retention detail (tax.retenciones[]) ─────────────────
+  // When irPercent is provided (user pressed a preset button), derive the
+  // authoritative base from retentionAmount / percent — this is more reliable
+  // than expenseBase which depends on how the original invoice was journaled.
+  // Resolve SRI retention code from percentage.
+  function resolveRentaCodeSri(pct: number): string {
+    if (pct === 1)    return "332";
+    if (pct === 1.75) return "333";
+    if (pct === 2)    return "334";
+    if (pct === 2.75) return "3440";
+    if (pct === 8)    return "344";
+    if (pct === 10)   return "303";
+    return "332";
+  }
+  function resolveIvaCodeSri(pct: number): string {
+    if (pct === 10)  return "440";
+    if (pct === 20)  return "440b";
+    if (pct === 30)  return "441";
+    if (pct === 50)  return "441b";
+    if (pct === 70)  return "442";
+    if (pct === 100) return "443";
+    return "441";
+  }
+
+  const retenciones: Array<{
+    taxType: "IVA" | "RENTA";
+    code: string;
+    percentage: number;
+    base: number;
+    amount: number;
+  }> = [];
+
+  if (retentionIR > 0) {
+    // Prefer irPercent (user's explicit selection) to compute base.
+    // Fall back to expenseBase if no percent was chosen.
+    const pct = irPercent != null && irPercent > 0 ? irPercent : null;
+    const base =
+      pct != null
+        ? n2(retentionIR / (pct / 100))
+        : expenseBase > 0
+          ? expenseBase
+          : 0;
+    const usedPct = pct ?? (base > 0 ? n2((retentionIR / base) * 100) : 0);
+    retenciones.push({
+      taxType: "RENTA",
+      code: resolveRentaCodeSri(usedPct),
+      percentage: usedPct,
+      base,
+      amount: retentionIR,
+    });
+  }
+
+  if (retentionIVA > 0) {
+    const pct = ivaPercent != null && ivaPercent > 0 ? ivaPercent : null;
+    const base =
+      pct != null
+        ? n2(retentionIVA / (pct / 100))
+        : invoiceIVA > 0
+          ? invoiceIVA
+          : 0;
+    const usedPct = pct ?? (base > 0 ? n2((retentionIVA / base) * 100) : 0);
+    retenciones.push({
+      taxType: "IVA",
+      code: resolveIvaCodeSri(usedPct),
+      percentage: usedPct,
+      base,
+      amount: retentionIVA,
+    });
+  }
+
   // Tax metadata stored on the AP-debit line so the tax engine can recover
   // the original invoice base and IVA when building retention reports.
-  const taxMeta =
-    expenseBase > 0
-      ? { bases: [{ rate: 12, base: expenseBase, iva: invoiceIVA }] }
+  const taxMeta: JournalEntry["tax"] | undefined =
+    expenseBase > 0 || retenciones.length > 0
+      ? {
+          ...(expenseBase > 0
+            ? { bases: [{ rate: 12, base: expenseBase, iva: invoiceIVA }] }
+            : {}),
+          ...(retenciones.length > 0 ? { retenciones } : {}),
+        }
       : undefined;
 
   const entries: JournalEntry[] = [

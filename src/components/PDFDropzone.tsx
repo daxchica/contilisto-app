@@ -32,8 +32,8 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
     const file = files[0];
 
     const name = file.name.toLowerCase();
-    if (!name.endsWith(".pdf") && !name.endsWith(".txt")) {
-      setErrorMessage("Solo se permiten archivos PDF o TXT del SRI.");
+    if (!name.endsWith(".pdf") && !name.endsWith(".txt") && !name.endsWith(".xml")) {
+      setErrorMessage("Solo se permiten archivos PDF, TXT o XML del SRI.");
       return null;
     }
 
@@ -159,7 +159,7 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,.txt"
+            accept="application/pdf,.txt,.xml,text/xml,application/xml"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -174,7 +174,7 @@ export default function PDFDropzone({ disabled, onFilesSelected }: Props) {
             ) : (
               <>
                 <p className="text-gray-700 font-semibold text-base">
-                  Arrastra tu factura PDF o TXT del SRI aquí
+                  Arrastra tu factura PDF, TXT o XML del SRI aquí
                 </p>
                 <p className="text-gray-600 text-sm">o haz clic para seleccionar</p>
               </>

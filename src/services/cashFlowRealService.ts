@@ -15,6 +15,7 @@ import { requireEntityId } from "./requireEntityId";
 
 import type { CashflowCategory, CashflowDirection } from "@/types/UnifiedCashflow";
 import type { JournalEntry } from "@/types/JournalEntry";
+import { isSupplierPayableAccount, isCustomerReceivableAccount } from "@/services/controlAccounts";
 
 
 function resolveDirection(amount: number): CashflowDirection {
@@ -42,15 +43,23 @@ function safeId(m: BankMovement, idx: number): string {
 }
 
 /**
- * Very practical rule set based on Ecuador COA prefixes:
+ * Rule set based on Ecuador COA structure and this company's controlAccounts:
  * - 4 (Ingresos) & 5 (Gastos): Operating
+ * - CxC (isCustomerReceivableAccount): Operating — invoice collections
+ * - CxP (isSupplierPayableAccount): Operating — invoice payments
+ * - transactionType "payment" or "collection": Operating (journal-level signal)
  * - 12/13 (Activos fijos / inversiones): Investing
- * - 21/22 (Deudas/Préstamos): Financing
+ * - 21/22 (Deudas/Préstamos — outside CxP range): Financing (CxP wins first)
  * - else: Uncategorized
  */
-function classifyByAccountCode(code?: string): CashflowCategory {
+function classifyByAccountCode(code?: string, txType?: string): CashflowCategory {
+  if (!code && !txType) return "uncategorized";
+  // Journal-level transaction type is the most reliable signal
+  if (txType === "payment" || txType === "collection") return "operating";
   if (!code) return "uncategorized";
   if (code.startsWith("4") || code.startsWith("5")) return "operating";
+  // Use the same prefix rules as the rest of the app (controlAccounts.ts)
+  if (isCustomerReceivableAccount(code) || isSupplierPayableAccount(code)) return "operating";
   if (code.startsWith("12") || code.startsWith("13")) return "investing";
   if (code.startsWith("21") || code.startsWith("22")) return "financing";
   return "uncategorized";
@@ -64,9 +73,12 @@ const txCategoryCache = new Map<string, CashflowCategory>();
 
 async function resolveCategorySmart(
   entityId: string,
-  transactionId?: string
+  transactionId?: string,
+  relatedInvoiceId?: string
 ): Promise<CashflowCategory> {
   requireEntityId(entityId, "resolver categoría de flujo");
+  // Any movement tied directly to an invoice is an operational cash flow
+  if (relatedInvoiceId) return "operating";
   if (!transactionId) return "uncategorized";
   if (txCategoryCache.has(transactionId)) {
     return txCategoryCache.get(transactionId)!;
@@ -88,8 +100,8 @@ async function resolveCategorySmart(
   snap.forEach((doc) => {
     const e = doc.data() as JournalEntry;
 
-    // pick the “strongest” category signal we see
-    const c = classifyByAccountCode(e.account_code);
+    // Pass both account code AND transactionType — whichever gives the clearest signal
+    const c = classifyByAccountCode(e.account_code, e.transactionType);
 
     if (c === "financing") category = "financing";
     else if (c === "investing" && category !== "financing") category = "investing";
@@ -153,6 +165,8 @@ export async function getRealCashFlow(
   to?: string | number
 ): Promise<RealCashflowResult> {
   requireEntityId(entityId, "cargar flujo real");
+  // Clear per-call so a change in period doesn't serve stale categories
+  txCategoryCache.clear();
   const fromDate = normalizeDate(from);
   const toDate = normalizeDate(to);
 
@@ -164,10 +178,26 @@ export async function getRealCashFlow(
     const m = movements[idx];
     const amount = Number((m as any).amount) || 0;
 
-    const category = await resolveCategorySmart(
+    let category = await resolveCategorySmart(
       entityId,
-      m.relatedJournalTransactionId
+      m.relatedJournalTransactionId,
+      m.relatedInvoiceId
     );
+
+    // Last-resort fallback: description patterns written exclusively by the
+    // payment/collection flows — catches movements that were saved without
+    // a relatedJournalTransactionId (older entries or reconciliation paths).
+    if (category === "uncategorized") {
+      const desc = ((m as any).description ?? "").trimStart();
+      if (
+        desc.startsWith("Pago fact.") ||
+        desc.startsWith("Cobro fact.") ||
+        desc.startsWith("Cobro factura") ||
+        desc.startsWith("Pago factura")
+      ) {
+        category = "operating";
+      }
+    }
 
     events.push({
       id: safeId(m, idx),

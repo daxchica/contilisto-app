@@ -498,6 +498,10 @@ export default function RegisterPayablePaymentModal({
           supplierRUC: p.supplierRUC ?? "",
           expenseBase,
           invoiceIVA,
+          // Pass the explicit percentage the user selected so journalService
+          // can store tax.retenciones[] with the authoritative code/base/percent.
+          irPercent: applyIR ? (activeIRPercent ?? null) : null,
+          ivaPercent: applyIVA ? (activeIVAPercent ?? null) : null,
         },
       );
 

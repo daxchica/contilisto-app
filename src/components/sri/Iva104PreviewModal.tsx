@@ -13,7 +13,9 @@ import type { Ret104LineDetail } from "@/services/sri/generateRet103";
 
 type Iva104Summary = {
   ventas12: number;
+  ventas15?: number;
   compras12: number;
+  compras15?: number;
   ivaVentas: number;
   ivaCompras: number;
   retenciones?: number;
@@ -88,7 +90,9 @@ export default function Iva104PreviewModal({
   // ── All hooks MUST run before any conditional return (Rules of Hooks) ──
   const {
     ventas12 = 0,
+    ventas15 = 0,
     compras12 = 0,
+    compras15 = 0,
     ivaVentas = 0,
     ivaCompras = 0,
     retenciones = 0,
@@ -231,15 +235,29 @@ export default function Iva104PreviewModal({
 
         {/* ── IVA totals band (compact, for accountant context) ── */}
         <div className="flex flex-wrap gap-3 mb-5 text-xs">
-          <span className="bg-gray-50 border rounded px-3 py-1.5">
-            Ventas 12%: <strong className="tabular-nums">${fmt2(ventas12)}</strong>
-          </span>
+          {ventas12 > 0 && (
+            <span className="bg-gray-50 border rounded px-3 py-1.5">
+              Ventas 12%: <strong className="tabular-nums">${fmt2(ventas12)}</strong>
+            </span>
+          )}
+          {ventas15 > 0 && (
+            <span className="bg-blue-50 border border-blue-200 rounded px-3 py-1.5">
+              Ventas 15%: <strong className="tabular-nums">${fmt2(ventas15)}</strong>
+            </span>
+          )}
           <span className="bg-gray-50 border rounded px-3 py-1.5">
             IVA Ventas: <strong className="tabular-nums">${fmt2(ivaVentas)}</strong>
           </span>
-          <span className="bg-gray-50 border rounded px-3 py-1.5">
-            Compras 12%: <strong className="tabular-nums">${fmt2(compras12)}</strong>
-          </span>
+          {compras12 > 0 && (
+            <span className="bg-gray-50 border rounded px-3 py-1.5">
+              Compras 12%: <strong className="tabular-nums">${fmt2(compras12)}</strong>
+            </span>
+          )}
+          {compras15 > 0 && (
+            <span className="bg-blue-50 border border-blue-200 rounded px-3 py-1.5">
+              Compras 15%: <strong className="tabular-nums">${fmt2(compras15)}</strong>
+            </span>
+          )}
           <span className="bg-gray-50 border rounded px-3 py-1.5">
             IVA Compras: <strong className="tabular-nums">${fmt2(ivaCompras)}</strong>
           </span>

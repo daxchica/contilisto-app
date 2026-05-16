@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { JournalEntry } from "@/types/JournalEntry";
+import type { AccountingDocumentTaxRetention } from "@/types/AccountingDocument";
 
 export type TaxDocumentNature = "sale" | "purchase";
 export type TaxTransactionType = "invoice" | "payment" | "transfer";
@@ -81,6 +82,10 @@ export interface TaxLedgerEntry {
   // Generic aliases for easier consumers like Form 103
   retentionIva?: number;
   retentionRenta?: number;
+
+  // Per-line retention detail from AccountingDocument.retenciones[]
+  // Used by Form 103 to get accurate base/percentage/code per retention line
+  retenciones?: AccountingDocumentTaxRetention[];
 
   /* ---------------------------------------------------------------------- */
   /* TRACEABILITY                                                           */

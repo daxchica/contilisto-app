@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { TaxLedgerEntry } from "@/types/TaxLedgerEntry";
+import { invoiceNumberFromAccessKey } from "@/utils/sriInvoice";
 
 export interface Ret103Line {
   code: string;
@@ -188,6 +189,21 @@ function resolveIvaCode(
   };
 }
 
+/**
+ * Resolve the retention certificate number.
+ * - If authorizationNumber is a 49-digit clave de acceso → derive "001-001-000000007" format.
+ * - If it's already a short formatted number (3-3-9 digits) → use it directly.
+ * - Fallback to documentNumber or "-".
+ */
+function getRetentionCertNumber(entry: TaxLedgerEntry): string {
+  const auth = (entry.authorizationNumber ?? "").trim();
+  if (/^\d{49}$/.test(auth)) {
+    try { return invoiceNumberFromAccessKey(auth); } catch { /* fall through */ }
+  }
+  if (/^\d{3}-\d{3}-\d{9}$/.test(auth)) return auth;
+  return entry.documentNumber ?? "-";
+}
+
 function getDocumentNumber(entry: TaxLedgerEntry): string | undefined {
   return (
     entry.documentNumber ||
@@ -306,6 +322,134 @@ export function generateRet103Summary(
       documentsMap.set(docKey, existingDoc);
     }
 
+    // ── When the entry carries per-line retention detail (from AccountingDocument.retenciones),
+    //    use it directly — it has the exact SRI code, authoritative base, and percentage.
+    //    This avoids the "12.88%" problem where guessing percent from aggregate totals fails.
+    const hasRetenciones =
+      Array.isArray(e.retenciones) && e.retenciones.length > 0;
+
+    if (hasRetenciones) {
+      const retLines = e.retenciones!;
+      const retentionCertNumber = getRetentionCertNumber(e);
+      const invoiceNumber = getDocumentNumber(e) ?? "-";
+      const supplierName = e.counterpartyName ?? e.name ?? "-";
+      const supplierRUC = e.counterpartyRUC ?? e.ruc ?? "-";
+
+      // ── Renta detail lines ──────────────────────────────────────────────
+      const rentaRets = retLines.filter((r) => r.taxType === "RENTA");
+      if (rentaRets.length > 0) {
+        for (const r of rentaRets) {
+          const rentaResolved = resolveRentaCode(n2(r.base), n2(r.amount));
+          detailLines.push({
+            no: String(counter103++),
+            date: e.date,
+            invoiceNumber,
+            supplierName,
+            supplierRUC,
+            base: n2(r.base),
+            iva,
+            total: n2(n2(r.base) + iva),
+            retentionPercent: r.percentage ?? rentaResolved.percent ?? 0,
+            retentionAmount: n2(r.amount),
+            retentionCertNumber,
+            retentionCode: r.code || rentaResolved.code,
+            retentionLabel: rentaResolved.label,
+          });
+
+          // Aggregate into rentaMap
+          const resolved = resolveRentaCode(n2(r.base), n2(r.amount));
+          const mapKey = r.code || resolved.code;
+          const current = rentaMap.get(mapKey) ?? {
+            code: r.code || resolved.code,
+            label: resolved.label,
+            base: 0,
+            amount: 0,
+            percent: r.percentage ?? resolved.percent,
+          };
+          current.base = n2(current.base + n2(r.base));
+          current.amount = n2(current.amount + n2(r.amount));
+          rentaMap.set(mapKey, current);
+          rentaRetenida = n2(rentaRetenida + n2(r.amount));
+        }
+      } else {
+        // No renta lines → emit a "not subject to retention" row
+        detailLines.push({
+          no: String(counter103++),
+          date: e.date,
+          invoiceNumber,
+          supplierName,
+          supplierRUC,
+          base,
+          iva,
+          total,
+          retentionPercent: 0,
+          retentionAmount: 0,
+          retentionCertNumber,
+          retentionCode: "332",
+          retentionLabel: "Otras compras de bienes y servicios no sujetas a retención",
+        });
+      }
+
+      // ── IVA detail lines ────────────────────────────────────────────────
+      const ivaRets = retLines.filter((r) => r.taxType === "IVA");
+      if (ivaRets.length > 0) {
+        for (const r of ivaRets) {
+          const ivaResolved = resolveIvaCode(iva > 0 ? iva : n2(r.base), n2(r.amount));
+          ivaDetailLines.push({
+            no: String(counter104++),
+            date: e.date,
+            invoiceNumber,
+            supplierName,
+            supplierRUC,
+            base: n2(r.base),
+            iva,
+            total: n2(n2(r.base) + iva),
+            retentionPercent: r.percentage ?? ivaResolved.percent ?? 0,
+            retentionAmount: n2(r.amount),
+            retentionCertNumber,
+            retentionCode: r.code || ivaResolved.code,
+            retentionLabel: ivaResolved.label,
+          });
+
+          // Aggregate into ivaMap
+          const ivaBase = iva > 0 ? iva : n2(r.base);
+          const mapKey = r.code || resolveIvaCode(ivaBase, n2(r.amount)).code;
+          const current = ivaMap.get(mapKey) ?? {
+            code: r.code || mapKey,
+            label: resolveIvaCode(ivaBase, n2(r.amount)).label,
+            base: 0,
+            amount: 0,
+            percent: r.percentage ?? resolveIvaCode(ivaBase, n2(r.amount)).percent,
+          };
+          current.base = n2(current.base + ivaBase);
+          current.amount = n2(current.amount + n2(r.amount));
+          ivaMap.set(mapKey, current);
+          ivaRetenido = n2(ivaRetenido + n2(r.amount));
+        }
+      } else {
+        ivaDetailLines.push({
+          no: String(counter104++),
+          date: e.date,
+          invoiceNumber,
+          supplierName,
+          supplierRUC,
+          base,
+          iva,
+          total,
+          retentionPercent: 0,
+          retentionAmount: 0,
+          retentionCertNumber,
+          retentionCode: "0",
+          retentionLabel: "Sin retención IVA (0%)",
+        });
+      }
+
+      // Skip the legacy aggregation block below (already handled above)
+      continue;
+    }
+
+    // ── Legacy path: no retenciones[] → guess from aggregate totals ──────
+
     // ── Renta detail line (include all purchases, even 0% retention) ──
     {
       const rentaResolved =
@@ -328,7 +472,7 @@ export function generateRet103Summary(
         total,
         retentionPercent: rentaResolved.percent ?? 0,
         retentionAmount: rentaAmount,
-        retentionCertNumber: e.authorizationNumber ?? "-",
+        retentionCertNumber: getRetentionCertNumber(e),
         retentionCode: rentaResolved.code,
         retentionLabel: rentaResolved.label,
       });
@@ -356,7 +500,7 @@ export function generateRet103Summary(
         total,
         retentionPercent: ivaResolved.percent ?? 0,
         retentionAmount: ivaAmount,
-        retentionCertNumber: e.authorizationNumber ?? "-",
+        retentionCertNumber: getRetentionCertNumber(e),
         retentionCode: ivaResolved.code,
         retentionLabel: ivaResolved.label,
       });

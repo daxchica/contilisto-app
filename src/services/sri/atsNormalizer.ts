@@ -14,137 +14,122 @@ export function normalizeAtsTransactions(
   entityId: string,
   period: string
 ): AtsNormalizedData {
-
-  const compras: AtsTransaction[] = [];
-  const ventas: AtsTransaction[] = [];
-  const retenciones: AtsTransaction[] = [];
-  const anulados: AtsTransaction[] = [];
+  // ── Group entries by transactionId so we can aggregate per document ────────
+  const txMap = new Map<string, JournalEntry[]>();
 
   for (const e of entries) {
-
     if (!e) continue;
-
     if (e.entityId !== entityId) continue;
-
     if (!samePeriod(e.date, period)) continue;
 
-    const debit = Number(e.debit || 0);
-    const credit = Number(e.credit || 0);
-
-    // -----------------------------
-    // SALES (INGRESOS)
-    // -----------------------------
-
-    if (e.account_code.startsWith("4")) {
-
-      ventas.push({
-
-        period,
-
-        type: "venta",
-
-        date: e.date,
-
-        ruc: e.customerRUC || "",
-
-        razonSocial: e.customer_name || "",
-
-        documentType: "01",
-
-        sequential: e.invoice_number,
-
-        baseNoGraIva: 0,
-
-        baseImponible: 0,
-
-        baseImpGrav: credit,
-
-        montoIva: 0,
-
-      });
-
-    }
-
-    // -----------------------------
-    // PURCHASES
-    // -----------------------------
-
-    if (e.account_code.startsWith("5") || e.account_code.startsWith("6")) {
-
-      compras.push({
-
-        period,
-
-        type: "compra",
-
-        date: e.date,
-
-        ruc: e.issuerRUC || "",
-
-        razonSocial: e.issuerName || "",
-
-        documentType: "01",
-
-        sequential: e.invoice_number,
-
-        baseNoGraIva: 0,
-
-        baseImponible: debit,
-
-        baseImpGrav: 0,
-
-        montoIva: 0,
-
-      });
-
-    }
-
-    // -----------------------------
-    // RETENTIONS
-    // -----------------------------
-
-    if (e.account_code.startsWith("20102")) {
-
-      retenciones.push({
-
-        period,
-
-        type: "retencion",
-
-        date: e.date,
-
-        ruc: e.issuerRUC || "",
-
-        razonSocial: e.issuerName || "",
-
-        documentType: "07",
-
-        sequential: e.invoice_number,
-
-        baseNoGraIva: 0,
-
-        baseImponible: debit,
-
-        baseImpGrav: 0,
-
-        montoIva: 0,
-
-      });
-
-    }
-
+    const key = e.transactionId || `${e.date}-${e.invoice_number}-${Math.random()}`;
+    if (!txMap.has(key)) txMap.set(key, []);
+    txMap.get(key)!.push(e);
   }
 
-  return {
+  const compras:     AtsTransaction[] = [];
+  const ventas:      AtsTransaction[] = [];
+  const retenciones: AtsTransaction[] = [];
+  const anulados:    AtsTransaction[] = [];
 
-    compras,
+  for (const [, lines] of txMap) {
+    if (!lines.length) continue;
 
-    ventas,
+    const first = lines[0];
+    const isSale     = lines.some((l) => l.account_code?.startsWith("4"));
+    const isPurchase = lines.some((l) => l.account_code?.startsWith("5"));
+    const isRetention =
+      lines.some((l) =>
+        l.account_code?.startsWith("201020201") ||
+        l.account_code?.startsWith("201020202")
+      );
 
-    retenciones,
+    // Revenue base (credit on income accounts)
+    const baseImpGrav = lines
+      .filter((l) => l.account_code?.startsWith("4"))
+      .reduce((s, l) => s + Number(l.credit || 0), 0);
 
-    anulados,
+    // Purchase base (debit on expense accounts 5xx only)
+    const baseImponible = lines
+      .filter((l) => l.account_code?.startsWith("5"))
+      .reduce((s, l) => s + Number(l.debit || 0), 0);
 
-  };
+    // IVA compras (debit on 133xxxx)
+    const ivaCompras = lines
+      .filter((l) => l.account_code?.startsWith("133"))
+      .reduce((s, l) => s + Number(l.debit || 0), 0);
 
+    // IVA ventas (credit on 20105xxxx)
+    const ivaVentas = lines
+      .filter((l) => l.account_code?.startsWith("20105"))
+      .reduce((s, l) => s + Number(l.credit || 0), 0);
+
+    const ruc          = first.issuerRUC || first.supplier_ruc || (first as any).customerRUC || "";
+    const razonSocial  = first.issuerName || first.supplier_name || (first as any).customerName || "";
+    const invoiceNum   = first.invoice_number || "";
+    const authorization = first.tax?.document?.authorization || "";
+
+    // ── VENTAS ───────────────────────────────────────────────────────────────
+    if (isSale && baseImpGrav > 0) {
+      ventas.push({
+        period,
+        type: "venta",
+        date: first.date,
+        ruc,
+        razonSocial,
+        documentType: "18",
+        sequential: invoiceNum,
+        baseNoGraIva: 0,
+        baseImponible: 0,
+        baseImpGrav,
+        montoIva: ivaVentas,
+      });
+    }
+
+    // ── COMPRAS ──────────────────────────────────────────────────────────────
+    if (isPurchase && baseImponible > 0) {
+      compras.push({
+        period,
+        type: "compra",
+        date: first.date,
+        ruc,
+        razonSocial,
+        documentType: "01",
+        sequential: invoiceNum,
+        baseNoGraIva: 0,
+        baseImponible,
+        baseImpGrav: 0,
+        montoIva: ivaCompras,
+      });
+    }
+
+    // ── RETENCIONES ──────────────────────────────────────────────────────────
+    if (isRetention) {
+      const retAmount = lines
+        .filter(
+          (l) =>
+            l.account_code?.startsWith("201020201") ||
+            l.account_code?.startsWith("201020202")
+        )
+        .reduce((s, l) => s + Number(l.credit || 0), 0);
+
+      if (retAmount > 0) {
+        retenciones.push({
+          period,
+          type: "retencion",
+          date: first.date,
+          ruc,
+          razonSocial,
+          documentType: "07",
+          sequential: invoiceNum,
+          baseNoGraIva: 0,
+          baseImponible: baseImponible || baseImpGrav,
+          baseImpGrav: 0,
+          montoIva: retAmount,
+        });
+      }
+    }
+  }
+
+  return { compras, ventas, retenciones, anulados };
 }

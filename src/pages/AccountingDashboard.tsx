@@ -55,6 +55,11 @@ import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { getContextualAccountHint } from "@/services/firestoreHintsService";
 import { parseSriTxt } from "@/services/parseSriTxt";
 import { sriRowToEntries } from "@/utils/sriTxtToEntries";
+import { parseSriXml } from "@/utils/parseSriXml";
+import { sriXmlToEntries } from "@/utils/sriXmlToEntries";
+import { detectSriXmlType, parseSriRetXml } from "@/utils/parseSriRetXml";
+import type { SriRetXmlResult } from "@/utils/parseSriRetXml";
+import RetentionXmlPreviewModal from "@/components/modals/RetentionXmlPreviewModal";
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -131,6 +136,9 @@ export default function AccountingDashboard() {
   const [showIgnoredReport, setShowIgnoredReport] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
+
+  const [retentionXmlData, setRetentionXmlData] = useState<SriRetXmlResult | null>(null);
+  const [showRetentionXmlModal, setShowRetentionXmlModal] = useState(false);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
@@ -563,20 +571,151 @@ const stableJournal = useMemo(() =>
   );
 
   // --------------------------------------------------------------------------
-  // COMBINED FILE HANDLER (PDF or TXT)
+  // SRI XML PROCESSOR
+  // --------------------------------------------------------------------------
+
+  const handleXmlFileSelected = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return;
+
+      const authUid = getAuth().currentUser?.uid;
+      if (!authUid || authUid !== userIdSafe) {
+        alert("Sesión no válida.");
+        return;
+      }
+
+      if (!entityId) {
+        alert("Selecciona una empresa primero.");
+        return;
+      }
+
+      if (!entityRUC) {
+        alert("RUC de la entidad no configurado.");
+        return;
+      }
+
+      if (accounts.length === 0 && !accountsLoading) {
+        await loadAccounts();
+      }
+
+      try {
+        const file = files[0];
+        const xmlText = await file.text();
+
+        // ── Route by document type ──
+        const docType = detectSriXmlType(xmlText);
+
+        if (docType === "retencion") {
+          const ret = parseSriRetXml(xmlText);
+          setRetentionXmlData(ret);
+          setShowRetentionXmlModal(true);
+          return;
+        }
+
+        const xml = parseSriXml(xmlText);
+
+        if (!xml.invoice_number) {
+          alert("No se pudo leer el número de factura del XML.");
+          return;
+        }
+
+        // ── Duplicate check ──
+        const alreadySaved = await checkProcessedInvoice(entityId, xml.invoice_number);
+        if (alreadySaved) {
+          alert(`La factura ${xml.invoice_number} ya está registrada en el diario.`);
+          return;
+        }
+
+        // ── Contextual account hint (expense only) ──
+        const isExpense = xml.issuerRUC !== entityRUC;
+        let expenseCode: string | undefined;
+        let expenseName: string | undefined;
+
+        if (isExpense && xml.issuerRUC) {
+          const cacheKey = `${entityId}__${xml.issuerRUC}`;
+          let hint = hintCache.current.get(cacheKey);
+
+          if (hint === undefined) {
+            try {
+              hint = await getContextualAccountHint(entityId, authUid, xml.issuerRUC);
+            } catch {
+              hint = null;
+            }
+            hintCache.current.set(cacheKey, hint ?? null);
+          }
+
+          const normalizedHintCode = normalizeComparableCode(hint?.accountCode ?? "");
+          const useHint =
+            hint &&
+            hint.frequency >= 2 &&
+            normalizedHintCode &&
+            normalizedLeafCodeSet.has(normalizedHintCode) &&
+            normalizedAccountCodeSet.has(normalizedHintCode);
+
+          if (useHint) {
+            expenseCode = normalizedHintCode;
+            expenseName = hint!.accountName;
+          }
+        }
+
+        // ── Build entries ──
+        const entries = sriXmlToEntries(
+          xml,
+          entityId,
+          authUid,
+          entityRUC,
+          expenseCode,
+          expenseName
+        );
+
+        const metadata: InvoicePreviewMetadata = {
+          invoiceType: isExpense ? "expense" : "sale",
+          issuerRUC: xml.issuerRUC,
+          issuerName: xml.issuerName,
+          buyerName: xml.buyerName,
+          buyerRUC: xml.buyerRUC,
+          invoiceDate: xml.invoiceDate,
+          invoice_number: xml.invoice_number,
+        };
+
+        setPreviewEntries(entries);
+        setPreviewMetadata(metadata);
+        setShowPreviewModal(true);
+      } catch (err: unknown) {
+        console.error(err);
+        alert(`Error procesando XML: ${getErrorMessage(err)}`);
+      }
+    },
+    [
+      entityId,
+      entityRUC,
+      userIdSafe,
+      accounts.length,
+      accountsLoading,
+      loadAccounts,
+      normalizedLeafCodeSet,
+      normalizedAccountCodeSet,
+    ]
+  );
+
+  // --------------------------------------------------------------------------
+  // COMBINED FILE HANDLER (PDF, TXT, or XML)
   // --------------------------------------------------------------------------
 
   const handleFilesSelected = useCallback(
     async (files: FileList | null) => {
       if (!files?.length) return;
       const file = files[0];
-      if (file.name.toLowerCase().endsWith(".txt")) {
+      const name = file.name.toLowerCase();
+      if (name.endsWith(".txt")) {
         await handleTxtFileSelected(files);
+      } else if (name.endsWith(".xml")) {
+        await handleXmlFileSelected(files);
       } else {
         await handlePdfFilesSelected(files);
       }
     },
-    [handlePdfFilesSelected, handleTxtFileSelected]
+    [handlePdfFilesSelected, handleTxtFileSelected, handleXmlFileSelected]
   );
 
   // --------------------------------------------------------------------------
@@ -805,6 +944,26 @@ const stableJournal = useMemo(() =>
           entityName={selectedEntity.name}
           onClose={() => setShowAccountsModal(false)}
           onAccountsChanged={() => loadAccounts()}
+        />
+      )}
+
+      {showRetentionXmlModal && retentionXmlData && (
+        <RetentionXmlPreviewModal
+          open={showRetentionXmlModal}
+          retention={retentionXmlData}
+          entityId={entityId}
+          userIdSafe={userIdSafe}
+          onClose={() => {
+            setShowRetentionXmlModal(false);
+            setRetentionXmlData(null);
+          }}
+          onSaved={() => {
+            setLogRefreshTrigger((v) => v + 1);
+            setTimeout(() => {
+              setShowRetentionXmlModal(false);
+              setRetentionXmlData(null);
+            }, 1500);
+          }}
         />
       )}
 

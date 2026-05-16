@@ -43,7 +43,8 @@ export interface TaxDocument {
   /* BASES                                                                  */
   /* ---------------------------------------------------------------------- */
 
-  base12: number;
+  base12: number;      // taxable base at 12% IVA (pre-April 2024)
+  base15: number;      // taxable base at 15% IVA (April 2024+)
   base0: number;
   baseNoObjeto: number;
 
