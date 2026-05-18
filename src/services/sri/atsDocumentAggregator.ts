@@ -63,11 +63,15 @@ function getDocumentNumber(entry: TaxLedgerEntry): string {
 }
 
 function getDocumentType(entry: TaxLedgerEntry): string {
-  if (entry.documentType) return String(entry.documentType).trim();
+  const stored = String(entry.documentType ?? "").trim();
 
-  if (entry.type === "retention") return "07";
+  // "07" means a standalone retention certificate document.
+  // Payment+retention journal entries (type === "retention") represent the
+  // underlying PURCHASE INVOICE, so they must appear in ATS Compras as "01".
+  // Their retention detail is already captured in retenciones[].
+  if (stored && stored !== "07") return stored;
+
   if (entry.documentNature === "sale") return "18";
-
   return "01";
 }
 
