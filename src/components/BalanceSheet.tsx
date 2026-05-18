@@ -52,10 +52,14 @@ const isBalanceAccount = (code: string) =>
   ["1", "2", "3"].includes(code.charAt(0));
 
 function normalizeBalance(code: string, saldo: number): number {
-  // Activo: debit-normal → positive
+  // Activo: debit-normal → positive when saldo > 0
   if (code.charAt(0) === "1") return saldo;
-  // Pasivo / Patrimonio: credit-normal → show as positive
-  return Math.abs(saldo);
+  // Pasivo / Patrimonio: credit-normal.
+  // saldo = debit − credit, so a credit balance is stored as negative.
+  // Negate to get the human-readable value:
+  //   credit balance (saldo < 0) → positive  ✓ (normal equity / liability)
+  //   debit balance  (saldo > 0) → negative  ✓ (loss or overpaid liability reduces equity)
+  return -saldo;
 }
 
 // Indent pixels by level (used in inline style)
@@ -201,7 +205,9 @@ export default function BalanceSheet({
     delete rolled["30701"];
     delete rolled["30702"];
 
-    // Patrimonio original (only level-2 equity accounts, excluding 307)
+    // Patrimonio original (only level-2 equity accounts, excluding 307).
+    // These accounts are credit-normal: saldo = debit − credit, so a credit
+    // balance is stored as a negative number.  Negate to get the human value.
     const patrimonioOriginal = Object.entries(rolled)
       .filter(([code]) =>
         code.startsWith("3") &&
@@ -209,9 +215,12 @@ export default function BalanceSheet({
         code.length === 3 &&
         code !== "307"
       )
-      .reduce((sum, [, acc]) => sum + Math.abs(safe(acc.saldo)), 0);
+      .reduce((sum, [, acc]) => sum + (-safe(acc.saldo)), 0);
 
-    // Inject resultado
+    // Inject resultado into the rolled tree so rows render correctly.
+    // We store saldo in ACCOUNTING convention (debit − credit), which means:
+    //   profit → credit balance → saldo = −resultado  (negative)
+    //   loss   → debit  balance → saldo = −resultado  (positive, because resultado < 0)
     if (resultado !== 0) {
       const resultCode = resultado >= 0 ? "30701" : "30702";
       rolled[resultCode] = {
@@ -219,22 +228,23 @@ export default function BalanceSheet({
         initial: 0,
         debit: resultado < 0 ? Math.abs(resultado) : 0,
         credit: resultado > 0 ? resultado : 0,
-        saldo: resultado,
+        saldo: -resultado,   // accounting convention
       };
       rolled["307"] = {
         account_code: "307",
         initial: 0,
         debit: resultado < 0 ? Math.abs(resultado) : 0,
         credit: resultado > 0 ? resultado : 0,
-        saldo: resultado,
+        saldo: -resultado,   // accounting convention
       };
-      const patrimonioFinal = round2(Math.abs(patrimonioOriginal) + resultado);
+      // patrimonioFinal: positive = net equity, negative = losses exceed capital
+      const patrimonioFinal = round2(patrimonioOriginal + resultado);
       rolled["3"] = {
         account_code: "3",
         initial: safe(rolled["3"]?.initial),
-        debit: resultado < 0 ? Math.abs(resultado) : 0,
-        credit: resultado > 0 ? resultado : 0,
-        saldo: patrimonioFinal,
+        debit: patrimonioFinal < 0 ? Math.abs(patrimonioFinal) : 0,
+        credit: patrimonioFinal > 0 ? patrimonioFinal : 0,
+        saldo: -patrimonioFinal,  // accounting convention
       };
     }
 
