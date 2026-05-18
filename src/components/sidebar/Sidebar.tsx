@@ -293,7 +293,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           <LinkRow to="/libros-auxiliares" icon="📘" label="Libro Mayor" requiresEntity />
           <LinkRow to="/libro-bancos" icon="🏦" label="Libro Bancos" requiresEntity />
           <LinkRow to="/estados-financieros" icon="📈" label="Estados Financieros" requiresEntity />
-          <LinkRow to="/flujo-caja" icon="💧" label="Flujo de Efectivo" requiresEntity />
+          <LinkRow to="/flujo-caja" icon="💵" label="Flujo de Efectivo" requiresEntity />
           <LinkRow to="/patrimonio" icon="🏛️" label="Cambios en Patrimonio" requiresEntity />
           <LinkRow to="/gastos-personales" icon="🧾" label="Gastos Personales" requiresEntity />
           <LinkRow to="/saldo-inicial" icon="🏁" label="Saldo Inicial" requiresEntity />
