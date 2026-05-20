@@ -288,31 +288,50 @@ export default function JournalTable({
 
   // ── Invoice count with year-month filter ──
   const currentYear = new Date().getFullYear();
-  const [periodFilter, setPeriodFilter] = useState(""); // "YYYY-MM" or "" = year-to-date
+  // "" = all of currentYear; "YYYY" = all of that year; "YYYY-MM" = specific month
+  const [periodFilter, setPeriodFilter] = useState("");
 
   const periodTxCount = useMemo(() => {
     const keys = new Set<string>();
-    const yearPrefix = `${currentYear}-`;
     for (const { e } of rows) {
       const date = e.date ?? "";
-      const matches = periodFilter
-        ? date.startsWith(periodFilter)           // specific month
-        : date.startsWith(yearPrefix);            // blank → all of current year
+      let matches = false;
+      if (!periodFilter) {
+        matches = date.startsWith(`${currentYear}-`);
+      } else if (periodFilter.length === 4) {
+        matches = date.startsWith(`${periodFilter}-`);   // whole prior year
+      } else {
+        matches = date.startsWith(periodFilter);          // specific month
+      }
       if (matches) keys.add(getTxKey(e));
     }
     return keys.size;
   }, [rows, periodFilter, currentYear]);
 
-  // Build month options: Jan–Dec of current year
-  const monthOptions = useMemo(() => {
-    const months = [];
-    for (let m = 1; m <= 12; m++) {
-      const val = `${currentYear}-${String(m).padStart(2, "0")}`;
-      const label = new Date(currentYear, m - 1, 1).toLocaleString("es-EC", { month: "long" });
-      months.push({ val, label });
+  // Detect which years are actually present in the data (max last 5 years)
+  const availableYears = useMemo(() => {
+    const yearSet = new Set<number>();
+    for (const { e } of rows) {
+      const y = Number((e.date ?? "").slice(0, 4));
+      if (y >= currentYear - 5 && y <= currentYear) yearSet.add(y);
     }
-    return months;
-  }, [currentYear]);
+    // Always include currentYear even if no data yet
+    yearSet.add(currentYear);
+    return Array.from(yearSet).sort((a, b) => b - a); // newest first
+  }, [rows, currentYear]);
+
+  // Build grouped options: one "Todo YYYY" + 12 months per detected year
+  const periodOptions = useMemo(() => {
+    return availableYears.map((year) => {
+      const months = Array.from({ length: 12 }, (_, i) => {
+        const m = i + 1;
+        const val = `${year}-${String(m).padStart(2, "0")}`;
+        const label = new Date(year, m - 1, 1).toLocaleString("es-EC", { month: "long" });
+        return { val, label: `${label.charAt(0).toUpperCase() + label.slice(1)} ${year}` };
+      });
+      return { year, months };
+    });
+  }, [availableYears]);
 
   return (
     <div className="w-full">
@@ -363,11 +382,16 @@ export default function JournalTable({
                 onChange={(e) => setPeriodFilter(e.target.value)}
                 className="text-xs border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
-                <option value="">Todo {currentYear}</option>
-                {monthOptions.map(({ val, label }) => (
-                  <option key={val} value={val}>
-                    {label.charAt(0).toUpperCase() + label.slice(1)} {currentYear}
-                  </option>
+                {periodOptions.map(({ year, months }) => (
+                  <optgroup key={year} label={`── ${year} ──`}>
+                    {/* "Todo YYYY" — for currentYear use "" so existing logic is unchanged */}
+                    <option value={year === currentYear ? "" : String(year)}>
+                      Todo {year}
+                    </option>
+                    {months.map(({ val, label }) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <span className="text-sm font-bold text-blue-700 whitespace-nowrap">
