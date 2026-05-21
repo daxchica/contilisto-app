@@ -8,9 +8,16 @@ import {
   getDocs,
   writeBatch,
   serverTimestamp,
-  DocumentReference
+  query,
+  where,
+  limit,
 } from "firebase/firestore";
 import { requireEntityId } from "./requireEntityId";
+
+/** Same normalization used in journalService so lookups match */
+function normalizeInvoiceNumber(n: string): string {
+  return n.replace(/\s+/g, "").toUpperCase();
+}
 
 /* ============================================================
  * INTERNAL HELPERS
@@ -36,14 +43,39 @@ export async function checkProcessedInvoice(
   invoiceNumber: string
 ): Promise<boolean> {
   requireEntityId(entityId, "verificar invoice log");
-  try{
+  try {
     const uid = getAuth().currentUser?.uid;
     if (!invoiceNumber || !uid) return false;
 
-    const ref = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
-    const snap = await getDoc(ref);
+    // 1️⃣ Fast check: is there a log entry?
+    const logRef = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
+    const logSnap = await getDoc(logRef);
 
-    return snap.exists();
+    if (!logSnap.exists()) return false; // Never been logged → definitely not processed
+
+    // 2️⃣ Log exists — verify at least one journal entry still lives in Firestore.
+    //    If the invoice was deleted the entries are gone even though the log survived.
+    const normalized = normalizeInvoiceNumber(invoiceNumber);
+    const journalCol = collection(db, "entities", entityId, "journalEntries");
+    const q = query(
+      journalCol,
+      where("invoice_number_normalized", "==", normalized),
+      limit(1)
+    );
+    const journalSnap = await getDocs(q);
+
+    if (journalSnap.empty) {
+      // Stale log — clean it up silently so the invoice can be re-processed
+      console.warn("🧹 Stale invoiceLog found for", invoiceNumber, "— removing.");
+      try {
+        await writeBatch(db).delete(logRef).commit();
+      } catch {
+        // best-effort; if delete fails the main flow still unblocks
+      }
+      return false;
+    }
+
+    return true;
   } catch (err) {
     console.warn(
       "⚠️ checkProcessedInvoice failed, assuming NOT processed:",
@@ -131,19 +163,7 @@ export async function invoiceLogExists(
   entityId: string,
   invoiceNumber: string
 ): Promise<boolean> {
-  requireEntityId(entityId, "verificar invoice log");
-  try {
-    if (!invoiceNumber) return false;
-
-    const ref = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
-    const snap = await getDoc(ref);
-
-    return snap.exists();
-  } catch (err) {
-    console.warn(
-      "⚠️ invoiceLogExists failed, assuming NOT exists:",
-      err
-    );
-    return false;
-  }
+  // Delegate to checkProcessedInvoice so both functions share the same
+  // dual-check logic (log + live journal entry verification).
+  return checkProcessedInvoice(entityId, invoiceNumber);
 }

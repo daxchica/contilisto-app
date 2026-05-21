@@ -489,19 +489,18 @@ const stableJournal = useMemo(() =>
             const already = row.serie
               ? await checkProcessedInvoice(entityId, row.serie)
               : false;
-            if (already) alreadySaved.push(row.serie ?? row.issuerName ?? "?");
+            if (already) alreadySaved.push(row.serie ?? "?");
             else newRows.push(row);
           })
         );
 
-        if (alreadySaved.length > 0) {
-          const list = alreadySaved.slice(0, 10).join("\n  • ");
-          const more = alreadySaved.length > 10 ? `\n  … y ${alreadySaved.length - 10} más` : "";
-          if (newRows.length === 0) {
-            alert(`Todas las facturas del archivo ya están registradas:\n\n  • ${list}${more}\n\nNo hay facturas nuevas para procesar.`);
-            return;
-          }
-          alert(`Las siguientes ${alreadySaved.length} factura(s) ya están registradas y se omitirán:\n\n  • ${list}${more}\n\nSe procesarán las ${newRows.length} factura(s) nuevas.`);
+        if (newRows.length === 0) {
+          const skippedList = alreadySaved.slice(0, 10).map(s => `  • ${s}`).join("\n");
+          const skippedMore = alreadySaved.length > 10 ? `\n  … y ${alreadySaved.length - 10} más` : "";
+          alert(
+            `Todas las facturas del archivo ya están registradas:\n\n${skippedList}${skippedMore}\n\nNo hay facturas nuevas para procesar.`
+          );
+          return;
         }
 
         // Build one queue item per invoice so user reviews each individually
@@ -548,6 +547,28 @@ const stableJournal = useMemo(() =>
 
           queue.push({ entries, metadata });
         }
+
+        // ── Show pending-invoice summary and ask user to confirm before opening modals ──
+        const pendingLines = queue
+          .slice(0, 15)
+          .map(({ metadata: m }) => {
+            const row = newRows.find(r => r.serie === m.invoice_number);
+            const total = row ? `$${row.total.toFixed(2)}` : "";
+            return `  • ${m.invoice_number} · ${m.issuerName}${total ? ` · ${total}` : ""}`;
+          })
+          .join("\n");
+        const pendingMore = queue.length > 15 ? `\n  … y ${queue.length - 15} más` : "";
+
+        const skippedNote =
+          alreadySaved.length > 0
+            ? `\n\n(${alreadySaved.length} factura(s) ya registrada(s) serán omitidas)`
+            : "";
+
+        const confirmed = confirm(
+          `Se encontraron ${queue.length} factura(s) sin procesar:\n\n${pendingLines}${pendingMore}${skippedNote}\n\n¿Desea iniciar el procesamiento?`
+        );
+
+        if (!confirmed) return;
 
         setSriQueue(queue);
         setSriQueueIdx(0);

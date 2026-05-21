@@ -27,6 +27,7 @@ import {
 } from "./bankMovementService";
 
 import { requireEntityId } from "./requireEntityId";
+import { deleteInvoicesFromFirestoreLog } from "./firestoreLogService";
 import { requireNonEmpty } from "./requireNonEmpty";
 import { getNextJournalId } from "./journalCounterService";
 
@@ -767,6 +768,24 @@ export async function annulInvoiceByTransaction(
   }
 
   await batch.commit();
+
+  // ── Remove invoice log so the same invoice can be re-uploaded/re-processed ──
+  // Collect all unique invoice numbers referenced in this transaction.
+  const invoiceNumbers = Array.from(
+    new Set(
+      [
+        invoiceNumber,
+        ...entries.map((e) => e.invoice_number),
+      ].filter((n): n is string => Boolean(n?.trim()))
+    )
+  );
+
+  if (invoiceNumbers.length > 0) {
+    // Non-blocking: log cleanup failure must never prevent the delete from succeeding
+    deleteInvoicesFromFirestoreLog(entityId, invoiceNumbers).catch((err) =>
+      console.warn("⚠️ Failed to clean invoice log after annulment:", err)
+    );
+  }
 }
 
 // ============================================================================
