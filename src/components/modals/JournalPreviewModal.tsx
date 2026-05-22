@@ -154,9 +154,11 @@ export default function JournalPreviewModal({
   const [isPersonalExpense, setIsPersonalExpense] = useState(false);
   const [personalCategory, setPersonalCategory] = useState("Otros");
 
+  // Categorías oficiales del Formulario GP — SRI Ecuador (LORTI)
+  // Transporte y Entretenimiento NO son categorías reconocidas por el SRI.
   const PERSONAL_CATEGORIES = [
-    "Vestimenta", "Alimentación", "Salud", "Educación",
-    "Vivienda", "Transporte", "Entretenimiento", "Otros",
+    "Vivienda", "Salud", "Alimentación", "Educación",
+    "Vestimenta", "Turismo", "Otros",
   ];
 
   // Guarded close: warn user when they have confirmed entries but haven't

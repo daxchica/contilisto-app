@@ -16,16 +16,23 @@ import type { PersonalExpenseRecord } from "@/types/PersonalExpenseRecord";
    SRI CATEGORIES (Formulario de Gastos Personales — Decreto 374)
 ============================================================================= */
 
+/**
+ * Categorías oficiales del Formulario de Gastos Personales (Formulario GP)
+ * según la Ley Orgánica de Régimen Tributario Interno (LORTI) y
+ * resoluciones vigentes del SRI Ecuador.
+ *
+ * Nota: Estos gastos son NO DEDUCIBLES para la empresa (persona jurídica).
+ * Para la persona natural contribuyente, pueden aplicarse en el
+ * Formulario GP de declaración de impuesto a la renta personal.
+ */
 export const SRI_CATEGORIES = [
-  { key: "Vivienda",       label: "Vivienda",                  icon: "🏠", color: "blue"   },
-  { key: "Alimentación",   label: "Alimentación",              icon: "🍽️", color: "green"  },
-  { key: "Vestimenta",     label: "Vestimenta",                icon: "👗", color: "purple" },
-  { key: "Educación",      label: "Educación, Arte y Cultura", icon: "📚", color: "yellow" },
-  { key: "Salud",          label: "Salud",                     icon: "🏥", color: "red"    },
-  { key: "Turismo",        label: "Turismo",                   icon: "✈️", color: "cyan"   },
-  { key: "Transporte",     label: "Transporte",                icon: "🚗", color: "slate"  },
-  { key: "Entretenimiento",label: "Entretenimiento",           icon: "🎭", color: "pink"   },
-  { key: "Otros",          label: "Otros",                     icon: "📋", color: "gray"   },
+  { key: "Vivienda",     label: "Vivienda",                  icon: "🏠", color: "blue"   },
+  { key: "Salud",        label: "Salud",                     icon: "🏥", color: "red"    },
+  { key: "Alimentación", label: "Alimentación",              icon: "🍽️", color: "green"  },
+  { key: "Educación",    label: "Educación, Arte y Cultura", icon: "📚", color: "yellow" },
+  { key: "Vestimenta",   label: "Vestimenta",                icon: "👗", color: "purple" },
+  { key: "Turismo",      label: "Turismo Nacional",          icon: "✈️", color: "cyan"   },
+  { key: "Otros",        label: "Otros",                     icon: "📋", color: "gray"   },
 ] as const;
 
 export type SriCategoryKey = typeof SRI_CATEGORIES[number]["key"];
@@ -82,7 +89,9 @@ function parsePersonalTag(description: string): SriCategoryKey | null {
   const m = PERSONAL_TAG_RE.exec(description ?? "");
   if (!m) return null;
   const raw = m[1].trim();
-  // Map to known category key (case-insensitive, accent-tolerant)
+  // Map to official SRI category key (case-insensitive, accent-tolerant).
+  // Legacy tags like "Transporte" or "Entretenimiento" that were removed from
+  // the official list fall back to "Otros" automatically.
   const found = SRI_CATEGORIES.find(
     (c) => c.key.toLowerCase() === raw.toLowerCase()
   );
@@ -251,6 +260,9 @@ export function buildPersonalExpenseReportFromRecords(
   const startOfYear = `${year}-01-01`;
   const endOfYear   = `${year}-12-31`;
 
+  // Normalize: categories removed from the official list map to "Otros"
+  const validCategoryKeys = new Set(SRI_CATEGORIES.map((c) => c.key));
+
   const lines: PersonalExpenseLine[] = records
     .filter((r) => r.date >= startOfYear && r.date <= endOfYear && r.total > 0)
     .map((r) => ({
@@ -259,7 +271,7 @@ export function buildPersonalExpenseReportFromRecords(
       invoiceNumber: r.invoice_number,
       supplierName:  r.supplierName,
       supplierRUC:   r.supplierRUC,
-      category:      r.category,
+      category:      (validCategoryKeys.has(r.category) ? r.category : "Otros") as SriCategoryKey,
       amount:        n2(r.amount),
       iva:           n2(r.iva),
       total:         n2(r.total),

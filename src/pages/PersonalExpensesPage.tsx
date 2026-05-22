@@ -58,10 +58,10 @@ function exportPDF(report: PersonalExpenseReport, entityName: string, entityRuc:
   doc.text(`RUC: ${entityRuc}`, 40, 58);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text("REPORTE DE GASTOS PERSONALES DEDUCIBLES", 40, 75);
+  doc.text("GASTOS PERSONALES — NO DEDUCIBLES PARA LA EMPRESA", 40, 75);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Período: Año ${report.year}  ·  Conforme Formulario SRI GP`, 40, 88);
+  doc.text(`Período: Año ${report.year}  ·  Categorías Formulario GP — SRI Ecuador`, 40, 88);
 
   let y = 105;
 
@@ -121,10 +121,20 @@ function exportPDF(report: PersonalExpenseReport, entityName: string, entityRuc:
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.text(
-    `TOTAL GASTOS PERSONALES DEDUCIBLES:  $${USD(report.grandTotal)}   (incl. IVA: $${USD(report.grandTotalWithIva)})`,
+    `TOTAL GASTOS PERSONALES:  $${USD(report.grandTotal)}   (incl. IVA: $${USD(report.grandTotalWithIva)})`,
     40,
     y + 10
   );
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    "Nota: Estos gastos son NO DEDUCIBLES para la empresa (persona jurídica) conforme LORTI. " +
+    "Para uso en declaración personal del contribuyente (Formulario GP).",
+    40,
+    y + 24
+  );
+  doc.setTextColor(0, 0, 0);
 
   doc.save(`gastos-personales-${report.year}.pdf`);
 }
@@ -337,9 +347,9 @@ export default function PersonalExpensesPage() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="bg-white border-b px-6 py-4 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900">Reporte de Gastos Personales</h1>
+          <h1 className="text-lg font-bold text-gray-900">Gastos Personales</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            {entityName} · Gastos deducibles según normativa SRI Ecuador
+            {entityName} · Gastos <span className="font-semibold text-red-600">no deducibles</span> para la empresa · Categorías Formulario GP — SRI Ecuador
           </p>
         </div>
 
@@ -386,7 +396,7 @@ export default function PersonalExpensesPage() {
         {loading && (
           <div className="text-center py-16 text-gray-500">
             <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-3" />
-            Cargando asientos contables…
+            Cargando gastos personales…
           </div>
         )}
 
@@ -413,8 +423,8 @@ export default function PersonalExpensesPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
               <KpiCard label="Categorías con gastos" value={report.groups.length} isCount />
               <KpiCard label="Total comprobantes" value={report.lineCount} isCount />
-              <KpiCard label="Base deducible" value={report.grandTotal} />
-              <KpiCard label="Total incl. IVA" value={report.grandTotalWithIva} highlight />
+              <KpiCard label="Total base gastos" value={report.grandTotal} />
+              <KpiCard label="Total con IVA" value={report.grandTotalWithIva} highlight />
             </div>
 
             {/* SRI category summary bar */}
