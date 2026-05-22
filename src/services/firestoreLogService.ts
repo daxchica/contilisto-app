@@ -13,6 +13,7 @@ import {
   limit,
 } from "firebase/firestore";
 import { requireEntityId } from "./requireEntityId";
+import { personalExpenseExistsForInvoice } from "./personalExpenseStorageService";
 
 /** Same normalization used in journalService so lookups match */
 function normalizeInvoiceNumber(n: string): string {
@@ -65,6 +66,11 @@ export async function checkProcessedInvoice(
     const journalSnap = await getDocs(q);
 
     if (journalSnap.empty) {
+      // No regular journal entry — check personalExpenses collection too.
+      // (personal-expense invoices are stored there, not in journalEntries)
+      const inPersonal = await personalExpenseExistsForInvoice(entityId, normalized);
+      if (inPersonal) return true;
+
       // Stale log — clean it up silently so the invoice can be re-processed
       console.warn("🧹 Stale invoiceLog found for", invoiceNumber, "— removing.");
       try {

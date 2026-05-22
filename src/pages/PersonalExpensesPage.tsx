@@ -9,13 +9,17 @@ import autoTable from "jspdf-autotable";
 
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
+import { fetchPersonalExpenses } from "@/services/personalExpenseStorageService";
 import {
   buildPersonalExpenseReport,
+  buildPersonalExpenseReportFromRecords,
   SRI_CATEGORIES,
   type PersonalExpenseReport,
   type PersonalExpenseGroup,
+  type PersonalExpenseLine,
 } from "@/services/personalExpensesService";
 import type { JournalEntry } from "@/types/JournalEntry";
+import type { PersonalExpenseRecord } from "@/types/PersonalExpenseRecord";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -226,29 +230,82 @@ export default function PersonalExpensesPage() {
   const entityRuc  = selectedEntity?.ruc  ?? "";
 
   const [year, setYear]       = useState(currentYear);
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  // Legacy: old personal expense entries stored in journalEntries
+  const [legacyEntries, setLegacyEntries] = useState<JournalEntry[]>([]);
+  // New: dedicated personalExpenses collection
+  const [peRecords, setPeRecords] = useState<PersonalExpenseRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // Load journal entries
+  // Load both sources in parallel
   useEffect(() => {
     if (!entityId) return;
     let cancelled = false;
     setLoading(true);
     setError("");
-    fetchJournalEntries(entityId)
-      .then((data) => { if (!cancelled) setEntries(Array.isArray(data) ? data : []); })
+    Promise.all([
+      fetchJournalEntries(entityId),
+      fetchPersonalExpenses(entityId),
+    ])
+      .then(([journal, records]) => {
+        if (cancelled) return;
+        setLegacyEntries(Array.isArray(journal) ? journal : []);
+        setPeRecords(Array.isArray(records) ? records : []);
+      })
       .catch((err) => { if (!cancelled) setError(err?.message ?? "Error al cargar datos"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [entityId]);
 
+  /** Merge the two report sources into one unified PersonalExpenseReport */
   const report = useMemo<PersonalExpenseReport | null>(() => {
-    if (!entries.length) return null;
-    try { return buildPersonalExpenseReport(entries, entityId, year); }
-    catch { return null; }
-  }, [entries, entityId, year]);
+    try {
+      // Old entries tagged [Personal: X] that live in journalEntries
+      const legacyReport = buildPersonalExpenseReport(legacyEntries, entityId, year);
+      // New entries from dedicated personalExpenses collection
+      const newReport    = buildPersonalExpenseReportFromRecords(peRecords, year);
+
+      if (!legacyReport.lineCount && !newReport.lineCount) return null;
+
+      // Merge line arrays per category
+      const n2 = (v: number) => Number(Number(v).toFixed(2));
+      const mergedGroups = SRI_CATEGORIES.map((cat) => {
+        const lg = legacyReport.groups.find((g) => g.category === cat.key);
+        const ng = newReport.groups.find((g) => g.category === cat.key);
+        const lines: PersonalExpenseLine[] = [
+          ...(lg?.lines ?? []),
+          ...(ng?.lines ?? []),
+        ].sort((a, b) => a.date.localeCompare(b.date));
+        if (!lines.length) return null;
+        return {
+          category:      cat.key,
+          label:         cat.label,
+          icon:          cat.icon,
+          color:         cat.color,
+          lines,
+          subtotal:      n2(lines.reduce((s, l) => s + l.amount, 0)),
+          subtotalIva:   n2(lines.reduce((s, l) => s + l.iva, 0)),
+          subtotalTotal: n2(lines.reduce((s, l) => s + l.total, 0)),
+        };
+      }).filter(Boolean) as PersonalExpenseGroup[];
+
+      const grandTotal        = n2(mergedGroups.reduce((s, g) => s + g.subtotal, 0));
+      const grandTotalIva     = n2(mergedGroups.reduce((s, g) => s + g.subtotalIva, 0));
+      const grandTotalWithIva = n2(mergedGroups.reduce((s, g) => s + g.subtotalTotal, 0));
+
+      return {
+        year,
+        groups: mergedGroups,
+        grandTotal,
+        grandTotalIva,
+        grandTotalWithIva,
+        lineCount: mergedGroups.reduce((s, g) => s + g.lines.length, 0),
+      };
+    } catch {
+      return null;
+    }
+  }, [legacyEntries, peRecords, entityId, year]);
 
   // Expand all by default when report loads
   useEffect(() => {

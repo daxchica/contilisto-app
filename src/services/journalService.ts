@@ -30,6 +30,13 @@ import { requireEntityId } from "./requireEntityId";
 import { deleteInvoicesFromFirestoreLog } from "./firestoreLogService";
 import { requireNonEmpty } from "./requireNonEmpty";
 import { getNextJournalId } from "./journalCounterService";
+import {
+  savePersonalExpenseRecord,
+  deletePersonalExpensesByTransaction,
+} from "./personalExpenseStorageService";
+import { SRI_CATEGORIES } from "./personalExpensesService";
+import type { PersonalExpenseRecord } from "@/types/PersonalExpenseRecord";
+import type { SriCategoryKey } from "./personalExpensesService";
 
 import { updateAccountBalancesFromJournalEntries } from "./accountBalanceService";
 
@@ -77,6 +84,97 @@ function groupHasExpenseSignals(group: JournalEntry[]) {
 
 function normalizeInvoiceNumber(n?: string) {
   return String(n ?? "").replace(/\s+/g, "").replace(/-/g, "").trim();
+}
+
+// ============================================================================
+// PERSONAL EXPENSE DETECTION + EXTRACTION
+// ============================================================================
+
+const PERSONAL_TAG_RE = /^\[Personal:\s*([^\]]+)\]/i;
+
+/** Returns true if ANY entry in the transaction is tagged [Personal: X] */
+function isPersonalExpenseTransaction(entries: JournalEntry[]): boolean {
+  return entries.some((e) => PERSONAL_TAG_RE.test(e.description ?? ""));
+}
+
+/** Extracts a PersonalExpenseRecord from a set of journal entries.
+ *  Must only be called when isPersonalExpenseTransaction() returns true. */
+function extractPersonalExpenseRecord(
+  entries: JournalEntry[],
+  entityId: string,
+  uid: string
+): PersonalExpenseRecord {
+  let category: SriCategoryKey = "Otros";
+  let rawDescription = "";
+
+  for (const e of entries) {
+    const m = PERSONAL_TAG_RE.exec(e.description ?? "");
+    if (m) {
+      const key = m[1].trim();
+      const found = SRI_CATEGORIES.find(
+        (c) => c.key.toLowerCase() === key.toLowerCase()
+      );
+      category = (found?.key ?? "Otros") as SriCategoryKey;
+      rawDescription = (e.description ?? "").replace(PERSONAL_TAG_RE, "").trim();
+      break;
+    }
+  }
+
+  // Base: sum of 5xx / 6xx debit lines
+  let amount = n2(
+    entries
+      .filter((e) => {
+        const code = norm(e.account_code);
+        return (code.startsWith("5") || code.startsWith("6")) && n2(e.debit) > 0;
+      })
+      .reduce((s, e) => s + n2(e.debit), 0)
+  );
+
+  // IVA: sum of 133xxx debit lines
+  const iva = n2(
+    entries
+      .filter((e) => norm(e.account_code).startsWith("133") && n2(e.debit) > 0)
+      .reduce((s, e) => s + n2(e.debit), 0)
+  );
+
+  // Fallback if no expense account lines (e.g. direct bank entry)
+  if (amount === 0) {
+    amount = n2(
+      entries
+        .filter((e) => {
+          const code = norm(e.account_code);
+          return (
+            n2(e.debit) > 0 &&
+            !code.startsWith("1") &&
+            !code.startsWith("133")
+          );
+        })
+        .reduce((s, e) => s + n2(e.debit), 0)
+    );
+  }
+
+  const first = entries[0];
+  const invoiceNumber = first.invoice_number ?? "";
+
+  return {
+    id: crypto.randomUUID(),
+    entityId,
+    uid,
+    transactionId: first.transactionId,
+    invoice_number: invoiceNumber,
+    invoice_number_normalized: invoiceNumber.replace(/\s+/g, "").toUpperCase(),
+    date: String(first.date ?? "").slice(0, 10),
+    category,
+    description: rawDescription,
+    supplierName:
+      first.supplier_name ?? first.issuerName ?? first.customer_name ?? "-",
+    supplierRUC:
+      first.supplier_ruc ?? first.issuerRUC ?? first.buyerRUC ?? "-",
+    amount,
+    iva,
+    total: n2(amount + iva),
+    createdAt: Date.now(),
+  };
 }
 
 // ============================================================================
@@ -241,6 +339,16 @@ export async function saveJournalEntries(
 
   if (Math.abs(totalDebit - totalCredit) > 0.01) {
     throw new Error("Transacción no balanceada");
+  }
+
+  // ── Personal expense early-exit: route to dedicated collection ────────────
+  // Transactions tagged [Personal: X] must NOT enter journalEntries so they
+  // never affect financial statements, account balances, or tax ledgers.
+  if (isPersonalExpenseTransaction(entries)) {
+    const record = extractPersonalExpenseRecord(entries, entityId, userIdSafe);
+    await savePersonalExpenseRecord(entityId, record);
+    // Return the entries as-is so the caller (preview modal) can log the invoice
+    return entries;
   }
 
   const isPayment = entries.some(e => e.transactionType === "payment");
@@ -768,6 +876,11 @@ export async function annulInvoiceByTransaction(
   }
 
   await batch.commit();
+
+  // ── Also delete from personalExpenses (transaction may be there instead) ──
+  deletePersonalExpensesByTransaction(entityId, transactionId).catch((err) =>
+    console.warn("⚠️ Failed to clean personalExpenses after annulment:", err)
+  );
 
   // ── Remove invoice log so the same invoice can be re-uploaded/re-processed ──
   // Collect all unique invoice numbers referenced in this transaction.

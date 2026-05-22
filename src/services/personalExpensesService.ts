@@ -1,11 +1,16 @@
 // ============================================================================
 // src/services/personalExpensesService.ts
 // CONTILISTO — Reporte de Gastos Personales (SRI Ecuador)
-// Parses journal entries tagged [Personal: Category] and groups them
-// by SRI-required expense category for annual deduction reporting.
+//
+// Two entry points:
+//  • buildPersonalExpenseReport()         — legacy: parses old JournalEntries
+//                                           tagged [Personal: X] (backward compat)
+//  • buildPersonalExpenseReportFromRecords() — new: reads PersonalExpenseRecord[]
+//                                              from the dedicated Firestore collection
 // ============================================================================
 
 import type { JournalEntry } from "@/types/JournalEntry";
+import type { PersonalExpenseRecord } from "@/types/PersonalExpenseRecord";
 
 /* =============================================================================
    SRI CATEGORIES (Formulario de Gastos Personales — Decreto 374)
@@ -219,6 +224,69 @@ export function buildPersonalExpenseReport(
       subtotalTotal: n2(catLines.reduce((s, l) => s + l.total, 0)),
     };
   }).filter((g) => g.lines.length > 0); // hide empty categories
+
+  const grandTotal        = n2(groups.reduce((s, g) => s + g.subtotal, 0));
+  const grandTotalIva     = n2(groups.reduce((s, g) => s + g.subtotalIva, 0));
+  const grandTotalWithIva = n2(groups.reduce((s, g) => s + g.subtotalTotal, 0));
+
+  return {
+    year,
+    groups,
+    grandTotal,
+    grandTotalIva,
+    grandTotalWithIva,
+    lineCount: lines.length,
+  };
+}
+
+/* =============================================================================
+   NEW PATH — build report directly from PersonalExpenseRecord[]
+   (records come from entities/{id}/personalExpenses collection)
+============================================================================= */
+
+export function buildPersonalExpenseReportFromRecords(
+  records: PersonalExpenseRecord[],
+  year: number
+): PersonalExpenseReport {
+  const startOfYear = `${year}-01-01`;
+  const endOfYear   = `${year}-12-31`;
+
+  const lines: PersonalExpenseLine[] = records
+    .filter((r) => r.date >= startOfYear && r.date <= endOfYear && r.total > 0)
+    .map((r) => ({
+      transactionId: r.transactionId,
+      date:          r.date,
+      invoiceNumber: r.invoice_number,
+      supplierName:  r.supplierName,
+      supplierRUC:   r.supplierRUC,
+      category:      r.category,
+      amount:        n2(r.amount),
+      iva:           n2(r.iva),
+      total:         n2(r.total),
+      description:   r.description,
+    }));
+
+  lines.sort((a, b) => {
+    const catOrder =
+      SRI_CATEGORIES.findIndex((c) => c.key === a.category) -
+      SRI_CATEGORIES.findIndex((c) => c.key === b.category);
+    if (catOrder !== 0) return catOrder;
+    return a.date.localeCompare(b.date);
+  });
+
+  const groups: PersonalExpenseGroup[] = SRI_CATEGORIES.map((cat) => {
+    const catLines = lines.filter((l) => l.category === cat.key);
+    return {
+      category:      cat.key as SriCategoryKey,
+      label:         cat.label,
+      icon:          cat.icon,
+      color:         cat.color,
+      lines:         catLines,
+      subtotal:      n2(catLines.reduce((s, l) => s + l.amount, 0)),
+      subtotalIva:   n2(catLines.reduce((s, l) => s + l.iva, 0)),
+      subtotalTotal: n2(catLines.reduce((s, l) => s + l.total, 0)),
+    };
+  }).filter((g) => g.lines.length > 0);
 
   const grandTotal        = n2(groups.reduce((s, g) => s + g.subtotal, 0));
   const grandTotalIva     = n2(groups.reduce((s, g) => s + g.subtotalIva, 0));
