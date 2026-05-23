@@ -47,6 +47,7 @@ import {
 } from "@/services/journalService";
 
 import { logProcessedInvoice, checkProcessedInvoice } from "@/services/firestoreLogService";
+import { migratePersonalExpensesFromJournal } from "@/services/personalExpenseMigrationService";
 import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
 import { extractInvoiceVision } from "@/services/extractInvoiceVisionService";
 import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
@@ -217,6 +218,28 @@ const stableJournal = useMemo(() =>
     setPreviewMetadata(null);
     setSelectedEntries([]);
     hintCache.current.clear();
+  }, [entityId]);
+
+  // --------------------------------------------------------------------------
+  // ONE-TIME MIGRATION: personal expense entries → personalExpenses collection
+  // Runs silently on entity load; guarded by a Firestore flag so it only
+  // executes once per entity even if the page is re-mounted many times.
+  // --------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!entityId || !userIdSafe) return;
+
+    migratePersonalExpensesFromJournal(entityId, userIdSafe)
+      .then((count) => {
+        if (count > 0) {
+          // Refresh journal table to reflect removed personal entries
+          setLogRefreshTrigger((v) => v + 1);
+        }
+      })
+      .catch((err) =>
+        console.warn("⚠️ Personal expense migration failed:", err)
+      );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityId]);
 
   // --------------------------------------------------------------------------
