@@ -45,6 +45,11 @@ function norm(s: string) {
     .trim();
 }
 
+/** Strip dots so "5.02.02" matches stored code "502020101" and vice-versa. */
+function normCode(s: string) {
+  return (s || "").replace(/\./g, "").trim();
+}
+
 function getCode(a: any): string {
   return String(a?.code ?? "").trim();
 }
@@ -82,6 +87,9 @@ export default function AccountPicker({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
+
+  /** True while the pointer is held down inside the dropdown — suppresses blur-close. */
+  const suppressBlurRef = useRef(false);
 
   const [open, setOpen] = useState(false);
 
@@ -150,10 +158,11 @@ export default function AccountPicker({
 
     const nq = norm(query);
 
+    const nqCode = normCode(nq); // dot-stripped for code search
     return mergedAccounts
       .filter(a =>
         norm(a.name).includes(nq) ||
-        a.code.includes(nq)
+        normCode(a.code).includes(nqCode)
       )
       .slice(0, limit);
 
@@ -267,7 +276,11 @@ export default function AccountPicker({
       role="listbox"
       style={dropdownStyle}
       className="bg-white border rounded shadow-lg max-h-60 overflow-auto"
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        suppressBlurRef.current = true; // prevent onBlur from closing before pick fires
+      }}
+      onMouseUp={() => { suppressBlurRef.current = false; }}
     >
 
       {filtered.map((acc, i) => (
@@ -332,6 +345,14 @@ export default function AccountPicker({
         onFocus={() => {
           setQuery("");
           setOpen(true);
+        }}
+        onBlur={() => {
+          // Give onMouseDown on list items time to fire before we close.
+          // If suppressBlurRef is set, a dropdown item is being clicked — skip.
+          if (suppressBlurRef.current) return;
+          setTimeout(() => {
+            if (!suppressBlurRef.current) setOpen(false);
+          }, 150);
         }}
         onChange={(e) => {
           setQuery(e.target.value);
