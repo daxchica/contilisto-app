@@ -48,40 +48,71 @@ export async function checkProcessedInvoice(
     const uid = getAuth().currentUser?.uid;
     if (!invoiceNumber || !uid) return false;
 
-    // 1️⃣ Fast check: is there a log entry?
-    const logRef = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
+    const normalized = normalizeInvoiceNumber(invoiceNumber);
+    const logRef     = doc(db, "entities", entityId, "invoiceLogs", invoiceNumber);
+
+    // ── Helper: check live journal entries ───────────────────────────────────
+    // Queries both invoice_number_normalized (new entries) AND invoice_number
+    // (old entries saved before the normalized field was introduced) in parallel
+    // so invoices processed with either schema are detected correctly.
+    async function hasLiveJournalEntry(): Promise<boolean> {
+      const journalCol = collection(db, "entities", entityId, "journalEntries");
+      const [byNormalized, byRaw] = await Promise.all([
+        getDocs(query(journalCol, where("invoice_number_normalized", "==", normalized), limit(1))),
+        getDocs(query(journalCol, where("invoice_number", "==", invoiceNumber), limit(1))),
+      ]);
+      return !byNormalized.empty || !byRaw.empty;
+    }
+
+    // ── Helper: check personalExpenses ───────────────────────────────────────
+    async function hasPersonalExpenseEntry(): Promise<boolean> {
+      return personalExpenseExistsForInvoice(entityId, normalized);
+    }
+
+    // 1️⃣ Fast path: log exists → verify a live entry still backs it up
     const logSnap = await getDoc(logRef);
 
-    if (!logSnap.exists()) return false; // Never been logged → definitely not processed
+    if (logSnap.exists()) {
+      const liveJournal  = await hasLiveJournalEntry();
+      if (liveJournal) return true;
 
-    // 2️⃣ Log exists — verify at least one journal entry still lives in Firestore.
-    //    If the invoice was deleted the entries are gone even though the log survived.
-    const normalized = normalizeInvoiceNumber(invoiceNumber);
-    const journalCol = collection(db, "entities", entityId, "journalEntries");
-    const q = query(
-      journalCol,
-      where("invoice_number_normalized", "==", normalized),
-      limit(1)
-    );
-    const journalSnap = await getDocs(q);
+      const livePersonal = await hasPersonalExpenseEntry();
+      if (livePersonal) return true;
 
-    if (journalSnap.empty) {
-      // No regular journal entry — check personalExpenses collection too.
-      // (personal-expense invoices are stored there, not in journalEntries)
-      const inPersonal = await personalExpenseExistsForInvoice(entityId, normalized);
-      if (inPersonal) return true;
-
-      // Stale log — clean it up silently so the invoice can be re-processed
+      // Stale log (entry was deleted) — remove it so the invoice can be re-processed
       console.warn("🧹 Stale invoiceLog found for", invoiceNumber, "— removing.");
-      try {
-        await writeBatch(db).delete(logRef).commit();
-      } catch {
-        // best-effort; if delete fails the main flow still unblocks
-      }
+      try { await writeBatch(db).delete(logRef).commit(); } catch { /* best-effort */ }
       return false;
     }
 
-    return true;
+    // 2️⃣ No log — the invoice may have been processed before the logging system
+    //    was in place (or the log was manually removed). Check live data directly.
+    const liveJournal = await hasLiveJournalEntry();
+    if (liveJournal) {
+      // Self-heal: write the missing log so future checks hit the fast path
+      try {
+        await setDoc(
+          logRef,
+          { entityId, uid, invoice_number: invoiceNumber, createdAt: serverTimestamp() },
+          { merge: true }
+        );
+      } catch { /* non-critical */ }
+      return true;
+    }
+
+    const livePersonal = await hasPersonalExpenseEntry();
+    if (livePersonal) {
+      try {
+        await setDoc(
+          logRef,
+          { entityId, uid, invoice_number: invoiceNumber, createdAt: serverTimestamp() },
+          { merge: true }
+        );
+      } catch { /* non-critical */ }
+      return true;
+    }
+
+    return false; // Truly not yet processed
   } catch (err) {
     console.warn(
       "⚠️ checkProcessedInvoice failed, assuming NOT processed:",
