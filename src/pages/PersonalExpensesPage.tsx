@@ -3,13 +3,15 @@
 // CONTILISTO — Reporte de Gastos Personales (SRI Ecuador)
 // ============================================================================
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getAuth } from "firebase/auth";
 
 import { useSelectedEntity } from "@/context/SelectedEntityContext";
 import { fetchJournalEntries } from "@/services/journalService";
 import { fetchPersonalExpenses } from "@/services/personalExpenseStorageService";
+import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import {
   buildPersonalExpenseReport,
   buildPersonalExpenseReportFromRecords,
@@ -18,8 +20,10 @@ import {
   type PersonalExpenseGroup,
   type PersonalExpenseLine,
 } from "@/services/personalExpensesService";
+import type { Account } from "@/types/AccountTypes";
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { PersonalExpenseRecord } from "@/types/PersonalExpenseRecord";
+import ReclassifyExpenseModal from "@/components/modals/ReclassifyExpenseModal";
 
 /* -------------------------------------------------------------------------- */
 /* HELPERS                                                                    */
@@ -143,10 +147,12 @@ function exportPDF(report: PersonalExpenseReport, entityName: string, entityRuc:
 /* CATEGORY GROUP CARD                                                        */
 /* -------------------------------------------------------------------------- */
 
-function GroupCard({ group, expanded, onToggle }: {
+function GroupCard({ group, expanded, onToggle, onReclassify, reclassifiableIds }: {
   group: PersonalExpenseGroup;
   expanded: boolean;
   onToggle: () => void;
+  onReclassify?: (transactionId: string) => void;
+  reclassifiableIds?: Set<string>;
 }) {
   const c = COLOR_MAP[group.color] ?? COLOR_MAP.gray;
 
@@ -188,6 +194,7 @@ function GroupCard({ group, expanded, onToggle }: {
                 <th className="text-right px-4 py-2">Base</th>
                 <th className="text-right px-4 py-2">IVA</th>
                 <th className="text-right px-4 py-2">Total</th>
+                {onReclassify && <th className="px-3 py-2" />}
               </tr>
             </thead>
             <tbody>
@@ -207,6 +214,21 @@ function GroupCard({ group, expanded, onToggle }: {
                     {line.iva > 0 ? `$${USD(line.iva)}` : "—"}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">${USD(line.total)}</td>
+                  {onReclassify && (
+                    <td className="px-3 py-2 text-center">
+                      {reclassifiableIds?.has(line.transactionId) ? (
+                        <button
+                          title="Reclasificar como gasto empresarial"
+                          onClick={() => onReclassify(line.transactionId)}
+                          className="text-[10px] font-medium px-2 py-1 rounded border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 whitespace-nowrap transition"
+                        >
+                          🔄 Reclasificar
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-gray-300" title="Requiere migración previa">—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -239,16 +261,28 @@ export default function PersonalExpensesPage() {
   const entityName = selectedEntity?.name ?? "";
   const entityRuc  = selectedEntity?.ruc  ?? "";
 
+  const uid = getAuth().currentUser?.uid ?? "";
+
   const [year, setYear]       = useState(currentYear);
   // Legacy: old personal expense entries stored in journalEntries
   const [legacyEntries, setLegacyEntries] = useState<JournalEntry[]>([]);
   // New: dedicated personalExpenses collection
   const [peRecords, setPeRecords] = useState<PersonalExpenseRecord[]>([]);
+  const [accounts, setAccounts]   = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // Load both sources in parallel
+  // Reclassify modal
+  const [reclassifyRecord, setReclassifyRecord] = useState<PersonalExpenseRecord | null>(null);
+
+  // Set of transactionIds backed by a personalExpenses record (reclassifiable)
+  const reclassifiableIds = useMemo(
+    () => new Set(peRecords.map((r) => r.transactionId)),
+    [peRecords]
+  );
+
+  // Load both expense sources + chart of accounts in parallel
   useEffect(() => {
     if (!entityId) return;
     let cancelled = false;
@@ -257,16 +291,30 @@ export default function PersonalExpensesPage() {
     Promise.all([
       fetchJournalEntries(entityId),
       fetchPersonalExpenses(entityId),
+      getEffectiveAccountPlan(entityId),
     ])
-      .then(([journal, records]) => {
+      .then(([journal, records, plan]) => {
         if (cancelled) return;
         setLegacyEntries(Array.isArray(journal) ? journal : []);
         setPeRecords(Array.isArray(records) ? records : []);
+        setAccounts(plan?.effectiveAccounts ?? []);
       })
       .catch((err) => { if (!cancelled) setError(err?.message ?? "Error al cargar datos"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [entityId]);
+
+  // Open reclassify modal for a given transactionId
+  const handleReclassify = useCallback((transactionId: string) => {
+    const record = peRecords.find((r) => r.transactionId === transactionId) ?? null;
+    setReclassifyRecord(record);
+  }, [peRecords]);
+
+  // After successful reclassification: remove from local state and close modal
+  const handleReclassifySuccess = useCallback((transactionId: string) => {
+    setPeRecords((prev) => prev.filter((r) => r.transactionId !== transactionId));
+    setReclassifyRecord(null);
+  }, []);
 
   /** Merge the two report sources into one unified PersonalExpenseReport */
   const report = useMemo<PersonalExpenseReport | null>(() => {
@@ -471,6 +519,8 @@ export default function PersonalExpensesPage() {
                       [group.category]: !prev[group.category],
                     }))
                   }
+                  onReclassify={handleReclassify}
+                  reclassifiableIds={reclassifiableIds}
                 />
               ))}
             </div>
@@ -498,6 +548,18 @@ export default function PersonalExpensesPage() {
           </>
         )}
       </div>
+
+      {/* ── Reclassify modal ───────────────────────────────────────────── */}
+      {reclassifyRecord && (
+        <ReclassifyExpenseModal
+          record={reclassifyRecord}
+          entityId={entityId}
+          uid={uid}
+          accounts={accounts}
+          onClose={() => setReclassifyRecord(null)}
+          onSuccess={handleReclassifySuccess}
+        />
+      )}
     </div>
   );
 }
