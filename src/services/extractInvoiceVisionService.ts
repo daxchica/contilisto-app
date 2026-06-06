@@ -19,9 +19,22 @@ type VisionEntry = {
   source?: string;
 };
 
+export interface RetentionLineVision {
+  taxCode:        string;
+  retentionCode:  string;
+  baseAmount:     number;
+  percentage:     number;
+  retainedAmount: number;
+  invoiceNumber:  string;
+  invoiceDate:    string;
+}
+
 export interface ExtractedInvoiceResponse {
   success: boolean;
   invoiceType: "sale" | "expense";
+
+  /** True when the document is a Comprobante de Retención, not an invoice */
+  isRetention?: boolean;
 
   invoiceIdentitySource?: "sri-authorization";
 
@@ -36,15 +49,31 @@ export interface ExtractedInvoiceResponse {
   buyerName?: string;
   buyerRUC?: string;
 
+  /** Sujeto retenido RUC (only when isRetention=true) */
+  supplierRUC?: string;
+  /** Sujeto retenido name (only when isRetention=true) */
+  supplierName?: string;
+
   invoiceDate?: string;
   invoice_number?: string;
   authorizationNumber?: string;
+
+  /** Retention cert number (only when isRetention=true) */
+  certNumber?: string;
+  issueDate?:  string;
+  authDate?:   string;
 
   taxableBase?: number;
   subtotal15?: number;
   subtotal0?: number;
   iva?: number;
   total?: number;
+
+  /** Retention lines (only when isRetention=true) */
+  retentions?:    RetentionLineVision[];
+  totalRenta?:    number;
+  totalIVA?:      number;
+  totalRetained?: number;
 
   concepto?: string;
   ocr_text?: string;

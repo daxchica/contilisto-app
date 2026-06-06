@@ -18,6 +18,7 @@ import {
 
 import type { JournalEntry } from "@/types/JournalEntry";
 import type { Payable } from "@/types/Payable";
+import { defaultIRCode, defaultIVACode } from "@/constants/sriRetentionCodes";
 import type { AccountingDocument } from "@/types/AccountingDocument";
 
 import { upsertPayable, applyPayablePayment } from "./payablesService";
@@ -498,6 +499,11 @@ export async function createPayablePaymentJournalEntry(
     irPercent?: number | null;
     /** IVA retention percentage selected by the user (e.g. 30, 70, 100). */
     ivaPercent?: number | null;
+    /** Explicit SRI IR retention code selected by the user (e.g. "312", "303").
+     *  When provided this overrides the percentage-derived code. */
+    irCode?: string | null;
+    /** Explicit SRI IVA retention code selected by the user (e.g. "3", "7"). */
+    ivaCode?: string | null;
   }
 ) {
 
@@ -510,6 +516,8 @@ export async function createPayablePaymentJournalEntry(
   const invoiceIVA   = n2(options?.invoiceIVA  ?? 0);
   const irPercent    = options?.irPercent  ?? null;
   const ivaPercent   = options?.ivaPercent ?? null;
+  const irCode       = options?.irCode?.trim()  || null;
+  const ivaCode      = options?.ivaCode?.trim() || null;
 
   const amount = n2(amountPaid);
 
@@ -530,28 +538,8 @@ export async function createPayablePaymentJournalEntry(
     : `Pago fact. ${payable.invoiceNumber}`;
 
   // ── Build per-line retention detail (tax.retenciones[]) ─────────────────
-  // When irPercent is provided (user pressed a preset button), derive the
-  // authoritative base from retentionAmount / percent — this is more reliable
-  // than expenseBase which depends on how the original invoice was journaled.
-  // Resolve SRI retention code from percentage.
-  function resolveRentaCodeSri(pct: number): string {
-    if (pct === 1)    return "332";
-    if (pct === 1.75) return "333";
-    if (pct === 2)    return "334";
-    if (pct === 2.75) return "3440";
-    if (pct === 8)    return "344";
-    if (pct === 10)   return "303";
-    return "332";
-  }
-  function resolveIvaCodeSri(pct: number): string {
-    if (pct === 10)  return "440";
-    if (pct === 20)  return "440b";
-    if (pct === 30)  return "441";
-    if (pct === 50)  return "441b";
-    if (pct === 70)  return "442";
-    if (pct === 100) return "443";
-    return "441";
-  }
+  // When irCode is provided (user selected a concept), use it directly.
+  // Otherwise fall back to percentage-derived default code.
 
   const retenciones: Array<{
     taxType: "IVA" | "RENTA";
@@ -572,9 +560,11 @@ export async function createPayablePaymentJournalEntry(
           ? expenseBase
           : 0;
     const usedPct = pct ?? (base > 0 ? n2((retentionIR / base) * 100) : 0);
+    // Use explicit code if provided, otherwise derive from percentage
+    const usedCode = irCode ?? defaultIRCode(usedPct);
     retenciones.push({
       taxType: "RENTA",
-      code: resolveRentaCodeSri(usedPct),
+      code: usedCode,
       percentage: usedPct,
       base,
       amount: retentionIR,
@@ -590,9 +580,11 @@ export async function createPayablePaymentJournalEntry(
           ? invoiceIVA
           : 0;
     const usedPct = pct ?? (base > 0 ? n2((retentionIVA / base) * 100) : 0);
+    // Use explicit code if provided, otherwise derive from percentage
+    const usedCode = ivaCode ?? defaultIVACode(usedPct);
     retenciones.push({
       taxType: "IVA",
-      code: resolveIvaCodeSri(usedPct),
+      code: usedCode,
       percentage: usedPct,
       base,
       amount: retentionIVA,
@@ -815,6 +807,40 @@ export async function countMonthlyTransactions(entityId: string): Promise<number
     snap.docs.map(d => (d.data() as JournalEntry).transactionId).filter(Boolean)
   );
   return uniqueTxIds.size;
+}
+
+/**
+ * Find the Cuentas por Cobrar (AR) account code used on the original sale
+ * journal entry for a given invoice number.
+ *
+ * Looks for a journal entry with a DEBIT on an account starting with "101030"
+ * (standard NEC receivables prefix) that matches the invoice number.
+ * Returns null when no such entry exists.
+ */
+export async function findARAccountForInvoice(
+  entityId: string,
+  invoiceNumber: string,
+): Promise<{ code: string; name: string } | null> {
+  if (!entityId || !invoiceNumber) return null;
+
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
+  if (!normalized) return null;
+
+  const col = collection(db, "entities", entityId, "journalEntries");
+  const q   = query(col, where("invoice_number_normalized", "==", normalized), limit(50));
+  const snap = await getDocs(q);
+
+  for (const d of snap.docs) {
+    const e = d.data() as JournalEntry;
+    const code = (e.account_code ?? "").replace(/\./g, "");
+    const debit = Number(e.debit ?? 0);
+
+    // A debit on an account starting with 101030 = Cuentas por Cobrar
+    if (debit > 0 && code.startsWith("101030")) {
+      return { code, name: e.account_name ?? "Cuentas por Cobrar" };
+    }
+  }
+  return null;
 }
 
 export async function fetchJournalEntries(

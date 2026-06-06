@@ -5,6 +5,7 @@
 
 import type { TaxLedgerEntry } from "@/types/TaxLedgerEntry";
 import type { AtsDocument, AtsRetention } from "@/types/atsDocument";
+import { defaultIRCode, defaultIVACode } from "@/constants/sriRetentionCodes";
 
 function n2(value: unknown): number {
   const n = Number(value ?? 0);
@@ -212,52 +213,72 @@ export function buildAtsDocuments(
       entry.rentaRetentionPaid ?? entry.rentaRetentionReceived ?? 0
     );
 
+    // Prefer stored retenciones[] (set when user selected concept in payment
+    // modal, or when a retention XML was uploaded) — they carry the exact SRI
+    // code.  Fall back to percentage-based derivation for legacy entries.
+    const storedRetenciones = Array.isArray(entry.retenciones)
+      ? entry.retenciones
+      : [];
+
+    const storedIVA   = storedRetenciones.filter((r) => r.taxType === "IVA");
+    const storedRENTA = storedRetenciones.filter((r) => r.taxType === "RENTA");
+
     if (ivaRet > 0) {
       doc.ivaRetention = n2(doc.ivaRetention + ivaRet);
 
-      const ivaPercent = baseForRetention > 0
-        ? n2((ivaRet / baseForRetention) * 100)
-        : 0;
-      // Resolve IVA retention code from percentage (SRI catalogue)
-      const ivaCode =
-        ivaPercent === 10  ? "440"  :
-        ivaPercent === 20  ? "440b" :
-        ivaPercent === 30  ? "441"  :
-        ivaPercent === 50  ? "441b" :
-        ivaPercent === 70  ? "442"  :
-        ivaPercent === 100 ? "443"  : "441";
-
-      pushOrMergeRetention(doc.retenciones, {
-        taxType: "IVA",
-        code: ivaCode,
-        percentage: ivaPercent,
-        base: baseForRetention,
-        amount: ivaRet,
-      });
+      if (storedIVA.length > 0) {
+        // Use stored retention lines directly
+        for (const r of storedIVA) {
+          pushOrMergeRetention(doc.retenciones, {
+            taxType: "IVA",
+            code: r.code,
+            percentage: n2(r.percentage),
+            base: n2(r.base),
+            amount: n2(r.amount),
+          });
+        }
+      } else {
+        // Legacy: derive code from percentage
+        const ivaPercent = baseForRetention > 0
+          ? n2((ivaRet / baseForRetention) * 100)
+          : 0;
+        pushOrMergeRetention(doc.retenciones, {
+          taxType: "IVA",
+          code: defaultIVACode(ivaPercent),
+          percentage: ivaPercent,
+          base: baseForRetention,
+          amount: ivaRet,
+        });
+      }
     }
 
     if (rentaRet > 0) {
       doc.rentaRetention = n2(doc.rentaRetention + rentaRet);
 
-      const rentaPercent = baseForRetention > 0
-        ? n2((rentaRet / baseForRetention) * 100)
-        : 0;
-      // Resolve Renta retention code from percentage (SRI catalogue)
-      const rentaCode =
-        rentaPercent === 1    ? "332"  :
-        rentaPercent === 1.75 ? "333"  :
-        rentaPercent === 2    ? "334"  :
-        rentaPercent === 2.75 ? "3440" :
-        rentaPercent === 8    ? "344"  :
-        rentaPercent === 10   ? "303"  : "332";
-
-      pushOrMergeRetention(doc.retenciones, {
-        taxType: "RENTA",
-        code: rentaCode,
-        percentage: rentaPercent,
-        base: baseForRetention,
-        amount: rentaRet,
-      });
+      if (storedRENTA.length > 0) {
+        // Use stored retention lines directly
+        for (const r of storedRENTA) {
+          pushOrMergeRetention(doc.retenciones, {
+            taxType: "RENTA",
+            code: r.code,
+            percentage: n2(r.percentage),
+            base: n2(r.base),
+            amount: n2(r.amount),
+          });
+        }
+      } else {
+        // Legacy: derive code from percentage
+        const rentaPercent = baseForRetention > 0
+          ? n2((rentaRet / baseForRetention) * 100)
+          : 0;
+        pushOrMergeRetention(doc.retenciones, {
+          taxType: "RENTA",
+          code: defaultIRCode(rentaPercent),
+          percentage: rentaPercent,
+          base: baseForRetention,
+          amount: rentaRet,
+        });
+      }
     }
 
     if (Array.isArray(entry.sourceEntries)) {

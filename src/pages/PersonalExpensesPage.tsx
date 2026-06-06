@@ -147,14 +147,47 @@ function exportPDF(report: PersonalExpenseReport, entityName: string, entityRuc:
 /* CATEGORY GROUP CARD                                                        */
 /* -------------------------------------------------------------------------- */
 
-function GroupCard({ group, expanded, onToggle, onReclassify, reclassifiableIds }: {
+// Highlight matching text in a string
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+function GroupCard({ group, expanded, onToggle, onReclassify, reclassifiableIds, searchQuery }: {
   group: PersonalExpenseGroup;
   expanded: boolean;
   onToggle: () => void;
   onReclassify?: (transactionId: string) => void;
   reclassifiableIds?: Set<string>;
+  searchQuery?: string;
 }) {
   const c = COLOR_MAP[group.color] ?? COLOR_MAP.gray;
+  const q = (searchQuery ?? "").toLowerCase().trim();
+
+  // Filter lines by search query
+  const visibleLines = q
+    ? group.lines.filter((l) =>
+        l.date.toLowerCase().includes(q) ||
+        l.invoiceNumber.toLowerCase().includes(q) ||
+        l.supplierName.toLowerCase().includes(q) ||
+        l.supplierRUC.toLowerCase().includes(q) ||
+        l.description?.toLowerCase().includes(q) ||
+        l.total.toFixed(2).includes(q)
+      )
+    : group.lines;
+
+  const n2 = (v: number) => Number(Number(v).toFixed(2));
+  const filteredSubtotal      = n2(visibleLines.reduce((s, l) => s + l.amount, 0));
+  const filteredSubtotalIva   = n2(visibleLines.reduce((s, l) => s + l.iva,    0));
+  const filteredSubtotalTotal = n2(visibleLines.reduce((s, l) => s + l.total,  0));
 
   return (
     <div className={`rounded-xl border ${c.border} overflow-hidden shadow-sm`}>
@@ -167,14 +200,18 @@ function GroupCard({ group, expanded, onToggle, onReclassify, reclassifiableIds 
           <span className="text-xl">{group.icon}</span>
           <div className="text-left">
             <p className={`font-semibold text-sm ${c.text}`}>{group.label}</p>
-            <p className="text-xs text-gray-500">{group.lines.length} comprobante{group.lines.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-gray-500">
+              {q
+                ? `${visibleLines.length} de ${group.lines.length} comprobante${group.lines.length !== 1 ? "s" : ""}`
+                : `${group.lines.length} comprobante${group.lines.length !== 1 ? "s" : ""}`}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <p className={`font-bold text-base tabular-nums ${c.text}`}>${USD(group.subtotal)}</p>
-            {group.subtotalIva > 0 && (
-              <p className="text-xs text-gray-500">+ IVA ${USD(group.subtotalIva)}</p>
+            <p className={`font-bold text-base tabular-nums ${c.text}`}>${USD(filteredSubtotal)}</p>
+            {filteredSubtotalIva > 0 && (
+              <p className="text-xs text-gray-500">+ IVA ${USD(filteredSubtotalIva)}</p>
             )}
           </div>
           <span className={`text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`}>▾</span>
@@ -198,50 +235,62 @@ function GroupCard({ group, expanded, onToggle, onReclassify, reclassifiableIds 
               </tr>
             </thead>
             <tbody>
-              {group.lines.map((line, i) => (
-                <tr
-                  key={line.transactionId}
-                  className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                >
-                  <td className="px-4 py-2 tabular-nums text-gray-600">{line.date}</td>
-                  <td className="px-4 py-2 font-mono text-gray-700">{line.invoiceNumber}</td>
-                  <td className="px-4 py-2 text-gray-800 max-w-[200px] truncate" title={line.supplierName}>
-                    {line.supplierName}
+              {visibleLines.length === 0 ? (
+                <tr>
+                  <td colSpan={onReclassify ? 8 : 7} className="px-4 py-4 text-center text-gray-400 text-xs">
+                    Sin resultados para &ldquo;{searchQuery}&rdquo;
                   </td>
-                  <td className="px-3 py-2 text-gray-500 font-mono">{line.supplierRUC}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-800">${USD(line.amount)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-gray-500">
-                    {line.iva > 0 ? `$${USD(line.iva)}` : "—"}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">${USD(line.total)}</td>
-                  {onReclassify && (
-                    <td className="px-3 py-2 text-center">
-                      {reclassifiableIds?.has(line.transactionId) ? (
-                        <button
-                          title="Reclasificar como gasto empresarial"
-                          onClick={() => onReclassify(line.transactionId)}
-                          className="text-[10px] font-medium px-2 py-1 rounded border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 whitespace-nowrap transition"
-                        >
-                          🔄 Reclasificar
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-gray-300" title="Requiere migración previa">—</span>
-                      )}
-                    </td>
-                  )}
                 </tr>
-              ))}
+              ) : (
+                visibleLines.map((line, i) => (
+                  <tr
+                    key={line.transactionId}
+                    className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                  >
+                    <td className="px-4 py-2 tabular-nums text-gray-600">{line.date}</td>
+                    <td className="px-4 py-2 font-mono text-gray-700">
+                      <Highlight text={line.invoiceNumber} query={searchQuery ?? ""} />
+                    </td>
+                    <td className="px-4 py-2 text-gray-800 max-w-[200px] truncate" title={line.supplierName}>
+                      <Highlight text={line.supplierName} query={searchQuery ?? ""} />
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 font-mono">
+                      <Highlight text={line.supplierRUC} query={searchQuery ?? ""} />
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-800">${USD(line.amount)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-500">
+                      {line.iva > 0 ? `$${USD(line.iva)}` : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-gray-900">${USD(line.total)}</td>
+                    {onReclassify && (
+                      <td className="px-3 py-2 text-center">
+                        {reclassifiableIds?.has(line.transactionId) ? (
+                          <button
+                            title="Reclasificar como gasto empresarial"
+                            onClick={() => onReclassify(line.transactionId)}
+                            className="text-[10px] font-medium px-2 py-1 rounded border border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100 whitespace-nowrap transition"
+                          >
+                            🔄 Reclasificar
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-gray-300" title="Requiere migración previa">—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
             </tbody>
             <tfoot>
               <tr className={`border-t ${c.bg} font-semibold`}>
                 <td colSpan={4} className={`px-4 py-2 text-right text-xs uppercase ${c.text}`}>
                   Subtotal {group.label}
                 </td>
-                <td className={`px-4 py-2 text-right tabular-nums ${c.text}`}>${USD(group.subtotal)}</td>
+                <td className={`px-4 py-2 text-right tabular-nums ${c.text}`}>${USD(filteredSubtotal)}</td>
                 <td className={`px-4 py-2 text-right tabular-nums ${c.text}`}>
-                  {group.subtotalIva > 0 ? `$${USD(group.subtotalIva)}` : "—"}
+                  {filteredSubtotalIva > 0 ? `$${USD(filteredSubtotalIva)}` : "—"}
                 </td>
-                <td className={`px-4 py-2 text-right tabular-nums ${c.text}`}>${USD(group.subtotalTotal)}</td>
+                <td className={`px-4 py-2 text-right tabular-nums ${c.text}`}>${USD(filteredSubtotalTotal)}</td>
               </tr>
             </tfoot>
           </table>
@@ -272,6 +321,7 @@ export default function PersonalExpensesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Reclassify modal
   const [reclassifyRecord, setReclassifyRecord] = useState<PersonalExpenseRecord | null>(null);
@@ -373,6 +423,28 @@ export default function PersonalExpensesPage() {
     setExpanded(all);
   }, [report?.groups.length, year]);
 
+  // When a search query is active, auto-expand groups that have matching rows
+  useEffect(() => {
+    if (!report || !searchQuery.trim()) return;
+    const q = searchQuery.toLowerCase().trim();
+    setExpanded((prev) => {
+      const next = { ...prev };
+      report.groups.forEach((g) => {
+        const hasMatch = g.lines.some(
+          (l) =>
+            l.date.toLowerCase().includes(q) ||
+            l.invoiceNumber.toLowerCase().includes(q) ||
+            l.supplierName.toLowerCase().includes(q) ||
+            l.supplierRUC.toLowerCase().includes(q) ||
+            l.description?.toLowerCase().includes(q) ||
+            l.total.toFixed(2).includes(q)
+        );
+        if (hasMatch) next[g.category] = true;
+      });
+      return next;
+    });
+  }, [searchQuery, report]);
+
   const toggleAll = (open: boolean) => {
     if (!report) return;
     const all: Record<string, boolean> = {};
@@ -411,6 +483,24 @@ export default function PersonalExpensesPage() {
           >
             {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <span className="absolute inset-y-0 left-3 flex items-center text-gray-400 pointer-events-none text-sm">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar factura, proveedor, RUC…"
+            className="pl-8 pr-7 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute inset-y-0 right-2 flex items-center text-gray-400 hover:text-gray-600 text-base leading-none"
+            >×</button>
+          )}
         </div>
 
         {/* Expand / Collapse */}
@@ -508,7 +598,21 @@ export default function PersonalExpensesPage() {
 
             {/* Category groups */}
             <div className="space-y-3">
-              {report.groups.map((group) => (
+              {report.groups
+                .filter((group) => {
+                  if (!searchQuery.trim()) return true;
+                  const q = searchQuery.toLowerCase().trim();
+                  return group.lines.some(
+                    (l) =>
+                      l.date.toLowerCase().includes(q) ||
+                      l.invoiceNumber.toLowerCase().includes(q) ||
+                      l.supplierName.toLowerCase().includes(q) ||
+                      l.supplierRUC.toLowerCase().includes(q) ||
+                      l.description?.toLowerCase().includes(q) ||
+                      l.total.toFixed(2).includes(q)
+                  );
+                })
+                .map((group) => (
                 <GroupCard
                   key={group.category}
                   group={group}
@@ -521,6 +625,7 @@ export default function PersonalExpensesPage() {
                   }
                   onReclassify={handleReclassify}
                   reclassifiableIds={reclassifiableIds}
+                  searchQuery={searchQuery}
                 />
               ))}
             </div>

@@ -1,5 +1,5 @@
 // src/components/TrialBalance.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import ECUADOR_COA from "@/../shared/coa/ecuador_coa";
 import type { JournalEntry } from "@/types/JournalEntry";
 import { hasInitial, getInitialBalanceDate } from "@/utils/journalGuards";
@@ -108,6 +108,20 @@ export default function TrialBalance({
   const [expanded, setExpanded] = useState<Set<string>>(
     new Set(["1", "2", "3", "4", "5"])
   );
+
+  // When the level selector changes, expand every node whose depth is strictly
+  // less than the selected level so the DFS can reach all children at that depth.
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      rows.forEach((r) => {
+        if (r.level < level) next.add(r.code);
+        // Rows at or beyond the selected level stay as-is (manual state preserved)
+      });
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level]);
 
   const levelLengths = useMemo(() => getCOALevelLengths(), []);
   const coaNameByCode = useMemo(

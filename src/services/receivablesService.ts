@@ -132,6 +132,26 @@ export async function fetchReceivables(entityId: string): Promise<Receivable[]> 
   }));
 }
 
+/** Find a receivable by invoice number (normalized, dash-insensitive). */
+export async function findReceivableByInvoiceNumber(
+  entityId: string,
+  invoiceNumber: string
+): Promise<Receivable | null> {
+  if (!entityId || !invoiceNumber) return null;
+
+  const normalize = (s: string) => s.replace(/[\s-]/g, "").replace(/^0+/, "");
+  const target = normalize(invoiceNumber);
+
+  const snap = await getDocs(collection(db, "entities", entityId, "receivables"));
+  for (const d of snap.docs) {
+    const data = d.data() as Receivable;
+    if (normalize(data.invoiceNumber ?? "") === target) {
+      return { id: d.id, ...data };
+    }
+  }
+  return null;
+}
+
 /* ============================================================================
    UPSERT RECEIVABLE
 ============================================================================ */

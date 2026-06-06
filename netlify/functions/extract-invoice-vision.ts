@@ -869,6 +869,208 @@ async function buildAccounting(
 }
 
 // ---------------------------------------------------------------------------
+// RETENTION PARSER (server-side, called before invoice logic)
+// ---------------------------------------------------------------------------
+
+interface RetentionLine {
+  taxCode:        string;   // "1" = IR, "2" = IVA
+  retentionCode:  string;   // SRI código de retención
+  baseAmount:     number;
+  percentage:     number;
+  retainedAmount: number;
+  invoiceNumber:  string;
+  invoiceDate:    string;
+}
+
+interface RetentionParseResult {
+  certNumber:    string;
+  issueDate:     string;
+  authDate:      string;
+  issuerRUC:     string;
+  issuerName:    string;
+  supplierRUC:   string;
+  supplierName:  string;
+  retentions:    RetentionLine[];
+  totalRenta:    number;
+  totalIVA:      number;
+  totalRetained: number;
+}
+
+function dd_mm_yyyy_to_iso(raw: string): string {
+  const m = raw.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : raw.trim();
+}
+
+function parseRetentionFromText(
+  flat: string,
+  items: TextItemLite[]
+): RetentionParseResult | null {
+
+  // Build line-separated text using the same y-coordinate grouper the rest of
+  // the function uses.  This is far more reliable than the raw flat string for
+  // matching multi-token patterns across table cells.
+  const visualLines = buildLines(items);
+  const lineText = visualLines.map(l => l.text).join("\n");
+
+  // For parsing we try lineText first; fall back to flat for anything not matched.
+  console.log("[RET] lineText (first 600):", lineText.slice(0, 600));
+  console.log("[RET] flat (first 400):",     flat.slice(0, 400));
+
+  // ── Access key / cert number ─────────────────────────────────────────────
+  const akMatch = flat.replace(/\s+/g, "").match(/\d{49}/);
+  const accessKey = akMatch?.[0] ?? "";
+  let certNumber = "";
+  if (accessKey.length === 49) {
+    certNumber = `${accessKey.slice(24, 27)}-${accessKey.slice(27, 30)}-${accessKey.slice(30, 39)}`;
+  } else {
+    const cnm = (lineText + "\n" + flat).match(/No\.\s*(\d{3}[-–]\d{3}[-–]\d{9})/i);
+    certNumber = cnm?.[1] ?? "";
+  }
+
+  // ── Dates ────────────────────────────────────────────────────────────────
+  const dateMatch = (lineText + "\n" + flat).match(/Fecha\s+(\d{2}\/\d{2}\/\d{4})/i);
+  const issueDate = dateMatch ? dd_mm_yyyy_to_iso(dateMatch[1]) : "";
+  const authDate  = issueDate;
+
+  // ── Parties ──────────────────────────────────────────────────────────────
+  const rucMatch  = (lineText + "\n" + flat).match(/R\.U\.C\.?\s*[:\s]*(\d{13})/i);
+  const issuerRUC = rucMatch?.[1] ?? "";
+
+  // Issuer name — first meaningful line in visual output
+  let issuerName = "";
+  for (const l of visualLines) {
+    if (/R\.U\.C/i.test(l.text)) continue;
+    if (l.text.length > 5 &&
+        !/^(COMPROBANTE|No\.|NÚMERO|AMBIENTE|EMISIÓN|CLAVE|CONTRIBUYENTE|\d)/i.test(l.text) &&
+        !/^\d{10,}/.test(l.text)) {
+      issuerName = l.text.replace(/\s+FECHA Y HORA DE\s*$/i, "").trim();
+      break;
+    }
+  }
+
+  const combined = lineText + "\n" + flat;
+  const subjMatch = combined.match(/Raz[oó]n Social[^:]*:\s*(.{3,120})/i);
+  const supplierName = (subjMatch?.[1] ?? "")
+    .split(/\s+(?:Identificaci[oó]n|Fecha)\b/i)[0]
+    .replace(/\n.*/s, "")
+    .trim()
+    .slice(0, 80);
+
+  const idMatch    = combined.match(/Identificaci[oó]n\s+(\d{10,13})/i);
+  const supplierRUC = idMatch?.[1] ?? "";
+
+  // ── Retention lines ──────────────────────────────────────────────────────
+  // The RIDE table has rows like:
+  //   "0011000000000"         ← invoice number prefix (its own visual line)
+  //   "FACTURA  27/04/2026  04/2026  7318.50  Impuesto a la Renta  2.0  146.37"
+  //   "55"                    ← invoice number suffix
+  //
+  // OR in flat text:
+  //   "0011000000000 FACTURA 27/04/2026 04/2026 7318.50 Impuesto a la Renta 2.0 146.37 55"
+  //
+  // We try both the structured lineText (best) and flat fallback.
+
+  const certDigits = certNumber.replace(/[-]/g, "");
+
+  // Build a search corpus: use lineText joined with spaces when each "line"
+  // is very short (table cells on own lines), else use the regular lineText.
+  const avgLen = visualLines.length
+    ? visualLines.reduce((s, l) => s + l.text.length, 0) / visualLines.length
+    : 0;
+
+  // If average visual line is short (<20 chars), table cells are on own lines:
+  // join FACTURA row with its neighbours to reconstruct full row.
+  let corpus: string;
+  if (avgLen < 25) {
+    // Sliding window: join groups of 3-4 consecutive lines to capture full row
+    corpus = "";
+    const lt = visualLines.map(l => l.text);
+    for (let i = 0; i < lt.length; i++) {
+      corpus += lt.slice(i, i + 6).join(" ") + "\n";
+    }
+  } else {
+    corpus = lineText + "\n" + flat;
+  }
+
+  console.log("[RET] corpus (first 600):", corpus.slice(0, 600));
+
+  const lineRe = /(?:(\d{13})\s+)?(?:FACTURA|LIQUIDACI[OÓ]N)\s+(\d{2}\/\d{2}\/\d{4})\s+(?:\d{2}\/\d{4})\s+([\d,.]+)\s+(Impuesto\s+a\s+la\s+Renta|IVA)\s+([\d,.]+)\s+([\d,.]+)/gi;
+
+  const retentions: RetentionLine[] = [];
+  let totalRenta = 0;
+  let totalIVA   = 0;
+
+  // Collect 13-digit invoice prefix candidates (appear before FACTURA in corpus)
+  const invoiceDigits =
+    [...corpus.matchAll(/(\d{13})\s+(?:FACTURA)/gi)].map(m => m[1])[0] ?? "";
+
+  for (const m of corpus.matchAll(lineRe)) {
+    const [fullMatch, invPrefix, invDate, baseStr, taxTypeRaw, pctStr, amtStr] = m;
+    const isIVA = /iva/i.test(taxTypeRaw);
+    const base  = safeNumber(baseStr.replace(",", "."));
+    const pct   = safeNumber(pctStr.replace(",", "."));
+    const amt   = safeNumber(amtStr.replace(",", "."));
+
+    if (base <= 0 || amt <= 0) continue; // skip zero rows
+
+    // Invoice number reconstruction
+    let invoiceNumber = "";
+    const prefix13 = invPrefix ?? invoiceDigits;
+    if (prefix13?.length === 13) {
+      const afterMatch = corpus.slice(m.index! + fullMatch.length).match(/^\s*(\d{1,3})\b/);
+      if (afterMatch) {
+        const full = prefix13 + afterMatch[1].padStart(2, "0");
+        if (full.length === 15 && full !== certDigits) {
+          invoiceNumber = `${full.slice(0,3)}-${full.slice(3,6)}-${full.slice(6)}`;
+        }
+      }
+    }
+
+    let retentionCode: string;
+    if (isIVA) {
+      retentionCode = pct === 10 ? "1" : pct === 20 ? "2" : pct === 30 ? "3" :
+                      pct === 50 ? "5" : pct === 70 ? "7" : "10";
+    } else {
+      retentionCode = pct <= 0.1 ? "3493" : pct === 1   ? "312" :
+                      pct === 1.75? "325" : pct === 2   ? "307" :
+                      pct === 3  ? "308"  : pct === 8   ? "304" :
+                      pct === 10 ? "303"  : "327";
+    }
+
+    retentions.push({
+      taxCode:       isIVA ? "2" : "1",
+      retentionCode,
+      baseAmount:    base,
+      percentage:    pct,
+      retainedAmount: amt,
+      invoiceNumber,
+      invoiceDate:   dd_mm_yyyy_to_iso(invDate),
+    });
+
+    if (isIVA) totalIVA   += amt;
+    else       totalRenta += amt;
+  }
+
+  console.log("[RET] retentions found:", retentions.length, JSON.stringify(retentions));
+
+  if (!retentions.length) return null;
+
+  return {
+    certNumber,
+    issueDate,
+    authDate,
+    issuerRUC,
+    issuerName,
+    supplierRUC,
+    supplierName,
+    retentions,
+    totalRenta:    +totalRenta.toFixed(2),
+    totalIVA:      +totalIVA.toFixed(2),
+    totalRetained: +(totalRenta + totalIVA).toFixed(2),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // HANDLER
 // ---------------------------------------------------------------------------
 
@@ -883,9 +1085,28 @@ export const handler: Handler = async (event) => {
     }
 
     const buffer = new Uint8Array(Buffer.from(base64, "base64"));
-    const { text, page1Items, allPagesItems, pageCount } = 
+    const { text, page1Items, allPagesItems, pageCount } =
       await extractText(buffer);
 
+    // ── RETENTION DETECTION ─────────────────────────────────────────────────
+    // If the document is a "Comprobante de Retención", parse it here and return
+    // structured retention data so the frontend can route to JournalPreviewModal
+    // with the correct accounts — without going through the invoice-type logic.
+    if (/COMPROBANTE\s+DE\s+RETENCI[OÓ]N/i.test(text)) {
+      const retResult = parseRetentionFromText(text, page1Items);
+      if (retResult) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            success:     true,
+            isRetention: true,
+            ocr_text:    text,
+            ...retResult,
+          }),
+        };
+      }
+    }
+    // ── END RETENTION DETECTION ─────────────────────────────────────────────
 
     const parseWarnings: string[] = [];
 

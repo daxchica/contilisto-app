@@ -221,7 +221,7 @@ export default function JournalTable({
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
 
   const selectedCount = useMemo(
-    () => Object.keys(selectedMap).length,
+    () => Object.values(selectedMap).filter(Boolean).length,
     [selectedMap]
   );
 
@@ -243,7 +243,12 @@ export default function JournalTable({
   }, [displayRows]);
 
   const toggleRow = useCallback((rowId: string) => {
-    setSelectedMap((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
+    setSelectedMap((prev) => {
+      const next = { ...prev };
+      if (next[rowId]) delete next[rowId];
+      else next[rowId] = true;
+      return next;
+    });
   }, []);
 
   const toggleAll = useCallback(() => {
@@ -524,7 +529,7 @@ export default function JournalTable({
                       }`}
                     >
                       <td colSpan={8} className="pl-2 pr-4 py-1.5 text-xs font-semibold text-blue-900">
-                        📄 {e.invoice_number || (e as any).documentRef || "Sin documento"}
+                        📄 {(e as any).documentRef || e.invoice_number || "Sin documento"}
                         &nbsp;|&nbsp; 📅 {e.date}
                         {((e as any).description || (e as any).comment) && (
                           <>&nbsp;|&nbsp; 📝 <span className="font-normal text-blue-700">{(e as any).description || (e as any).comment}</span></>

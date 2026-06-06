@@ -265,9 +265,15 @@ export default function JournalPreviewModal({
         ? metadata.buyerName
         : metadata.issuerName;
 
+    // If any entry has documentRef (retention cert number), this is a retention
+    const retentionCert = entries.find(
+      (e) => (e as any).documentRef && (e as any).documentRef !== e.invoice_number
+    );
+    const docLabel = retentionCert ? "Retención" : "Factura";
+
     setNote(
       invoiceNumber
-        ? `Factura ${invoiceNumber}${party ? ` · ${party}` : ""}`
+        ? `${docLabel} ${invoiceNumber}${party ? ` · ${party}` : ""}`
         : ""
     );
 
@@ -535,7 +541,7 @@ export default function JournalPreviewModal({
 
             <div>
               <div>
-                <b>Factura:</b> {metadata.invoice_number ?? "-"}
+                <b>{entries.some((e) => (e as any).documentRef && (e as any).documentRef !== e.invoice_number) ? "Retención" : "Factura"}:</b> {metadata.invoice_number ?? "-"}
               </div>
               <div>
                 <b>Fecha:</b> {new Date(toISODate(metadata.invoiceDate)).toLocaleDateString("es-EC")}

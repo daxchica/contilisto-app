@@ -50,7 +50,8 @@ import { logProcessedInvoice, checkProcessedInvoice } from "@/services/firestore
 import { extractInvoiceOCR } from "@/services/extractInvoiceOCRService";
 import { extractInvoiceVision } from "@/services/extractInvoiceVisionService";
 import { isInvoiceIncomplete } from "@/utils/invoiceValidation";
-import { getPdfPageCount } from "@/utils/pdfUtils";
+import { getPdfPageCount, extractPdfText } from "@/utils/pdfUtils";
+import { isRetentionPdf, parseSriRetPdf } from "@/utils/parseSriRetPdf";
 import { getEffectiveAccountPlan } from "@/services/effectiveAccountsService";
 import { getContextualAccountHint } from "@/services/firestoreHintsService";
 import { parseSriTxt } from "@/services/parseSriTxt";
@@ -59,7 +60,10 @@ import { parseSriXml } from "@/utils/parseSriXml";
 import { sriXmlToEntries } from "@/utils/sriXmlToEntries";
 import { detectSriXmlType, parseSriRetXml } from "@/utils/parseSriRetXml";
 import type { SriRetXmlResult } from "@/utils/parseSriRetXml";
-import RetentionXmlPreviewModal from "@/components/modals/RetentionXmlPreviewModal";
+import { buildRetentionJournalEntries } from "@/utils/buildRetentionJournalEntries";
+import { findReceivableByInvoiceNumber, applyReceivablePayment } from "@/services/receivablesService";
+import { findARAccountForInvoice } from "@/services/journalService";
+import { saveRetention } from "@/services/retentionsService";
 
 const IS_DEV = import.meta.env.DEV === true;
 
@@ -137,8 +141,8 @@ export default function AccountingDashboard() {
   const [showManualModal, setShowManualModal] = useState(false);
   const [showAccountsModal, setShowAccountsModal] = useState(false);
 
-  const [retentionXmlData, setRetentionXmlData] = useState<SriRetXmlResult | null>(null);
-  const [showRetentionXmlModal, setShowRetentionXmlModal] = useState(false);
+  /** Retention being processed — kept for post-save operations (apply to CxC, save record) */
+  const pendingRetention = useRef<SriRetXmlResult | null>(null);
 
   const [logRefreshTrigger, setLogRefreshTrigger] = useState(0);
 
@@ -173,9 +177,73 @@ export default function AccountingDashboard() {
   }, [leafCodeSet]);
 
 
-// ✅ ADD THIS HERE
-const stableJournal = useMemo(() => 
-  sessionJournal, [sessionJournal]);
+  const stableJournal = useMemo(() =>
+    sessionJournal, [sessionJournal]);
+
+  // --------------------------------------------------------------------------
+  // RETENTION HANDLER — routes parsed retention to JournalPreviewModal
+  // --------------------------------------------------------------------------
+
+  async function handleRetentionParsed(parsed: SriRetXmlResult) {
+    // The invoice number referenced in the retention (the original sales invoice)
+    // — not the retention cert number itself.
+    const invoiceNum = parsed.retentions.find((r) => r.invoiceNumber)?.invoiceNumber
+      ?? parsed.retentions[0]?.invoiceNumber
+      ?? "";
+
+    // Resolve the CxC account in priority order:
+    //  1. Receivable record (most authoritative)
+    //  2. Journal entry that debited a 101030xx account for this invoice
+    //  3. COA fallback in buildRetentionJournalEntries
+    let receivable = null;
+    let arAccountOverride: { code: string; name: string } | null = null;
+
+    if (invoiceNum) {
+      try {
+        receivable = await findReceivableByInvoiceNumber(entityId, invoiceNum);
+      } catch { /* non-blocking */ }
+
+      if (!receivable) {
+        try {
+          arAccountOverride = await findARAccountForInvoice(entityId, invoiceNum);
+        } catch { /* non-blocking */ }
+      }
+    }
+
+    const allAccounts = postableAccounts.length ? postableAccounts : accounts;
+
+    const { entries } = buildRetentionJournalEntries(
+      entityId,
+      userIdSafe,
+      parsed,
+      allAccounts,
+      receivable,
+      undefined,          // date
+      arAccountOverride,  // explicit CxC account from the original sale journal
+    );
+
+    if (!entries.length) {
+      alert("No se pudieron construir los asientos de retención. Verifique los montos.");
+      return;
+    }
+
+    // Store so onSave can apply to receivable
+    pendingRetention.current = parsed;
+
+    setPreviewEntries(entries);
+    setPreviewMetadata({
+      invoiceType:  "sale",
+      // The retention cert number is the document being recorded —
+      // this is what appears in the FACTURA column of the journal.
+      invoice_number: parsed.certNumber,
+      invoiceDate:    parsed.issueDate || parsed.authDate,
+      issuerRUC:    parsed.issuerRUC,
+      issuerName:   parsed.issuerName,   // retention agent (our customer)
+      buyerName:    parsed.supplierName, // us (subject of retention)
+      buyerRUC:     parsed.supplierRUC,
+    });
+    setShowPreviewModal(true);
+  }
 
   // --------------------------------------------------------------------------
   // AUTH GUARD
@@ -334,6 +402,67 @@ const stableJournal = useMemo(() =>
         if (!file) return;
 
         const base64 = await fileToBase64(file);
+
+        // ── Retention certificate PDF detection ───────────────────────────
+        // 1. Fast browser keyword check (no amounts).
+        // 2. If detected → send to Netlify (server-side pdfjs is more reliable).
+        //    The Netlify function now detects "COMPROBANTE DE RETENCIÓN" itself
+        //    and returns structured retention data with isRetention: true.
+        // 3. Route to JournalPreviewModal — same as every other document.
+        try {
+          const pdfText = await extractPdfText(base64);
+          if (pdfText && isRetentionPdf(pdfText)) {
+            const visionData = await extractInvoiceVision(base64, entityRUC, userIdSafe, entityId);
+
+            // ── Path A: Netlify parsed it as a retention ──────────────────
+            if (visionData.isRetention && visionData.retentions?.length) {
+              // Convert Netlify response → SriRetXmlResult shape
+              const parsed = {
+                accessKey:    "",
+                certNumber:   visionData.certNumber   ?? "",
+                authDate:     visionData.authDate      ?? visionData.issueDate ?? "",
+                issueDate:    visionData.issueDate     ?? visionData.authDate  ?? "",
+                issuerRUC:    visionData.issuerRUC     ?? "",
+                issuerName:   visionData.issuerName    ?? "",
+                supplierRUC:  visionData.supplierRUC   ?? "",
+                supplierName: visionData.supplierName  ?? "",
+                retentions:   visionData.retentions.map((r) => ({
+                  taxCode:        r.taxCode,
+                  retentionCode:  r.retentionCode,
+                  baseAmount:     r.baseAmount,
+                  percentage:     r.percentage,
+                  retainedAmount: r.retainedAmount,
+                  invoiceNumber:  r.invoiceNumber,
+                  invoiceDate:    r.invoiceDate,
+                  docType:        "01",
+                })),
+                totalRenta:    visionData.totalRenta    ?? 0,
+                totalIVA:      visionData.totalIVA      ?? 0,
+                totalRetained: visionData.totalRetained ?? 0,
+              };
+              await handleRetentionParsed(parsed);
+              return;
+            }
+
+            // ── Path B: Netlify didn't detect retention — try ocr_text ────
+            const ocrText = visionData.ocr_text ?? pdfText;
+            if (ocrText) {
+              const parsed = parseSriRetPdf(ocrText);
+              // Only proceed if actual retention amounts were parsed
+              if (parsed.retentions.length > 0) {
+                await handleRetentionParsed(parsed);
+                return;
+              }
+            }
+
+            // ── Path C: Nothing worked ─────────────────────────────────────
+            alert("Se detectó un Comprobante de Retención pero no se pudieron leer los montos.\n\nCargue el XML electrónico del SRI (.xml) para procesamiento exacto, o use 'Ingreso manual'.");
+            return;
+          }
+        } catch (e) {
+          console.warn("Retention detection error:", e);
+          // Fall through to normal AI flow
+        }
 
         let pageCount = 1;
         try {
@@ -628,8 +757,7 @@ const stableJournal = useMemo(() =>
 
         if (docType === "retencion") {
           const ret = parseSriRetXml(xmlText);
-          setRetentionXmlData(ret);
-          setShowRetentionXmlModal(true);
+          await handleRetentionParsed(ret);
           return;
         }
 
@@ -829,13 +957,65 @@ const stableJournal = useMemo(() =>
             try {
               await saveJournalEntries(entityId, authUid, entries, undefined, plan.limits.maxInvoicesPerMonth);
 
-              const invoiceNumber =
-                previewMetadata.invoice_number ??
-                entries.find((e) => e.invoice_number)?.invoice_number ??
-                "";
+              // ── Retention post-save: apply to receivable + save record ──
+              const ret = pendingRetention.current;
+              if (ret) {
+                pendingRetention.current = null;
 
-              if (invoiceNumber) {
-                await logProcessedInvoice(entityId, invoiceNumber);
+                // Find total applied (sum of debit lines = retention amounts)
+                const totalApplied = entries
+                  .filter((e) => Number(e.debit ?? 0) > 0)
+                  .reduce((s, e) => s + Number(e.debit ?? 0), 0);
+
+                // Try to apply to the matching receivable
+                const invoiceNum = ret.retentions[0]?.invoiceNumber ?? "";
+                if (invoiceNum && totalApplied > 0) {
+                  try {
+                    const rec = await findReceivableByInvoiceNumber(entityId, invoiceNum);
+                    if (rec) {
+                      const tx = entries[0]?.transactionId ?? "";
+                      await applyReceivablePayment(entityId, rec, totalApplied, authUid, tx);
+                    }
+                  } catch (e) {
+                    console.warn("No se pudo actualizar CxC:", e);
+                  }
+                }
+
+                // Save retention record
+                try {
+                  await saveRetention(entityId, {
+                    direction:    "received",
+                    certNumber:   ret.certNumber,
+                    authDate:     ret.authDate,
+                    issueDate:    ret.issueDate,
+                    issuerRUC:    ret.issuerRUC,
+                    issuerName:   ret.issuerName,
+                    supplierRUC:  ret.supplierRUC,
+                    supplierName: ret.supplierName,
+                    invoiceNumber: invoiceNum,
+                    totalRenta:   ret.totalRenta,
+                    totalIVA:     ret.totalIVA,
+                    totalRetained: ret.totalRetained,
+                    taxLines: ret.retentions.map((l) => ({
+                      taxCode: l.taxCode, retentionCode: l.retentionCode,
+                      baseAmount: l.baseAmount, percentage: l.percentage,
+                      retainedAmount: l.retainedAmount,
+                    })),
+                    source: "pdf_or_xml",
+                    createdBy: authUid,
+                  });
+                } catch (e) {
+                  console.warn("No se pudo guardar registro de retención:", e);
+                }
+              } else {
+                // Normal invoice flow
+                const invoiceNumber =
+                  previewMetadata.invoice_number ??
+                  entries.find((e) => e.invoice_number)?.invoice_number ??
+                  "";
+                if (invoiceNumber) {
+                  await logProcessedInvoice(entityId, invoiceNumber);
+                }
               }
 
               setLogRefreshTrigger((v) => v + 1);
@@ -968,25 +1148,7 @@ const stableJournal = useMemo(() =>
         />
       )}
 
-      {showRetentionXmlModal && retentionXmlData && (
-        <RetentionXmlPreviewModal
-          open={showRetentionXmlModal}
-          retention={retentionXmlData}
-          entityId={entityId}
-          userIdSafe={userIdSafe}
-          onClose={() => {
-            setShowRetentionXmlModal(false);
-            setRetentionXmlData(null);
-          }}
-          onSaved={() => {
-            setLogRefreshTrigger((v) => v + 1);
-            setTimeout(() => {
-              setShowRetentionXmlModal(false);
-              setRetentionXmlData(null);
-            }, 1500);
-          }}
-        />
-      )}
+      {/* RetentionXmlPreviewModal removed — retentions now route through JournalPreviewModal */}
 
       {showIgnoredReport && ignoredInvoices.length > 0 && (
         <IgnoredInvoicesReportModal

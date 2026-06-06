@@ -18,6 +18,13 @@ import type { JournalEntry } from "@/types/JournalEntry";
 import type { BankAccount } from "@/types/bankTypes";
 
 import {
+  SRI_IR_CODES,
+  SRI_IVA_CODES,
+  defaultIRCode,
+  defaultIVACode,
+} from "@/constants/sriRetentionCodes";
+
+import {
   createPayablePaymentJournalEntry,
   fetchJournalEntriesByTransactionId,
   checkRetentionsRecorded,
@@ -162,6 +169,10 @@ export default function RegisterPayablePaymentModal({
   const [retentionIVA, setRetentionIVA] = useState("");
   const [activeIRPercent, setActiveIRPercent] = useState<number | null>(null);
   const [activeIVAPercent, setActiveIVAPercent] = useState<number | null>(null);
+  /** Explicit SRI IR retention code chosen by the user ("312", "303", etc.) */
+  const [activeIRCode, setActiveIRCode] = useState<string>("");
+  /** Explicit SRI IVA retention code chosen by the user ("3", "7", etc.) */
+  const [activeIVACode, setActiveIVACode] = useState<string>("");
   const [certificate, setCertificate] = useState("");
   const [suggestedCert, setSuggestedCert] = useState("");
 
@@ -211,6 +222,8 @@ export default function RegisterPayablePaymentModal({
     setRetentionIVA("");
     setActiveIRPercent(null);
     setActiveIVAPercent(null);
+    setActiveIRCode("");
+    setActiveIVACode("");
     setCertificate("");
 
     setError("");
@@ -350,12 +363,15 @@ export default function RegisterPayablePaymentModal({
     const value = calcRetentionFromPercent(expenseBase, percent);
     setRetentionIR(value.toFixed(2));
     setActiveIRPercent(percent);
+    // Only auto-set the code if none is selected yet (don't override user choice)
+    setActiveIRCode((prev) => prev || defaultIRCode(percent));
   }
 
   function applyIVAPreset(percent: number) {
     const value = calcRetentionFromPercent(invoiceIVA, percent);
     setRetentionIVA(value.toFixed(2));
     setActiveIVAPercent(percent);
+    setActiveIVACode((prev) => prev || defaultIVACode(percent));
   }
 
   console.log("Selected Bank FULL:", selectedBank);
@@ -409,6 +425,10 @@ export default function RegisterPayablePaymentModal({
 
       if (isOverApplied) {
         throw new Error("El valor aplicado excede el saldo pendiente de la factura.");
+      }
+
+      if (applyIR && !activeIRCode.trim()) {
+        throw new Error("Debe seleccionar el concepto de retención IR (código SRI).");
       }
 
       if ((applyIR || applyIVA) && !certificate.trim()) {
@@ -502,6 +522,9 @@ export default function RegisterPayablePaymentModal({
           // can store tax.retenciones[] with the authoritative code/base/percent.
           irPercent: applyIR ? (activeIRPercent ?? null) : null,
           ivaPercent: applyIVA ? (activeIVAPercent ?? null) : null,
+          // Pass the explicit SRI concept code selected by the user
+          irCode: applyIR ? (activeIRCode || null) : null,
+          ivaCode: applyIVA ? (activeIVACode || null) : null,
         },
       );
 
@@ -750,7 +773,11 @@ export default function RegisterPayablePaymentModal({
                           checked={applyIR}
                           onChange={(e) => {
                             setApplyIR(e.target.checked);
-                            if (!e.target.checked) { setRetentionIR(""); setActiveIRPercent(null); }
+                            if (!e.target.checked) {
+                              setRetentionIR("");
+                              setActiveIRPercent(null);
+                              setActiveIRCode("");
+                            }
                           }}
                         />
                         Aplicar retención IR
@@ -758,8 +785,9 @@ export default function RegisterPayablePaymentModal({
 
                       {applyIR && (
                         <div className="mt-2 space-y-2">
+                          {/* Percentage quick-select */}
                           <div className="flex flex-wrap gap-2">
-                            {[1, 1.75, 2, 3, 5, 10].map((percent) => (
+                            {[0.10, 1, 1.75, 2, 3, 5, 8, 10].map((percent) => (
                               <button
                                 key={percent}
                                 type="button"
@@ -771,9 +799,33 @@ export default function RegisterPayablePaymentModal({
                                     : "hover:bg-gray-100 text-gray-700"
                                 }`}
                               >
-                                {percent}%
+                                {Number.isInteger(percent) ? percent : percent.toFixed(2)}%
                               </button>
                             ))}
+                          </div>
+
+                          {/* Concept / SRI code selector */}
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium">
+                              Concepto de retención (código SRI)
+                            </label>
+                            <select
+                              value={activeIRCode}
+                              onChange={(e) => setActiveIRCode(e.target.value)}
+                              className="mt-1 w-full rounded border px-2 py-1.5 text-xs"
+                            >
+                              <option value="">— Seleccionar concepto —</option>
+                              {SRI_IR_CODES.map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.code} – {c.label}
+                                </option>
+                              ))}
+                            </select>
+                            {activeIRCode && (
+                              <p className="mt-0.5 text-xs text-gray-400">
+                                {SRI_IR_CODES.find((c) => c.code === activeIRCode)?.description}
+                              </p>
+                            )}
                           </div>
 
                           <input
@@ -798,7 +850,11 @@ export default function RegisterPayablePaymentModal({
                           checked={applyIVA}
                           onChange={(e) => {
                             setApplyIVA(e.target.checked);
-                            if (!e.target.checked) { setRetentionIVA(""); setActiveIVAPercent(null); }
+                            if (!e.target.checked) {
+                              setRetentionIVA("");
+                              setActiveIVAPercent(null);
+                              setActiveIVACode("");
+                            }
                           }}
                         />
                         Aplicar retención IVA
@@ -807,7 +863,7 @@ export default function RegisterPayablePaymentModal({
                       {applyIVA && (
                         <div className="mt-2 space-y-2">
                           <div className="flex flex-wrap gap-2">
-                            {[30, 70, 100].map((percent) => (
+                            {[10, 20, 30, 50, 70, 100].map((percent) => (
                               <button
                                 key={percent}
                                 type="button"
@@ -822,6 +878,30 @@ export default function RegisterPayablePaymentModal({
                                 {percent}%
                               </button>
                             ))}
+                          </div>
+
+                          {/* Concept / SRI code selector for IVA */}
+                          <div>
+                            <label className="text-xs text-gray-500 font-medium">
+                              Tipo de retención IVA (código SRI)
+                            </label>
+                            <select
+                              value={activeIVACode}
+                              onChange={(e) => setActiveIVACode(e.target.value)}
+                              className="mt-1 w-full rounded border px-2 py-1.5 text-xs"
+                            >
+                              <option value="">— Seleccionar tipo —</option>
+                              {SRI_IVA_CODES.map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.code} – {c.label}
+                                </option>
+                              ))}
+                            </select>
+                            {activeIVACode && (
+                              <p className="mt-0.5 text-xs text-gray-400">
+                                {SRI_IVA_CODES.find((c) => c.code === activeIVACode)?.description}
+                              </p>
+                            )}
                           </div>
 
                           <input
