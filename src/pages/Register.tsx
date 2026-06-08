@@ -4,6 +4,12 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/firebase-config";
 
+const fbq = (...args: any[]) => {
+  if (typeof window !== "undefined" && (window as any).fbq) {
+    (window as any).fbq(...args);
+  }
+};
+
 type PlanKey = "starter" | "pro" | "enterprise";
 
 const PLAN_INFO: Record<PlanKey, { label: string; price: number | null; cta: string }> = {
@@ -33,6 +39,7 @@ export default function Register() {
   useEffect(() => {
     // Keep it in session while the user is on the form
     sessionStorage.setItem("selectedPlan", planKey);
+    fbq("track", "Lead"); // EVENTO 1: usuario abrio el formulario
   }, [planKey]);
 
   const plan = PLAN_INFO[planKey];
@@ -45,6 +52,7 @@ export default function Register() {
     try {
       // You may want to send the chosen plan to your backend/subscription flow here
       await createUserWithEmailAndPassword(auth, email, password);
+      fbq("track", "CompleteRegistration"); // EVENTO 2: Cuenta creada exitosamente 
       navigate("/dashboard");
     } catch (err: any) {
       setError(err?.message || "Error de registro");
