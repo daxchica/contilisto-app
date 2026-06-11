@@ -43,8 +43,6 @@ netlify/functions/firebase-admin.json
 # Firebase / Google secrets
 firebase-admin.json
 *.service-account.json
-# Firebase Admin credentials
-firebase-admin.json
 # Netlify
 .netlify
 # Claude Code worktrees (never commit these)
