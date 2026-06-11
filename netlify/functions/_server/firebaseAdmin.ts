@@ -1,9 +1,12 @@
 import admin from "firebase-admin";
-import serviceAccount from "../firebase-admin.json";
 
 if (!admin.apps.length) {
+  const projectId   = process.env.FIREBASE_ADMIN_PROJECT_ID   ?? "contalisto-9a645";
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL ?? "";
+  const privateKey  = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+    credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
 }
