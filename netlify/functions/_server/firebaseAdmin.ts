@@ -1,12 +1,11 @@
 import admin from "firebase-admin";
 
 if (!admin.apps.length) {
-  const projectId   = process.env.FIREBASE_ADMIN_PROJECT_ID   ?? "contalisto-9a645";
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL ?? "";
-  const privateKey  = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64 ?? "";
+  const serviceAccount = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
 
   admin.initializeApp({
-    credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
+    credential: admin.credential.cert(serviceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
 }
