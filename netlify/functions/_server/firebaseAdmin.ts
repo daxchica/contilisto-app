@@ -1,11 +1,9 @@
 import admin from "firebase-admin";
+import serviceAccount from "../firebase-admin.json";
 
 if (!admin.apps.length) {
-  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64 ?? "";
-  const serviceAccount = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
-
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
 }
