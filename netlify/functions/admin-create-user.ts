@@ -18,8 +18,10 @@ export default async (req: Request): Promise<Response> => {
     try {
       const decoded = await admin.auth().verifyIdToken(token);
       callerUid = decoded.uid;
-    } catch {
-      return Response.json({ ok: false, error: "Invalid token" }, { status: 401 });
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      console.error("verifyIdToken failed:", msg);
+      return Response.json({ ok: false, error: `Token error: ${msg}` }, { status: 401 });
     }
 
     // Verify caller is owner or master
