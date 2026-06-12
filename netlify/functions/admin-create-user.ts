@@ -2,12 +2,16 @@
 // Creates a Firebase Auth user + Firestore document.
 // Caller must be authenticated as owner or master.
 
-import { admin, adminDb } from "./_server/firebaseAdmin";
+import { admin, adminDb, firebaseInitError } from "./_server/firebaseAdmin";
 
 export default async (req: Request): Promise<Response> => {
   try {
     if (req.method !== "POST") {
       return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+    }
+
+    if (firebaseInitError) {
+      return Response.json({ ok: false, error: `Firebase init failed: ${firebaseInitError}` }, { status: 500 });
     }
 
     // Verify caller identity

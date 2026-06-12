@@ -1,6 +1,6 @@
 import admin from "firebase-admin";
 
-let _initError: string | null = null;
+export let firebaseInitError: string | null = null;
 
 try {
   if (!admin.apps.length) {
@@ -14,19 +14,19 @@ try {
     });
   }
 } catch (err: any) {
-  _initError = err.message ?? "Unknown Firebase init error";
-  console.error("🔥 Firebase Admin init failed:", _initError);
+  firebaseInitError = err.message ?? "Unknown Firebase init error";
+  console.error("🔥 Firebase Admin init failed:", firebaseInitError);
 }
 
 // Proxy so handlers get a meaningful error (not a 502) when init failed
 const adminDb = admin.apps.length
   ? admin.firestore()
   : (new Proxy({} as FirebaseFirestore.Firestore, {
-      get() { throw new Error(`Firebase not initialized: ${_initError}`); },
+      get() { throw new Error(`Firebase not initialized: ${firebaseInitError}`); },
     }));
 
 function getAdminBucket() {
-  if (!admin.apps.length) throw new Error(`Firebase not initialized: ${_initError}`);
+  if (!admin.apps.length) throw new Error(`Firebase not initialized: ${firebaseInitError}`);
   const bucketName =
     process.env.FIREBASE_STORAGE_BUCKET || "contalisto-9a645.appspot.com";
   return admin.storage().bucket(bucketName);
