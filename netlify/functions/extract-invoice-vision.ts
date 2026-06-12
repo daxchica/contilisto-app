@@ -20,7 +20,6 @@
 //          Safe detection for SUBTOTAL 0% (layout + OCR)
 // ============================================================================
 
-import { Handler } from "@netlify/functions";
 import { randomUUID } from "crypto";
 
 import { extractExpenseContextFromItems } from "./_server/extractExpenseContext";
@@ -1074,14 +1073,12 @@ function parseRetentionFromText(
 // HANDLER
 // ---------------------------------------------------------------------------
 
-export const handler: Handler = async (event) => {
-  
+export default async (req: Request): Promise<Response> => {
   try {
-    const { base64, userRUC, uid } = JSON.parse(event.body || "{}");
-    
+    const { base64, userRUC, uid } = await req.json();
+
     if (!base64 || !userRUC) {
-      
-      return { statusCode: 400, body: "Missing base64 or userRUC" };
+      return new Response("Missing base64 or userRUC", { status: 400 });
     }
 
     const buffer = new Uint8Array(Buffer.from(base64, "base64"));
@@ -1095,15 +1092,12 @@ export const handler: Handler = async (event) => {
     if (/COMPROBANTE\s+DE\s+RETENCI[OÓ]N/i.test(text)) {
       const retResult = parseRetentionFromText(text, page1Items);
       if (retResult) {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
+        return Response.json({
             success:     true,
             isRetention: true,
             ocr_text:    text,
             ...retResult,
-          }),
-        };
+          });
       }
     }
     // ── END RETENTION DETECTION ─────────────────────────────────────────────
@@ -1145,14 +1139,11 @@ export const handler: Handler = async (event) => {
     }
 
     if (!issuerRUC) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
+      return Response.json({
           success: false,
           error: "Could not detect issuer RUC.",
           ocr_text: text,
-        } satisfies FunctionResponse),
-      };
+        } satisfies FunctionResponse);
     }
 
     const invoiceType = determineInvoiceType(issuerRUC, userRUC);
@@ -1303,9 +1294,7 @@ export const handler: Handler = async (event) => {
     // ------------------------------------------------------------------
     // RESPONSE
     // ------------------------------------------------------------------
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
+    return Response.json({
         success: true,
         invoiceType,
 
@@ -1413,16 +1402,12 @@ export const handler: Handler = async (event) => {
             supplier_ruc: parsed.issuerRUC,
           }
       }),
-      } satisfies FunctionResponse),
-    };
+      } satisfies FunctionResponse);
   } catch (err: any) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
+    return Response.json({
         success: false,
         error: err?.message || "Unexpected error",
-      } satisfies FunctionResponse),
-    };
+      } satisfies FunctionResponse, { status: 500 });
   }
 };
 

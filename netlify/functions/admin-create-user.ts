@@ -2,73 +2,64 @@
 // Creates a Firebase Auth user + Firestore document.
 // Caller must be authenticated as owner or master.
 
-import type { Handler } from "@netlify/functions";
 import { admin, adminDb } from "./_server/firebaseAdmin";
 
-function json(status: number, body: object) {
-  return {
-    statusCode: status,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
-}
-
-export const handler: Handler = async (event) => {
+export default async (req: Request): Promise<Response> => {
   try {
-  if (event.httpMethod !== "POST") {
-    return json(405, { ok: false, error: "Method not allowed" });
-  }
+    if (req.method !== "POST") {
+      return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+    }
 
-  // Verify caller identity
-  const token = event.headers["authorization"]?.replace("Bearer ", "");
-  if (!token) return json(401, { ok: false, error: "Unauthorized" });
+    // Verify caller identity
+    const token = req.headers.get("authorization")?.replace("Bearer ", "");
+    if (!token) return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  let callerUid: string;
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    callerUid = decoded.uid;
-  } catch {
-    return json(401, { ok: false, error: "Invalid token" });
-  }
+    let callerUid: string;
+    try {
+      const decoded = await admin.auth().verifyIdToken(token);
+      callerUid = decoded.uid;
+    } catch {
+      return Response.json({ ok: false, error: "Invalid token" }, { status: 401 });
+    }
 
-  // Verify caller is owner or master
-  const callerDoc = await adminDb.collection("users").doc(callerUid).get();
-  const callerRole = callerDoc.data()?.role;
-  if (callerRole !== "owner" && callerRole !== "master") {
-    return json(403, { ok: false, error: "Forbidden" });
-  }
+    // Verify caller is owner or master
+    const callerDoc = await adminDb.collection("users").doc(callerUid).get();
+    const callerRole = callerDoc.data()?.role;
+    if (callerRole !== "owner" && callerRole !== "master") {
+      return Response.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
 
-  const { email, password, role, planKey } = JSON.parse(event.body || "{}");
+    const { email, password, role, planKey } = await req.json();
 
-  if (!email || !password) {
-    return json(400, { ok: false, error: "email and password are required" });
-  }
+    if (!email || !password) {
+      return Response.json({ ok: false, error: "email and password are required" }, { status: 400 });
+    }
 
-  // Create Firebase Auth user
-  let newUser: admin.auth.UserRecord;
-  try {
-    newUser = await admin.auth().createUser({ email, password });
+    // Create Firebase Auth user
+    let newUser: admin.auth.UserRecord;
+    try {
+      newUser = await admin.auth().createUser({ email, password });
+    } catch (err: any) {
+      return Response.json({ ok: false, error: err.message ?? "Error creating user" }, { status: 400 });
+    }
+
+    // Create Firestore document
+    await adminDb.collection("users").doc(newUser.uid).set({
+      uid: newUser.uid,
+      email,
+      displayName: "",
+      role: role ?? "user",
+      planKey: planKey ?? "estudiante",
+      planStatus: "active",
+      subscriptionStatus: "active",
+      subscription: "Free",
+      isTestAccount: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return Response.json({ ok: true, uid: newUser.uid });
   } catch (err: any) {
-    return json(400, { ok: false, error: err.message ?? "Error creating user" });
-  }
-
-  // Create Firestore document
-  await adminDb.collection("users").doc(newUser.uid).set({
-    uid: newUser.uid,
-    email,
-    displayName: "",
-    role: role ?? "user",
-    planKey: planKey ?? "estudiante",
-    planStatus: "active",
-    subscriptionStatus: "active",
-    subscription: "Free",
-    isTestAccount: false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  return json(200, { ok: true, uid: newUser.uid });
-  } catch (err: any) {
-    return json(500, { ok: false, error: err.message ?? "Error interno del servidor" });
+    return Response.json({ ok: false, error: err.message ?? "Error interno del servidor" }, { status: 500 });
   }
 };

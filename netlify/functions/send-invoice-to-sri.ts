@@ -1,29 +1,19 @@
 // netlify/functions/send-invoice-to-sri.ts
-import type { Handler } from "@netlify/functions";
 import { admin, adminDb } from "./_server/firebaseAdmin";
 import { sendToSri } from "./sri/sendToSri";
 
-export const handler: Handler = async (event) => {
+export default async (req: Request): Promise<Response> => {
   try {
-    /* ===============================
-       METHOD
-    ================================ */
-    if (event.httpMethod !== "POST") {
-      return json(405, { ok: false, error: "Method not allowed" });
+    if (req.method !== "POST") {
+      return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
     }
 
-    /* ===============================
-       INPUT
-    ================================ */
-    const { entityId, invoiceId } = JSON.parse(event.body || "{}");
-    
+    const { entityId, invoiceId } = await req.json();
+
     if (!entityId || !invoiceId) {
-      return json(400, { ok: false, error: "entityId and invoiceId required" });
+      return Response.json({ ok: false, error: "entityId and invoiceId required" }, { status: 400 });
     }
 
-    /* ===============================
-       LOAD INVOICE
-    ================================ */
     const invoiceRef = adminDb
       .collection("entities")
       .doc(entityId)
@@ -32,40 +22,25 @@ export const handler: Handler = async (event) => {
 
     const invoiceSnap = await invoiceRef.get();
     if (!invoiceSnap.exists) {
-      return json(404, { ok: false, error: "Invoice not found" });
+      return Response.json({ ok: false, error: "Invoice not found" }, { status: 404 });
     }
 
     const invoice = invoiceSnap.data()!;
 
-    /* ===============================
-       VALIDATIONS
-    ================================ */
     if (invoice.status !== "signed") {
-      return json(400, {
-        ok: false,
-        error: `Invoice must be SIGNED. Current: ${invoice.status}`,
-      });
+      return Response.json({ ok: false, error: `Invoice must be SIGNED. Current: ${invoice.status}` }, { status: 400 });
     }
 
     if (!invoice.xmlSigned) {
-      return json(400, {
-        ok: false,
-        error: "xmlSigned not found. Sign invoice first.",
-      });
+      return Response.json({ ok: false, error: "xmlSigned not found. Sign invoice first." }, { status: 400 });
     }
 
     if (!invoice.sri?.claveAcceso) {
-      return json(400, {
-        ok: false,
-        error: "claveAcceso missing on invoice.sri",
-      });
+      return Response.json({ ok: false, error: "claveAcceso missing on invoice.sri" }, { status: 400 });
     }
 
     const environment = invoice.sri.ambiente ?? "1";
 
-    /* ===============================
-       SEND TO SRI (RECEPCIÓN)
-    ================================ */
     const sriResponse = await sendToSri({
       environment,
       signedXml: invoice.xmlSigned,
@@ -77,44 +52,20 @@ export const handler: Handler = async (event) => {
         ? "RECIBIDA"
         : "DEVUELTA";
 
-    /* ===============================
-       SAVE RESULT
-    ================================ */
     await invoiceRef.update({
       status: "sent-sri",
-      "sri.recepcion": {
-        ok: estadoRecepcion === "RECIBIDA",
-        raw: sriResponse.raw,
-      },
+      "sri.recepcion": { ok: estadoRecepcion === "RECIBIDA", raw: sriResponse.raw },
       "sri.estadoRecepcion": estadoRecepcion,
       "sri.sentAt": admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    /* ===============================
-       RESPONSE
-    ================================ */
-    return json(200, {
+    return Response.json({
       ok: true,
       claveAcceso: invoice.sri.claveAcceso,
       estadoRecepcion,
     });
   } catch (err: any) {
     console.error("SEND-SRI ERROR:", err);
-    
-    return json(500, {
-      ok: false,
-      error: err?.message ?? "Internal error sending to SRI",
-    });
+    return Response.json({ ok: false, error: err?.message ?? "Internal error sending to SRI" }, { status: 500 });
   }
 };
-
-/* ===============================
-   JSON helper (IMPORTANT)
-================================ */
-function json(statusCode: number, body: any) {
-  return {
-    statusCode,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
-}

@@ -1,7 +1,6 @@
 // netlify/functions/extract-invoice-layout.ts
 
 import { getContextualHint } from "./_server/contextualHintsService";
-import { Handler } from "@netlify/functions";
 import { OpenAI } from "openai";
 
 const openai = new OpenAI({
@@ -131,20 +130,17 @@ function cleanResponse(raw: string): string {
 /**
  * Función principal
  */
-const handler: Handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+const handler = async (req: Request): Promise<Response> => {
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
   try {
-    const { blocks, userRUC, uid } = JSON.parse(event.body || "{}");
+    const { blocks, userRUC, uid } = await req.json();
     const safeUid = typeof uid === "string" ? uid : "";
 
     if (!Array.isArray(blocks) || typeof userRUC !== "string") {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Missing blocks or userRUC" }),
-      };
+      return Response.json({ error: "Missing blocks or userRUC" }, { status: 400 });
     }
 
     const filtered = filterVisualBlocks(blocks);
@@ -218,30 +214,15 @@ const handler: Handler = async (event) => {
       console.error("❌ JSON parse error (LayoutAI):", parseError);
       console.error("🧾 RAW snippet:", raw.slice(0, 600));
       console.error("🧼 CLEANED snippet:", cleaned.slice(0, 600));
-      return {
-        statusCode: 422,
-        body: JSON.stringify({
-          error: "Invalid JSON from OpenAI",
-          rawSnippet: raw.slice(0, 600),
-        }),
-      };
+      return Response.json({ error: "Invalid JSON from OpenAI", rawSnippet: raw.slice(0, 600) }, { status: 422 });
     }
 
     console.log(`✅ LayoutAI parsed ${parsed.length} entries`);
-    return {
-      statusCode: 200,
-      body: JSON.stringify(parsed),
-    };
+    return Response.json(parsed);
   } catch (error: any) {
     console.error("❌ Internal Error (LayoutAI):", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: "Internal Server Error",
-        message: error.message,
-      }),
-    };
+    return Response.json({ error: "Internal Server Error", message: error.message }, { status: 500 });
   }
 };
 
-export { handler };
+export default handler;
