@@ -18,6 +18,10 @@ export default function RequireAuthRoute({ children }: Props) {
     return <Navigate to="/" replace />;
   }
 
-  // Support both wrapper mode and outlet mode
+  const privilegedRoles = ["owner", "master", "admin", "accountant", "assistant"];
+  if (!user.emailVerified && !privilegedRoles.includes(user.role)) {
+    return <Navigate to="/verify-email" replace />;
+  }
+
   return children ? <>{children}</> : <Outlet />;
 }

@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, reload } from "firebase/auth";
 import { auth } from "@/firebase-config";
 import { ensureUserDocument, getUser, AppUser } from "@/services/userService";
 
@@ -19,6 +19,7 @@ interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refreshEmailVerified: () => Promise<void>;
 }
 
 /* ============================================================
@@ -28,7 +29,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  logout: async () => {}, // safe default
+  logout: async () => {},
+  refreshEmailVerified: async () => {},
 });
 
 /* ============================================================
@@ -39,10 +41,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🔐 Logout inside provider (extendable)
   const logout = async () => {
     await signOut(auth);
     setUser(null);
+  };
+
+  // Re-reads Firebase Auth token so emailVerified reflects the latest state
+  const refreshEmailVerified = async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    await reload(firebaseUser);
+    setUser((prev) =>
+      prev ? { ...prev, emailVerified: firebaseUser.emailVerified } : null
+    );
   };
 
   useEffect(() => {
@@ -65,7 +76,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const dbUser = await getUser(firebaseUser.uid);
 
         if (isMounted) {
-          setUser(dbUser);
+          // Always trust Firebase Auth for emailVerified (Firestore can lag)
+          setUser(dbUser ? { ...dbUser, emailVerified: firebaseUser.emailVerified } : null);
         }
       } catch (error) {
         console.error("AuthContext error:", error);
@@ -86,7 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshEmailVerified }}>
       {children}
     </AuthContext.Provider>
   );

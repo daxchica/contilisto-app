@@ -30,6 +30,8 @@ export interface AppUser {
   displayName: string;
   photoURL?: string;
 
+  emailVerified: boolean;
+
   role: UserRole;
 
   subscription: SubscriptionPlan;
@@ -59,6 +61,8 @@ function buildDefaultUser(user: {
     email: user.email ?? "",
     displayName: user.displayName ?? "",
     photoURL: user.photoURL ?? "",
+
+    emailVerified: false,
 
     role: "owner",
 
@@ -110,6 +114,8 @@ export async function getUser(uid: string): Promise<AppUser | null> {
     email: data.email ?? "",
     displayName: data.displayName ?? "",
     photoURL: data.photoURL ?? "",
+
+    emailVerified: data.emailVerified ?? false,
 
     role: data.role ?? "owner",
 

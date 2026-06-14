@@ -13,6 +13,8 @@ import AccountingLayout from "@/layouts/AccountingLayout";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
+import VerifyEmailPage from "@/pages/VerifyEmailPage";
+import AuthActionPage from "@/pages/AuthActionPage";
 import NotFound from "@/pages/NotFound";
 
 import DashboardHome from "@/pages/DashboardHome";
@@ -55,6 +57,8 @@ export default function AppRoutes() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/auth/action" element={<AuthActionPage />} />
 
       {/* ============================================================
        * AUTHENTICATED APP

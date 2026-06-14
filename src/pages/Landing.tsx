@@ -61,11 +61,8 @@ export default function Landing() {
     setPendingPlan(null);
     setShowRegister(false);
     setTimeout(() => {
-      if (plan === "estudiante") {
-        navigate("/dashboard");
-        return;
-      }
-      if (plan) {
+      navigate("/verify-email");
+      if (plan && plan !== "estudiante") {
         setSelectedPlan(plan);
       }
     }, 0);

@@ -23,8 +23,10 @@ export async function registerUser(payload: {
 
   const user = cred.user;
 
-  // Send email verification
-  await sendEmailVerification(user);
+  // Send email verification with redirect back to app after confirmation
+  await sendEmailVerification(user, {
+    url: "https://contilisto.com/login",
+  });
 
   // Create Firestore profile
   await setDoc(doc(db, "users", user.uid), {
@@ -33,6 +35,8 @@ export async function registerUser(payload: {
     email: payload.email,
     phone: payload.phone,
     company: payload.company,
+
+    role: "user",
 
     planKey: payload.planKey,
     planStatus: payload.planKey === "starter" ? "free" : "pending_payment",

@@ -1,8 +1,7 @@
 // src/pages/Register.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/firebase-config";
+import { registerUser } from "@/services/authService";
 
 const fbq = (...args: any[]) => {
   if (typeof window !== "undefined" && (window as any).fbq) {
@@ -22,24 +21,22 @@ export default function Register() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
-  // Form
   const [fullName, setFullName] = useState("");
   const [email, setEmail]       = useState("");
   const [company, setCompany]   = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  // Resolve plan from ?plan=, sessionStorage fallback, default to "pro"
   const planKey = useMemo<PlanKey>(() => {
     const fromQuery = params.get("plan") as PlanKey | null;
-    const fromStorage = (sessionStorage.getItem("selectedPlan") as PlanKey | null);
-    return (fromQuery ?? fromStorage ?? "pro");
+    const fromStorage = sessionStorage.getItem("selectedPlan") as PlanKey | null;
+    return fromQuery ?? fromStorage ?? "pro";
   }, [params]);
 
   useEffect(() => {
-    // Keep it in session while the user is on the form
     sessionStorage.setItem("selectedPlan", planKey);
-    fbq("track", "Lead"); // EVENTO 1: usuario abrio el formulario
+    fbq("track", "Lead");
   }, [planKey]);
 
   const plan = PLAN_INFO[planKey];
@@ -49,13 +46,22 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     try {
-      // You may want to send the chosen plan to your backend/subscription flow here
-      await createUserWithEmailAndPassword(auth, email, password);
-      fbq("track", "CompleteRegistration"); // EVENTO 2: Cuenta creada exitosamente 
-      navigate("/dashboard");
+      await registerUser({
+        fullName,
+        email,
+        password,
+        phone: "",
+        company,
+        planKey,
+      });
+      fbq("track", "CompleteRegistration");
+      navigate("/verify-email", { state: { email } });
     } catch (err: any) {
       setError(err?.message || "Error de registro");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -105,9 +111,10 @@ export default function Register() {
 
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700"
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:opacity-60"
         >
-          {ctaText}
+          {submitting ? "Registrando..." : ctaText}
         </button>
       </form>
     </div>

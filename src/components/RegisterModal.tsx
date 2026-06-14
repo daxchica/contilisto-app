@@ -1,6 +1,6 @@
 // src/components/RegisterModal.tsx
 import { useState, useEffect } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth, db } from "@/firebase-config";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import Modal from "@/components/ui/Modal";
@@ -71,20 +71,26 @@ export default function RegisterModal({
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const user = cred.user;
 
+      await sendEmailVerification(user, {
+        url: "https://contilisto.com/login",
+      });
+
       await setDoc(
-        doc(db, "users", user.uid), 
+        doc(db, "users", user.uid),
         {
           uid: user.uid,
           email: user.email,
           name,
           telefono,
           company: company || null,
+          role: "user",
+          emailVerified: false,
           plan: selectedPlan
             ? {
                 type: selectedPlan,
                 status: "active",
                 source: "register",
-              }  
+              }
             : null,
           subscriptionStatus: selectedPlan ? "active" : "none",
           createdAt: serverTimestamp(),
@@ -92,15 +98,14 @@ export default function RegisterModal({
         { merge: true }
       );
 
-      setSuccess("Registracion exitosa.");
-
+      setSuccess("¡Registro exitoso! Revisa tu correo para verificar tu cuenta.");
       onRegisterSuccess?.();
-      
+
     } catch (err: any) {
       setError(err.message || "Error al registrarse");
       setSuccess("");
     } finally {
-      setLoading(true);
+      setLoading(false);
     }
   };
 
