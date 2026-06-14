@@ -5,6 +5,7 @@ export interface InvoicePreviewMetadata {
 
   invoice_number?: string;
   invoiceDate?: string;
+  authorizationNumber?: string;
   
   issuerRUC?: string;
   issuerName?: string;

@@ -87,6 +87,7 @@ type FunctionResponse = {
   invoiceDate?: string;
   invoice_number?: string;
   invoice_number_normalized?: string;
+  authorizationNumber?: string;
 
   taxableBase?: number;
   taxRate?: 12 | 15 | 0;
@@ -125,6 +126,19 @@ async function extractText(data: Uint8Array) {
   const pdfjsLib: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const path = await import("path");
   const { pathToFileURL } = await import("url");
+
+  // pdfjs v5 requires GlobalWorkerOptions.workerSrc — point it to the local file
+  if (pdfjsLib.GlobalWorkerOptions) {
+    const workerPath = path.join(
+      process.cwd(),
+      "node_modules",
+      "pdfjs-dist",
+      "legacy",
+      "build",
+      "pdf.worker.mjs"
+    );
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+  }
 
   let standardFontDataUrl: string | undefined;
   try {
@@ -483,11 +497,11 @@ function extractInvoiceDate(text: string, items: TextItemLite[]): string {
 
   // 1️⃣ Prefer layout
   const fromLayout = items.find((i) => dateRe.test(i.str));
-  if (fromLayout) return fromLayout.str.trim().slice(0, 10);
+  if (fromLayout) return dd_mm_yyyy_to_iso(fromLayout.str.trim().slice(0, 10));
 
   // 2️⃣ OCR fallback
   const m = (text || "").match(dateRe);
-  return (m?.[0] ?? "").slice(0, 10);
+  return dd_mm_yyyy_to_iso((m?.[0] ?? "").slice(0, 10));
 }
 
 // ---------------------------------------------------------------------------
@@ -1314,6 +1328,7 @@ export default async (req: Request): Promise<Response> => {
 
         invoice_number: parsed.invoice_number,
         invoice_number_normalized: parsed.invoice_number?.replace(/\D/g, "") || "",
+        authorizationNumber: accessKey || undefined,
 
         invoiceDate: parsed.invoiceDate,
 
@@ -1374,6 +1389,13 @@ export default async (req: Request): Promise<Response> => {
             iva: parsed.iva,
             ice: parsed.ice,
             total: parsed.total,
+
+            // -------------------------
+            // AUTHORIZATION (SRI clave de acceso)
+            // -------------------------
+            ...(accessKey && {
+              tax: { document: { authorization: accessKey } },
+            }),
 
             // -------------------------
             // SYSTEM FLAGS (CRITICAL)

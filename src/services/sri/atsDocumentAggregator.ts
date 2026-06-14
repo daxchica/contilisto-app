@@ -76,16 +76,32 @@ function getDocumentType(entry: TaxLedgerEntry): string {
   return "01";
 }
 
+// Splits "001-002-000004837" into { establishment, emissionPoint, sequential }
+function parseInvoiceNumber(raw: string): { establishment: string; emissionPoint: string; sequential: string } {
+  const parts = raw.trim().split("-");
+  if (parts.length === 3) {
+    return {
+      establishment: parts[0].padStart(3, "0"),
+      emissionPoint: parts[1].padStart(3, "0"),
+      sequential: parts[2].padStart(9, "0"),
+    };
+  }
+  return { establishment: "001", emissionPoint: "001", sequential: raw.padStart(9, "0") };
+}
+
 function getEstablishment(entry: TaxLedgerEntry): string {
-  return String((entry as any).establishment || "001").trim();
+  if ((entry as any).establishment) return String((entry as any).establishment).trim();
+  return parseInvoiceNumber(getDocumentNumber(entry)).establishment;
 }
 
 function getEmissionPoint(entry: TaxLedgerEntry): string {
-  return String((entry as any).emissionPoint || "001").trim();
+  if ((entry as any).emissionPoint) return String((entry as any).emissionPoint).trim();
+  return parseInvoiceNumber(getDocumentNumber(entry)).emissionPoint;
 }
 
 function getSequential(entry: TaxLedgerEntry): string {
-  return String((entry as any).sequential || entry.documentNumber || "").trim();
+  if ((entry as any).sequential) return String((entry as any).sequential).trim();
+  return parseInvoiceNumber(getDocumentNumber(entry)).sequential;
 }
 
 function pushOrMergeRetention(

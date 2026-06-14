@@ -153,6 +153,7 @@ export default function JournalPreviewModal({
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [isPersonalExpense, setIsPersonalExpense] = useState(false);
   const [personalCategory, setPersonalCategory] = useState("Otros");
+  const [authNumber, setAuthNumber] = useState("");
 
   // Categorías oficiales del Formulario GP — SRI Ecuador (LORTI)
   // Transporte y Entretenimiento NO son categorías reconocidas por el SRI.
@@ -202,8 +203,16 @@ export default function JournalPreviewModal({
       setRows([]);
       setIsPersonalExpense(false);
       setPersonalCategory("Otros");
+      setAuthNumber("");
       return;
     }
+
+    // Pre-fill: from parsed entries, then from top-level metadata (vision extraction), then empty
+    const existingAuth =
+      entries.find(e => e.tax?.document?.authorization)?.tax?.document?.authorization ??
+      metadata.authorizationNumber ??
+      "";
+    setAuthNumber(existingAuth);
 
     const invoiceNumber = metadata.invoice_number ?? "";
     let prepared: Row[] = [];
@@ -420,6 +429,15 @@ export default function JournalPreviewModal({
         invoice_number: r.invoice_number ?? invoiceNumber,
         debit: Number(r.debit ?? 0),
         credit: Number(r.credit ?? 0),
+        ...(authNumber.trim() && {
+          tax: {
+            ...r.tax,
+            document: {
+              ...r.tax?.document,
+              authorization: authNumber.trim(),
+            },
+          },
+        }),
       }));
 
       // 🔥 LEARNING PRESERVED
@@ -546,6 +564,18 @@ export default function JournalPreviewModal({
               <div>
                 <b>Fecha:</b> {new Date(toISODate(metadata.invoiceDate)).toLocaleDateString("es-EC")}
               </div>
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Autorización SRI (opcional)</label>
+              <input
+                type="text"
+                value={authNumber}
+                onChange={(e) => setAuthNumber(e.target.value)}
+                placeholder="10 o 49 dígitos"
+                maxLength={49}
+                className="w-full rounded border px-2 py-1.5 text-sm font-mono"
+              />
             </div>
           </div>
 

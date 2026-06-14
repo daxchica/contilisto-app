@@ -13,6 +13,7 @@ export type OCRInvoiceResult = {
     buyerRUC?: string;
     invoiceDate?: string;
     invoice_number?: string;
+    authorizationNumber?: string;
     __source?: "ocr";
 };
 

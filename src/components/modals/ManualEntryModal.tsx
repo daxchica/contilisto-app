@@ -76,6 +76,7 @@ export default function ManualEntryModal({
   const [note, setNote]               = useState("");
   const [invoiceNumber, setInvoice]   = useState("");
   const [supplierName, setSupplier]   = useState("");
+  const [authNumber, setAuthNumber]   = useState("");
 
   // Rows
   const [rows, setRows] = useState<Row[]>([createEmptyRow(), createEmptyRow()]);
@@ -159,6 +160,10 @@ export default function ManualEntryModal({
         invoice_number:  invoiceNumber.trim() || `MAN-${txId.slice(0, 8)}`,
         supplier_name:   supplierName.trim()  || undefined,
 
+        ...(authNumber.trim() && {
+          tax: { document: { authorization: authNumber.trim() } },
+        }),
+
         source:   "manual",
         isManual: true,
 
@@ -220,6 +225,17 @@ export default function ManualEntryModal({
                 onChange={(e) => setInvoice(e.target.value)}
                 placeholder="001-001-000000001"
                 className="w-full rounded border px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Autorización SRI (opcional)</label>
+              <input
+                type="text"
+                value={authNumber}
+                onChange={(e) => setAuthNumber(e.target.value)}
+                placeholder="10 o 49 dígitos"
+                maxLength={49}
+                className="w-full rounded border px-2 py-1.5 text-sm font-mono"
               />
             </div>
             <div className="col-span-2">

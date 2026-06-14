@@ -388,7 +388,11 @@ export async function saveJournalEntries(
   for (const e of entries) {
     const id = e.id ?? doc(col).id;
 
-    const normalizedDate = e.date?.slice(0, 10);
+    const rawDate = e.date ?? "";
+    // Convert DD/MM/YYYY → YYYY-MM-DD if needed
+    const normalizedDate = /^\d{2}\/\d{2}\/\d{4}$/.test(rawDate)
+      ? `${rawDate.slice(6, 10)}-${rawDate.slice(3, 5)}-${rawDate.slice(0, 2)}`
+      : rawDate.slice(0, 10);
     if (!normalizedDate) throw new Error("Fecha inválida");
 
     if (!e.transactionType) {

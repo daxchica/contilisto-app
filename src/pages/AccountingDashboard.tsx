@@ -493,6 +493,7 @@ export default function AccountingDashboard() {
           buyerRUC: normalizeString(data.buyerRUC),
           invoiceDate: normalizeString(data.invoiceDate),
           invoice_number: normalizeString(data.invoice_number),
+          authorizationNumber: data.authorizationNumber || undefined,
           invoiceIdentitySource: data.invoiceIdentitySource,
         };
 
