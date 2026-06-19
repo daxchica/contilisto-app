@@ -15,6 +15,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import VerifyEmailPage from "@/pages/VerifyEmailPage";
 import AuthActionPage from "@/pages/AuthActionPage";
+import TrialPage from "@/pages/TrialPage";
 import NotFound from "@/pages/NotFound";
 
 import DashboardHome from "@/pages/DashboardHome";
@@ -59,6 +60,7 @@ export default function AppRoutes() {
       <Route path="/register" element={<Register />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/auth/action" element={<AuthActionPage />} />
+      <Route path="/trial" element={<TrialPage />} />
 
       {/* ============================================================
        * AUTHENTICATED APP

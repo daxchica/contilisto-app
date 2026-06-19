@@ -50,6 +50,10 @@ export default function Landing() {
   }, []);
 
   const handleRequireAuth = (plan: PlanType) => {
+    if (plan === "estudiante") {
+      navigate("/trial");
+      return;
+    }
     setPendingPlan(plan);
     setShowRegister(true);
   };
@@ -73,7 +77,7 @@ export default function Landing() {
     setProcessing(true);
     try {
       if (plan === "estudiante") {
-        navigate("/dashboard");
+        navigate("/trial");
         return;
       }
       setSelectedPlan(plan);
