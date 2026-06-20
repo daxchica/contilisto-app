@@ -49,6 +49,14 @@ export default function Landing() {
     }
   }, []);
 
+  const scrollToEstudianteCard = useCallback(() => {
+    setMobileOpen(false);
+    const el = document.getElementById("estudiante-card");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, []);
+
   const handleRequireAuth = (plan: PlanType) => {
     if (plan === "estudiante") {
       navigate("/trial");
@@ -199,8 +207,8 @@ export default function Landing() {
                     Iniciar sesión
                   </button>
                   <button
-                    onClick={scrollToPricing}
-                    className="text-center text-sm text-blue-700 font-medium"
+                    onClick={scrollToEstudianteCard}
+                    className="text-center text-sm text-green-600 font-medium"
                   >
                     Crear cuenta gratis
                   </button>
@@ -329,10 +337,10 @@ export default function Landing() {
                     Iniciar sesión
                   </button>
                   <button
-                    onClick={scrollToPricing}
-                    className="block w-full py-3 text-center border rounded-xl text-base font-semibold"
+                    onClick={scrollToEstudianteCard}
+                    className="block w-full py-3 text-center bg-green-500 hover:bg-green-600 text-white rounded-xl text-base font-semibold shadow-md"
                   >
-                    Crear Cuenta Gratis
+                    Crear cuenta gratis
                   </button>
                   <p className="text-sm text-gray-500 text-center">
                     Sin tarjeta de crédito. Plan Estudiante gratuito.

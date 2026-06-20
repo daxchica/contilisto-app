@@ -14,15 +14,18 @@ import { auth } from "@/firebase-config";
 function Wrapper({
   children,
   className = "",
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
     <div
-      className={`relative rounded-3xl shadow-xl 
+      id={id}
+      className={`relative rounded-3xl shadow-xl
                   p-6 sm:p-8 lg:p-10
-                  transition hover:shadow-2xl 
+                  transition hover:shadow-2xl
                   focus-within:shadow-2xl ${className}`}
     >
       {children}
@@ -98,7 +101,7 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
         {/* =======================
             PLAN ESTUDIANTE
         ======================= */}
-        <Wrapper className="bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-900 flex flex-col text-center">
+        <Wrapper id="estudiante-card" className="bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-900 flex flex-col text-center">
 
           <div className="w-12 h-12 mx-auto rounded-2xl bg-white/70 flex items-center justify-center mb-4">
             🌱
@@ -123,8 +126,8 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
           <button
             onClick={() => handleClick("estudiante")}
             disabled={isLoading("estudiante")}
-            className="mt-6 w-full rounded-xl bg-emerald-600 text-white py-3 font-semibold
-                       hover:bg-emerald-700 disabled:opacity-50"
+            className="mt-6 w-full rounded-xl bg-green-500 text-white py-3 font-semibold
+                       hover:bg-green-600 disabled:opacity-50 shadow-md"
           >
             {isLoading("estudiante")
               ? "Activando..."
