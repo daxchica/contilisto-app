@@ -4,7 +4,13 @@ import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/
 import { auth, db } from "@/firebase-config";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import Modal from "@/components/ui/Modal";
-import { PlanType } from "@/config/plans";
+import { PlanType, PLANS } from "@/config/plans";
+
+const fbq = (...args: any[]) => {
+  if (typeof window !== "undefined" && (window as any).fbq) {
+    (window as any).fbq(...args);
+  }
+};
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -55,6 +61,14 @@ export default function RegisterModal({
   const handleRegister = async () => {
     if (loading) return;
 
+    // Lead = user intent to register (button click), before any async work
+    const planInfo = selectedPlan ? PLANS[selectedPlan] : null;
+    fbq("track", "Lead", {
+      content_name: planInfo?.name,
+      value: planInfo?.price ?? 0,
+      currency: "USD",
+    });
+
     if (!name || !email || !password) {
       setError("Completa los campos obligatorios");
       return;
@@ -97,6 +111,12 @@ export default function RegisterModal({
         },
         { merge: true }
       );
+
+      fbq("track", "CompleteRegistration", {
+        content_name: planInfo?.name,
+        value: planInfo?.price ?? 0,
+        currency: "USD",
+      });
 
       setSuccess("¡Registro exitoso! Revisa tu correo para verificar tu cuenta.");
       onRegisterSuccess?.();

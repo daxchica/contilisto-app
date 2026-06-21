@@ -36,7 +36,6 @@ export default function Register() {
 
   useEffect(() => {
     sessionStorage.setItem("selectedPlan", planKey);
-    fbq("track", "Lead");
   }, [planKey]);
 
   const plan = PLAN_INFO[planKey];
@@ -45,6 +44,14 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Lead = user intent to register (form submit), not yet a confirmed conversion
+    fbq("track", "Lead", {
+      content_name: plan.label,
+      value: plan.price ?? 0,
+      currency: "USD",
+    });
+
     setError("");
     setSubmitting(true);
     try {
@@ -56,7 +63,11 @@ export default function Register() {
         company,
         planKey,
       });
-      fbq("track", "CompleteRegistration");
+      fbq("track", "CompleteRegistration", {
+        content_name: plan.label,
+        value: plan.price ?? 0,
+        currency: "USD",
+      });
       navigate("/verify-email", { state: { email } });
     } catch (err: any) {
       setError(err?.message || "Error de registro");
