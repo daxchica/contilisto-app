@@ -1,11 +1,6 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-
-const fbq = (...args: any[]) => {
-  if (typeof window !== "undefined" && (window as any).fbq) {
-    (window as any).fbq(...args);
-  }
-};
+import { trackSubscribe } from "@/utils/metaPixel";
 
 export default function Success() {
   const [params] = useSearchParams();
@@ -17,7 +12,7 @@ export default function Success() {
   
     // later: fetch session details if needed
 
-    fbq("track", "Subscribe", { value: 29.99, currency: "USD" }); // ✅ EVENTO 3: upgrade exitoso
+    trackSubscribe({ value: 29.99, currency: "USD" });
   }, []);
 
   return (

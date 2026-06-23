@@ -14,6 +14,7 @@ import LoginModal from "@/components/modals/LoginModal";
 import CheckoutModal from "@/components/modals/CheckoutModal";
 import RegisterModal from "@/components/RegisterModal";
 import { PlayCircleIcon } from "@heroicons/react/24/solid";
+import { trackCustomEvent } from "@/utils/metaPixel";
 
 export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -58,6 +59,7 @@ export default function Landing() {
   }, []);
 
   const handleRequireAuth = (plan: PlanType) => {
+    trackCustomEvent("ClickCrearCuenta", { plan });
     if (plan === "estudiante") {
       navigate("/trial");
       return;

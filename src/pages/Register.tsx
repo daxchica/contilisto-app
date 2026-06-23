@@ -2,12 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { registerUser } from "@/services/authService";
-
-const fbq = (...args: any[]) => {
-  if (typeof window !== "undefined" && (window as any).fbq) {
-    (window as any).fbq(...args);
-  }
-};
+import { trackLead, trackCompleteRegistration } from "@/utils/metaPixel";
 
 type PlanKey = "starter" | "pro" | "enterprise";
 
@@ -46,11 +41,7 @@ export default function Register() {
     e.preventDefault();
 
     // Lead = user intent to register (form submit), not yet a confirmed conversion
-    fbq("track", "Lead", {
-      content_name: plan.label,
-      value: plan.price ?? 0,
-      currency: "USD",
-    });
+    trackLead({ content_name: plan.label, value: plan.price ?? 0, currency: "USD" });
 
     setError("");
     setSubmitting(true);
@@ -63,11 +54,7 @@ export default function Register() {
         company,
         planKey,
       });
-      fbq("track", "CompleteRegistration", {
-        content_name: plan.label,
-        value: plan.price ?? 0,
-        currency: "USD",
-      });
+      trackCompleteRegistration({ content_name: plan.label, value: plan.price ?? 0, currency: "USD" });
       navigate("/verify-email", { state: { email } });
     } catch (err: any) {
       setError(err?.message || "Error de registro");

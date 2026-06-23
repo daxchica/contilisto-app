@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { registerUser } from "@/services/authService";
+import { trackCompleteRegistration } from "@/utils/metaPixel";
 
 const FEATURES = [
   { icon: "🤖", text: "Registro de facturas con IA en segundos" },
@@ -38,14 +39,7 @@ export default function TrialPage() {
     try {
       await registerUser({ fullName, email, password, phone, company: "", planKey: "estudiante" });
       
-      // Meta Pixel: solo se dispara cuando el registro fue exitoso
-      if (typeof window !== "undefined" && (window as any).fbq) {
-        (window as any).fbq("track", "CompleteRegistration", {
-          content_name: "Plan Estudiante",
-          value: 0,
-          currency: "USD",
-        });
-      }
+      trackCompleteRegistration({ content_name: "Plan Estudiante", value: 0, currency: "USD" });
       
       navigate("/verify-email", { state: { email }, replace: true });
     } catch (err: any) {
