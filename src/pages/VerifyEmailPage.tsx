@@ -94,7 +94,7 @@ export default function VerifyEmailPage() {
         </button>
 
         <button
-          onClick={async () => { await logout(); navigate("/", { replace: true }); }}
+          onClick={() => { navigate("/", { replace: true }); logout(); }}
           className="text-sm text-slate-400 hover:text-slate-600 underline"
         >
           Cerrar sesión
