@@ -84,6 +84,7 @@ export default function Landing() {
 
   const handleSelectPlan = async (plan: PlanType) => {
     if (processing) return;
+    trackCustomEvent("ClickCrearCuenta", { plan });
     setProcessing(true);
     try {
       if (plan === "estudiante") {
