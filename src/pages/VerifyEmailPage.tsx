@@ -1,6 +1,6 @@
 // src/pages/VerifyEmailPage.tsx
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { sendEmailVerification } from "firebase/auth";
 import { auth } from "@/firebase-config";
 import { useAuth } from "@/context/AuthContext";
@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 export default function VerifyEmailPage() {
   const { user, refreshEmailVerified, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const email = (location.state as any)?.email ?? user?.email ?? "";
 
