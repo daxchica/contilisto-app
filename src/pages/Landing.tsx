@@ -14,7 +14,6 @@ import LoginModal from "@/components/modals/LoginModal";
 import CheckoutModal from "@/components/modals/CheckoutModal";
 import RegisterModal from "@/components/RegisterModal";
 import { PlayCircleIcon } from "@heroicons/react/24/solid";
-import { trackCustomEvent } from "@/utils/metaPixel";
 
 export default function Landing() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -59,7 +58,6 @@ export default function Landing() {
   }, []);
 
   const handleRequireAuth = (plan: PlanType) => {
-    trackCustomEvent("ClickCrearCuenta", { plan });
     if (plan === "estudiante") {
       navigate("/trial");
       return;
@@ -84,7 +82,6 @@ export default function Landing() {
 
   const handleSelectPlan = async (plan: PlanType) => {
     if (processing) return;
-    trackCustomEvent("ClickCrearCuenta", { plan });
     setProcessing(true);
     try {
       if (plan === "estudiante") {

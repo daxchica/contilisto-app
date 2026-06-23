@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { PlanType } from "@/config/plans";
 import { auth } from "@/firebase-config";
+import { trackCustomEvent } from "@/utils/metaPixel";
 
 // ============================================================================
 // WRAPPER
@@ -57,6 +58,9 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
   async function handleClick(plan: PlanType) {
     if (loadingPlan) return; // prevent spam clicks
 
+    // Fire immediately on button press — before any async work or auth check
+    trackCustomEvent("ClickCrearCuenta", { plan });
+
     try {
       setError("");
       setLoadingPlan(plan);
@@ -64,7 +68,6 @@ export default function PricingPlans({ onSelectPlan, onRequireAuth }: Props) {
       const user = auth.currentUser;
 
       if (!user) {
-        // 👉 trigger register modal instead of error
         onRequireAuth?.(plan);
         return;
       }
