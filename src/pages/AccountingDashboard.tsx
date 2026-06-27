@@ -235,8 +235,9 @@ export default function AccountingDashboard() {
       invoiceType:  "sale",
       // The retention cert number is the document being recorded —
       // this is what appears in the FACTURA column of the journal.
-      invoice_number:      parsed.certNumber,
-      authorizationNumber: parsed.accessKey || undefined,
+      invoice_number:       parsed.certNumber,
+      authorizationNumber:  parsed.accessKey || undefined,
+      relatedInvoiceNumber: invoiceNum || undefined,
       invoiceDate:    parsed.issueDate || parsed.authDate,
       issuerRUC:    parsed.issuerRUC,
       issuerName:   parsed.issuerName,   // retention agent (our customer)

@@ -6,6 +6,8 @@ export interface InvoicePreviewMetadata {
   invoice_number?: string;
   invoiceDate?: string;
   authorizationNumber?: string;
+  /** For retentions: the related sales invoice number being retained on */
+  relatedInvoiceNumber?: string;
   
   issuerRUC?: string;
   issuerName?: string;

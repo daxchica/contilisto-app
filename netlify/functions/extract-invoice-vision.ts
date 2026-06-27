@@ -1016,25 +1016,53 @@ function parseRetentionFromText(
 
   const certDigits = certNumber.replace(/[-]/g, "");
 
-  // Build a search corpus: use lineText joined with spaces when each "line"
-  // is very short (table cells on own lines), else use the regular lineText.
-  const avgLen = visualLines.length
-    ? visualLines.reduce((s, l) => s + l.text.length, 0) / visualLines.length
-    : 0;
-
-  // If average visual line is short (<20 chars), table cells are on own lines:
-  // join FACTURA row with its neighbours to reconstruct full row.
-  let corpus: string;
-  if (avgLen < 25) {
-    // Sliding window: join groups of 3-4 consecutive lines to capture full row
-    corpus = "";
-    const lt = visualLines.map(l => l.text);
-    for (let i = 0; i < lt.length; i++) {
-      corpus += lt.slice(i, i + 6).join(" ") + "\n";
-    }
-  } else {
-    corpus = lineText + "\n" + flat;
+  function fmtInv(d: string): string {
+    return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
   }
+
+  // ── Pre-scan: extract the related sales invoice number ─────────────────────
+  // The RIDE PDF splits the "Número" cell across two pdfjs text items:
+  //   line N:   "0011000000000"  ← 13-digit prefix
+  //   line N+1: "FACTURA 27/04/2026 ..."
+  //   line N+2: "55"             ← 2-digit suffix
+  // All rows in one retention document reference the same related invoice.
+  let sharedInvoiceNumber = "";
+
+  // Strategy A: 13-digit prefix on own line, then FACTURA row, then 1-3 digit suffix
+  for (const sm of lineText.matchAll(/(\d{13})\n[^\n]*(?:FACTURA|LIQUIDACI[OÓ]N)[^\n]*\n\s*(\d{1,3})\b/gi)) {
+    const full = sm[1] + sm[2].padStart(2, "0");
+    if (full.length === 15 && full !== certDigits) { sharedInvoiceNumber = fmtInv(full); break; }
+  }
+  // Strategy B: dashed 001-100-000000055 format anywhere in text
+  if (!sharedInvoiceNumber) {
+    for (const d of ((lineText + "\n" + flat).match(/\b(\d{3}-\d{3}-\d{9})\b/g) ?? [])) {
+      if (d.replace(/-/g, "") !== certDigits) { sharedInvoiceNumber = d; break; }
+    }
+  }
+  // Strategy C: 15-digit continuous run
+  if (!sharedInvoiceNumber) {
+    for (const rm of (lineText + flat).matchAll(/\b(\d{15})\b/g)) {
+      if (rm[1] !== certDigits) { sharedInvoiceNumber = fmtInv(rm[1]); break; }
+    }
+  }
+  // Strategy D: 13-digit prefix immediately before FACTURA in flat text (space-joined)
+  if (!sharedInvoiceNumber) {
+    for (const fm of flat.matchAll(/(\d{13})\s+(?:FACTURA|LIQUIDACI[OÓ]N)\s+[\d/].*?(\d{1,3})(?=\s+\d{13}\s+|\s*$)/gi)) {
+      const full = fm[1] + fm[2].padStart(2, "0");
+      if (full.length === 15 && full !== certDigits) { sharedInvoiceNumber = fmtInv(full); break; }
+    }
+  }
+
+  console.log("[RET] related invoice:", sharedInvoiceNumber);
+
+  // Build sliding-window corpus so each FACTURA row is always fully captured
+  // even when pdfjs splits adjacent table cells to different visual lines.
+  const corpus = (() => {
+    const lt = visualLines.map(l => l.text);
+    let s = "";
+    for (let i = 0; i < lt.length; i++) s += lt.slice(i, i + 6).join(" ") + "\n";
+    return s;
+  })();
 
   console.log("[RET] corpus (first 600):", corpus.slice(0, 600));
 
@@ -1044,10 +1072,6 @@ function parseRetentionFromText(
   let totalRenta = 0;
   let totalIVA   = 0;
 
-  // Collect 13-digit invoice prefix candidates (appear before FACTURA in corpus)
-  const invoiceDigits =
-    [...corpus.matchAll(/(\d{13})\s+(?:FACTURA)/gi)].map(m => m[1])[0] ?? "";
-
   for (const m of corpus.matchAll(lineRe)) {
     const [fullMatch, invPrefix, invDate, baseStr, taxTypeRaw, pctStr, amtStr] = m;
     const isIVA = /iva/i.test(taxTypeRaw);
@@ -1055,18 +1079,22 @@ function parseRetentionFromText(
     const pct   = safeNumber(pctStr.replace(",", "."));
     const amt   = safeNumber(amtStr.replace(",", "."));
 
-    if (base <= 0 || amt <= 0) continue; // skip zero rows
+    if (base <= 0 || amt <= 0) continue;
 
-    // Invoice number reconstruction
-    let invoiceNumber = "";
-    const prefix13 = invPrefix ?? invoiceDigits;
-    if (prefix13?.length === 13) {
+    // Deduplicate: sliding window can produce the same row more than once
+    if (retentions.some(r =>
+      r.taxCode === (isIVA ? "2" : "1") &&
+      Math.abs(r.baseAmount - base) < 0.01 &&
+      Math.abs(r.retainedAmount - amt) < 0.01
+    )) continue;
+
+    // Use pre-scanned shared invoice number; fall back to per-row reconstruction
+    let invoiceNumber = sharedInvoiceNumber;
+    if (!invoiceNumber && invPrefix?.length === 13) {
       const afterMatch = corpus.slice(m.index! + fullMatch.length).match(/^\s*(\d{1,3})\b/);
       if (afterMatch) {
-        const full = prefix13 + afterMatch[1].padStart(2, "0");
-        if (full.length === 15 && full !== certDigits) {
-          invoiceNumber = `${full.slice(0,3)}-${full.slice(3,6)}-${full.slice(6)}`;
-        }
+        const full = invPrefix + afterMatch[1].padStart(2, "0");
+        if (full.length === 15 && full !== certDigits) invoiceNumber = fmtInv(full);
       }
     }
 

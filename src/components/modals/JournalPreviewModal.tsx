@@ -561,6 +561,11 @@ export default function JournalPreviewModal({
               <div>
                 <b>{entries.some((e) => (e as any).documentRef && (e as any).documentRef !== e.invoice_number) ? "Retención" : "Factura"}:</b> {metadata.invoice_number ?? "-"}
               </div>
+              {metadata.relatedInvoiceNumber && (
+                <div>
+                  <b>Factura relacionada:</b> {metadata.relatedInvoiceNumber}
+                </div>
+              )}
               <div>
                 <b>Fecha:</b> {new Date(toISODate(metadata.invoiceDate)).toLocaleDateString("es-EC")}
               </div>
