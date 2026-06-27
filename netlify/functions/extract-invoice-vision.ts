@@ -123,6 +123,36 @@ type Totals = {
 // ---------------------------------------------------------------------------
 
 async function extractText(data: Uint8Array) {
+  // DOMMatrix is a browser API missing in some Node.js runtimes (Netlify Functions).
+  // pdfjs-dist requires it even for text-only extraction, so we provide a minimal stub.
+  if (typeof (globalThis as any).DOMMatrix === "undefined") {
+    (globalThis as any).DOMMatrix = class DOMMatrix {
+      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+      m11 = 1; m12 = 0; m13 = 0; m14 = 0;
+      m21 = 0; m22 = 1; m23 = 0; m24 = 0;
+      m31 = 0; m32 = 0; m33 = 1; m34 = 0;
+      m41 = 0; m42 = 0; m43 = 0; m44 = 1;
+      is2D = true; isIdentity = true;
+      constructor(init?: string | number[]) {
+        if (Array.isArray(init) && init.length === 6) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+          this.m11 = init[0]; this.m12 = init[1];
+          this.m21 = init[2]; this.m22 = init[3];
+          this.m41 = init[4]; this.m42 = init[5];
+          this.isIdentity = false;
+        }
+      }
+      multiply()       { return new (globalThis as any).DOMMatrix(); }
+      translate()      { return new (globalThis as any).DOMMatrix(); }
+      scale()          { return new (globalThis as any).DOMMatrix(); }
+      rotate()         { return new (globalThis as any).DOMMatrix(); }
+      inverse()        { return new (globalThis as any).DOMMatrix(); }
+      transformPoint() { return { x: 0, y: 0, z: 0, w: 1 }; }
+      toFloat32Array() { return new Float32Array([this.a, this.b, this.c, this.d, this.e, this.f]); }
+      toFloat64Array() { return new Float64Array([this.a, this.b, this.c, this.d, this.e, this.f]); }
+    };
+  }
+
   const pdfjsLib: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const path = await import("path");
   const { pathToFileURL } = await import("url");
