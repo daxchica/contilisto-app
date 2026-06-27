@@ -235,7 +235,8 @@ export default function AccountingDashboard() {
       invoiceType:  "sale",
       // The retention cert number is the document being recorded —
       // this is what appears in the FACTURA column of the journal.
-      invoice_number: parsed.certNumber,
+      invoice_number:      parsed.certNumber,
+      authorizationNumber: parsed.accessKey || undefined,
       invoiceDate:    parsed.issueDate || parsed.authDate,
       issuerRUC:    parsed.issuerRUC,
       issuerName:   parsed.issuerName,   // retention agent (our customer)
@@ -418,7 +419,7 @@ export default function AccountingDashboard() {
             if (visionData.isRetention && visionData.retentions?.length) {
               // Convert Netlify response → SriRetXmlResult shape
               const parsed = {
-                accessKey:    "",
+                accessKey:    visionData.authorizationNumber ?? "",
                 certNumber:   visionData.certNumber   ?? "",
                 authDate:     visionData.authDate      ?? visionData.issueDate ?? "",
                 issueDate:    visionData.issueDate     ?? visionData.authDate  ?? "",
@@ -985,8 +986,9 @@ export default function AccountingDashboard() {
                 // Save retention record
                 try {
                   await saveRetention(entityId, {
-                    direction:    "received",
-                    certNumber:   ret.certNumber,
+                    direction:           "received",
+                    certNumber:          ret.certNumber,
+                    authorizationNumber: ret.accessKey || undefined,
                     authDate:     ret.authDate,
                     issueDate:    ret.issueDate,
                     issuerRUC:    ret.issuerRUC,

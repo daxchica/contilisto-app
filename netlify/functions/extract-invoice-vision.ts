@@ -926,6 +926,7 @@ interface RetentionLine {
 }
 
 interface RetentionParseResult {
+  accessKey:     string;
   certNumber:    string;
   issueDate:     string;
   authDate:      string;
@@ -1099,6 +1100,7 @@ function parseRetentionFromText(
   if (!retentions.length) return null;
 
   return {
+    accessKey,
     certNumber,
     issueDate,
     authDate,
@@ -1137,9 +1139,10 @@ export default async (req: Request): Promise<Response> => {
       const retResult = parseRetentionFromText(text, page1Items);
       if (retResult) {
         return Response.json({
-            success:     true,
-            isRetention: true,
-            ocr_text:    text,
+            success:          true,
+            isRetention:      true,
+            ocr_text:         text,
+            authorizationNumber: retResult.accessKey || undefined,
             ...retResult,
           });
       }
