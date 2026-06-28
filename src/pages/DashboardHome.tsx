@@ -256,23 +256,10 @@ const DashboardHome: React.FC = () => {
 
   return (
     <>
-      {!selectedEntity?.id ? (
-        <div className="mb-6 p-4 bg-yellow-100 text-yellow-800 rounded-lg text-center">
-          ⚠️ Selecciona una empresa desde el menú superior para ver resultados.
-        </div>
-      ) : (
-        <div className="mb-6 p-4 bg-blue-50 text-blue-900 rounded-lg text-center font-medium">
-          Empresa seleccionada: <strong>{selectedEntity.name}</strong>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
         <IncomeCard value={totalIncome} />
         <ExpenseCard value={totalExpenses} />
         <ProfitCard value={profit} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
         <ARCard value={accountsReceivable} />
         <APCard value={accountsPayable} />
       </div>
@@ -290,7 +277,7 @@ const DashboardHome: React.FC = () => {
       </div>
 
       {/* CASH FLOW GRAPH (REAL vs PROJECTED) */}
-      <div className="mb-6 min-h-[320px]">
+      <div className="mb-6">
         <ErrorBoundary>
           <CashFlowChart 
             data={selectedEntity?.id ? cashFlowSeries : []} 

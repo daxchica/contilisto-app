@@ -287,7 +287,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
         <Section id="cartera" title="Cartera" icon="💼">
           <LinkRow to="/accountsreceivable" icon="📥" label="Por Cobrar" requiresEntity />
           <LinkRow to="/accountspayable" icon="📤" label="Por Pagar" requiresEntity />
-          <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging" requiresEntity />
+          <LinkRow to="/accountsreceivables/aging" icon="📊" label="Aging CxC" requiresEntity />
+          <LinkRow to="/ap-aging" icon="📉" label="Aging CxP" requiresEntity />
         </Section>
 
         {/* =========================
