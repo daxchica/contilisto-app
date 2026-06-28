@@ -347,6 +347,27 @@ export async function extractInvoiceVision(
     }
 
     // ------------------------------------------------------------------------
+    // 🔁 CLIENT-SIDE SALE OVERRIDE
+    // If the backend classified as "expense" but issuerRUC === entityRUC,
+    // this is a sales invoice emitted by this company. Strip the expense
+    // accounts so ensureMinimumValidEntries adds the correct sale accounts.
+    // Handles stale function deploys and backend RUC comparison failures.
+    // ------------------------------------------------------------------------
+    if (data.invoiceType === "expense" && data.issuerRUC && userRUC) {
+      const issuerClean = (data.issuerRUC || "").replace(/\D/g, "");
+      const entityClean = (userRUC || "").replace(/\D/g, "");
+      if (issuerClean && entityClean && issuerClean === entityClean) {
+        data.invoiceType = "sale";
+        data.entries = (data.entries || []).filter((e: VisionEntry) => {
+          const code = String(e.account_code ?? "");
+          return !code.startsWith("20103") && // Proveedores (AP)
+                 !code.startsWith("133") &&   // IVA crédito en compras
+                 !code.startsWith("5");       // Gastos
+        });
+      }
+    }
+
+    // ------------------------------------------------------------------------
     // 🔍 DEBUG — Totales recibidos del backend (antes de normalizar)
     // ------------------------------------------------------------------------
     console.log("PREVIEW TOTALS:", {
