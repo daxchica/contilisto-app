@@ -1205,8 +1205,10 @@ export default async (req: Request): Promise<Response> => {
       issuerName = extractIssuerNameFromOCR(text);
     }
 
-    // Issuer RUC: from OCR text
-    const issuerRUC = extractIssuerRUCFromText(text);
+    // Issuer RUC: Ecuador SRI access key encodes it at bytes 10-22 (most reliable).
+    // Fallback to OCR-text extraction when key is unavailable.
+    const issuerRUCFromKey = accessKey.length === 49 ? accessKey.slice(10, 23) : "";
+    const issuerRUC = issuerRUCFromKey || extractIssuerRUCFromText(text);
 
     // 3️⃣ Final fallback
     if (!issuerName && issuerRUC) {
