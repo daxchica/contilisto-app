@@ -1,6 +1,6 @@
 // src/pages/admin/AdminUsersPage.tsx
 import { useEffect, useState } from "react";
-import { fetchUsers, updateUser, createAdminUser, deleteAdminUser } from "@/services/adminUserService";
+import { fetchUsers, updateUser, createAdminUser, deleteAdminUser, verifyAdminUser } from "@/services/adminUserService";
 import type { UserRole } from "@/context/AuthContext";
 import { useAuth } from "@/context/AuthContext";
 import type { AdminUser } from "@/services/adminUserService";
@@ -15,6 +15,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [deletingUid, setDeletingUid] = useState<string | null>(null);
+  const [verifyingUid, setVerifyingUid] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState("");
@@ -68,6 +69,22 @@ export default function AdminUsersPage() {
       alert(err.message ?? "Error eliminando usuario");
     } finally {
       setDeletingUid(null);
+    }
+  };
+
+  // ============================================================
+  // VERIFY EMAIL HANDLER (fix admin-created users who can't log in)
+  // ============================================================
+  const handleVerify = async (u: AdminUser) => {
+    if (!confirm(`¿Marcar el correo de ${u.email} como verificado para que pueda ingresar?`)) return;
+    try {
+      setVerifyingUid(u.uid);
+      await verifyAdminUser(u.uid);
+      alert(`Email de ${u.email} verificado correctamente.`);
+    } catch (err: any) {
+      alert(err.message ?? "Error verificando usuario");
+    } finally {
+      setVerifyingUid(null);
     }
   };
 
@@ -175,13 +192,22 @@ export default function AdminUsersPage() {
                 </button>
 
                 {isMaster && !isSelf && (
-                  <button
-                    disabled={deletingUid === u.uid}
-                    onClick={() => handleDelete(u)}
-                    className="px-3 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
-                  >
-                    {deletingUid === u.uid ? "Eliminando…" : "Eliminar"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={verifyingUid === u.uid}
+                      onClick={() => handleVerify(u)}
+                      className="px-3 py-1 rounded text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {verifyingUid === u.uid ? "Verificando…" : "Verificar"}
+                    </button>
+                    <button
+                      disabled={deletingUid === u.uid}
+                      onClick={() => handleDelete(u)}
+                      className="px-3 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {deletingUid === u.uid ? "Eliminando…" : "Eliminar"}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -254,13 +280,22 @@ export default function AdminUsersPage() {
                   {isMaster && (
                     <td className="px-3 text-right">
                       {!isSelf && (
-                        <button
-                          disabled={deletingUid === u.uid}
-                          onClick={() => handleDelete(u)}
-                          className="px-3 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
-                        >
-                          {deletingUid === u.uid ? "Eliminando…" : "Eliminar"}
-                        </button>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            disabled={verifyingUid === u.uid}
+                            onClick={() => handleVerify(u)}
+                            className="px-3 py-1 rounded text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
+                          >
+                            {verifyingUid === u.uid ? "Verificando…" : "Verificar"}
+                          </button>
+                          <button
+                            disabled={deletingUid === u.uid}
+                            onClick={() => handleDelete(u)}
+                            className="px-3 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            {deletingUid === u.uid ? "Eliminando…" : "Eliminar"}
+                          </button>
+                        </div>
                       )}
                     </td>
                   )}

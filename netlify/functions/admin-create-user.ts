@@ -41,10 +41,11 @@ export default async (req: Request): Promise<Response> => {
       return Response.json({ ok: false, error: "email and password are required" }, { status: 400 });
     }
 
-    // Create Firebase Auth user
+    // Create Firebase Auth user — mark email as verified so admin-created
+    // users can log in immediately without going through email verification.
     let newUser: admin.auth.UserRecord;
     try {
-      newUser = await admin.auth().createUser({ email, password });
+      newUser = await admin.auth().createUser({ email, password, emailVerified: true });
     } catch (err: any) {
       return Response.json({ ok: false, error: err.message ?? "Error creating user" }, { status: 400 });
     }
