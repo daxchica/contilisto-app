@@ -61,7 +61,8 @@ import { sriXmlToEntries } from "@/utils/sriXmlToEntries";
 import { detectSriXmlType, parseSriRetXml } from "@/utils/parseSriRetXml";
 import type { SriRetXmlResult } from "@/utils/parseSriRetXml";
 import { buildRetentionJournalEntries } from "@/utils/buildRetentionJournalEntries";
-import { findReceivableByInvoiceNumber, applyReceivablePayment } from "@/services/receivablesService";
+import { findReceivableByInvoiceNumber, applyReceivablePayment, upsertReceivable } from "@/services/receivablesService";
+import { isCustomerReceivableAccount } from "@/services/controlAccounts";
 import { findARAccountForInvoice } from "@/services/journalService";
 import { saveRetention } from "@/services/retentionsService";
 
@@ -179,6 +180,39 @@ export default function AccountingDashboard() {
 
   const stableJournal = useMemo(() =>
     sessionJournal, [sessionJournal]);
+
+  // --------------------------------------------------------------------------
+  // HELPER — create receivable after saving a sales invoice journal entry
+  // --------------------------------------------------------------------------
+
+  async function maybeCreateReceivable(
+    entries: import("@/types/JournalEntry").JournalEntry[],
+    metadata: InvoicePreviewMetadata,
+  ) {
+    if (metadata.invoiceType !== "sale") return;
+    const invoiceNumber = metadata.invoice_number ?? entries.find(e => e.invoice_number)?.invoice_number ?? "";
+    if (!invoiceNumber) return;
+    const arLine = entries.find(e => Number(e.debit ?? 0) > 0 && isCustomerReceivableAccount(e.account_code));
+    if (!arLine || Number(arLine.debit ?? 0) <= 0) return;
+    try {
+      await upsertReceivable(entityId, {
+        invoiceNumber,
+        issueDate: metadata.invoiceDate ?? new Date().toISOString().slice(0, 10),
+        total: Number(arLine.debit),
+        paid: 0,
+        transactionId: entries[0]?.transactionId ?? "",
+        customerName: metadata.buyerName ?? "",
+        customerRUC: metadata.buyerRUC ?? "",
+        account_code: arLine.account_code ?? "",
+        account_name: arLine.account_name ?? "",
+        termsDays: 30,
+        installments: 1,
+        createdFrom: "ai_journal",
+      });
+    } catch (e) {
+      console.warn("No se pudo crear CxC:", e);
+    }
+  }
 
   // --------------------------------------------------------------------------
   // RETENTION HANDLER — routes parsed retention to JournalPreviewModal
@@ -1020,6 +1054,9 @@ export default function AccountingDashboard() {
                 if (invoiceNumber) {
                   await logProcessedInvoice(entityId, invoiceNumber);
                 }
+
+                // Create / update receivable when saving a sales invoice
+                await maybeCreateReceivable(entries, previewMetadata);
               }
 
               setLogRefreshTrigger((v) => v + 1);
@@ -1090,6 +1127,7 @@ export default function AccountingDashboard() {
                 await saveJournalEntries(entityId, authUid, entries, undefined, plan.limits.maxInvoicesPerMonth);
                 const invoiceNumber = current.metadata.invoice_number ?? "";
                 if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
+                await maybeCreateReceivable(entries, current.metadata);
                 setSriConfirmedCount((c) => c + 1);
                 advanceQueue(true);
               } catch (err: unknown) {
@@ -1167,6 +1205,7 @@ export default function AccountingDashboard() {
             await saveJournalEntries(entityId, authUid, item.entries, undefined, plan.limits.maxInvoicesPerMonth);
             const invoiceNumber = item.metadata.invoice_number ?? "";
             if (invoiceNumber) await logProcessedInvoice(entityId, invoiceNumber);
+            await maybeCreateReceivable(item.entries, item.metadata);
             setLogRefreshTrigger((v) => v + 1);
           }}
         />
