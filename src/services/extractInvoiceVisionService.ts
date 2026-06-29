@@ -349,21 +349,56 @@ export async function extractInvoiceVision(
     // ------------------------------------------------------------------------
     // 🔁 CLIENT-SIDE SALE OVERRIDE
     // If the backend classified as "expense" but issuerRUC === entityRUC,
-    // this is a sales invoice emitted by this company. Strip the expense
-    // accounts so ensureMinimumValidEntries adds the correct sale accounts.
-    // Handles stale function deploys and backend RUC comparison failures.
+    // this is a sales invoice emitted by this company. Strip expense accounts
+    // and inject sale accounts directly (needed for multi-page PDFs where
+    // ensureMinimumValidEntries returns early without normalizing).
     // ------------------------------------------------------------------------
-    if (data.invoiceType === "expense" && data.issuerRUC && userRUC) {
-      const issuerClean = (data.issuerRUC || "").replace(/\D/g, "");
+    {
+      const issuerClean = ((data.issuerRUC as string) || "").replace(/\D/g, "");
       const entityClean = (userRUC || "").replace(/\D/g, "");
-      if (issuerClean && entityClean && issuerClean === entityClean) {
+      console.log("[SaleOverride] invoiceType:", data.invoiceType,
+        "issuerRUC:", issuerClean, "entityRUC:", entityClean,
+        "match:", issuerClean && entityClean && issuerClean === entityClean);
+
+      if (data.invoiceType === "expense" && issuerClean && entityClean && issuerClean === entityClean) {
         data.invoiceType = "sale";
+
+        // Strip expense-specific accounts returned by backend
         data.entries = (data.entries || []).filter((e: VisionEntry) => {
           const code = String(e.account_code ?? "");
           return !code.startsWith("20103") && // Proveedores (AP)
                  !code.startsWith("133") &&   // IVA crédito en compras
                  !code.startsWith("5");       // Gastos
         });
+
+        // For multi-page PDFs, ensureMinimumValidEntries returns early.
+        // Inject sale accounts manually so the modal always has correct lines.
+        const total = n(data.total);
+        const base  = n(data.taxableBase ?? (data as any).subtotal15) + n(data.subtotal0);
+        const iva   = n(data.iva);
+
+        if (total > 0 && !hasAccountPrefix(data.entries, "10103")) {
+          data.entries.push({
+            account_code: "101030101",
+            account_name: "Clientes Nacionales",
+            debit: total, credit: 0, source: "client-override-sale",
+          });
+        }
+        if (base > 0 && !hasAccountPrefix(data.entries, "401")) {
+          data.entries.push({
+            account_code: "401010101",
+            account_name: "Ingresos por servicios",
+            debit: 0, credit: base, source: "client-override-sale",
+          });
+        }
+        if (iva > 0 && !data.entries.some((e: VisionEntry) =>
+            String(e.account_code ?? "") === "201020101")) {
+          data.entries.push({
+            account_code: "201020101",
+            account_name: "IVA débito en ventas",
+            debit: 0, credit: iva, source: "client-override-sale",
+          });
+        }
       }
     }
 
