@@ -29,6 +29,20 @@ const getTpId = (ruc: string) => {
   return "06";
 };
 
+/** Map IVA retention amount to the correct SRI field by percentage. */
+function ivaRetFields(retenciones: Array<{ taxType: string; percentage: number; amount: number }>) {
+  const ivaRets = retenciones.filter(r => r.taxType === "IVA");
+  const byPct = (pct: number) => ivaRets.find(r => r.percentage === pct)?.amount ?? 0;
+  return {
+    valRetBien10:      byPct(10),
+    valRetServ20:      byPct(20),
+    valorRetBienes:    byPct(30),
+    valRetServ50:      byPct(50),
+    valorRetServicios: byPct(70),
+    valRetServ100:     byPct(100),
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* MAIN                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -82,14 +96,17 @@ export function buildAtsXml({
   for (const doc of compras) {
 
     const rucProv = doc.counterpartyRUC || "9999999999999";
+    const ivaPct = ivaRetFields(doc.retenciones ?? []);
 
     xml += `
     <detalleCompras>
 
+      <codSustento>01</codSustento>
+
       <tpIdProv>${getTpId(rucProv)}</tpIdProv>
       <idProv>${escapeXml(rucProv)}</idProv>
 
-      <tipoComprobante>01</tipoComprobante>
+      <tipoComprobante>${escapeXml(doc.documentType || "01")}</tipoComprobante>
       <parteRel>NO</parteRel>
 
       <fechaRegistro>${formatDate(doc.date)}</fechaRegistro>
@@ -101,14 +118,22 @@ export function buildAtsXml({
       <fechaEmision>${formatDate(doc.date)}</fechaEmision>
       <autorizacion>${escapeXml(doc.authorizationNumber)}</autorizacion>
 
-      <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
-      <baseImponible>0.00</baseImponible>
+      <baseNoGraIva>${num(doc.baseNoObjeto ?? 0)}</baseNoGraIva>
+      <baseImponible>${num(doc.base0)}</baseImponible>
       <baseImpGrav>${num(doc.base12)}</baseImpGrav>
+      <baseImpExe>0.00</baseImpExe>
 
-      <montoIva>${num(doc.iva)}</montoIva>
       <montoIce>${num(doc.ice)}</montoIce>
+      <montoIva>${num(doc.iva)}</montoIva>
 
-      <valorRetencionIva>${num(doc.ivaRetention)}</valorRetencionIva>
+      <valRetBien10>${num(ivaPct.valRetBien10)}</valRetBien10>
+      <valRetServ20>${num(ivaPct.valRetServ20)}</valRetServ20>
+      <valorRetBienes>${num(ivaPct.valorRetBienes)}</valorRetBienes>
+      <valRetServ50>${num(ivaPct.valRetServ50)}</valRetServ50>
+      <valorRetServicios>${num(ivaPct.valorRetServicios)}</valorRetServicios>
+      <valRetServ100>${num(ivaPct.valRetServ100)}</valRetServ100>
+
+      <pagoLocExt>01</pagoLocExt>
 
       <formasDePago>
         <formaPago>20</formaPago>
@@ -150,6 +175,7 @@ export function buildAtsXml({
   for (const doc of ventas) {
 
     const rucCli = doc.counterpartyRUC || "9999999999999";
+    const ventaTotal = (doc.base12 ?? 0) + (doc.base0 ?? 0) + (doc.baseNoObjeto ?? 0);
 
     xml += `
     <detalleVentas>
@@ -159,22 +185,29 @@ export function buildAtsXml({
 
       <parteRel>NO</parteRel>
 
-      <tipoComprobante>01</tipoComprobante>
+      <tipoComprobante>${escapeXml(doc.documentType || "01")}</tipoComprobante>
+      <tipoEm>1</tipoEm>
       <numeroComprobantes>1</numeroComprobantes>
 
-      <baseNoGraIva>${num(doc.base0)}</baseNoGraIva>
-      <baseImponible>0.00</baseImponible>
+      <baseNoGraIva>${num(doc.baseNoObjeto ?? 0)}</baseNoGraIva>
+      <baseImponible>${num(doc.base0)}</baseImponible>
       <baseImpGrav>${num(doc.base12)}</baseImpGrav>
 
       <montoIva>${num(doc.iva)}</montoIva>
       <montoIce>${num(doc.ice)}</montoIce>
 
-      <valorRetencionIva>${num(doc.ivaRetention)}</valorRetencionIva>
-      <valorRetencionRenta>${num(doc.rentaRetention)}</valorRetencionRenta>
+      <valorRetIva>${num(doc.ivaRetention)}</valorRetIva>
+      <valorRetRenta>${num(doc.rentaRetention)}</valorRetRenta>
 
       <formasDePago>
         <formaPago>20</formaPago>
       </formasDePago>
+
+      <establecimientos>
+        <codEstab>001</codEstab>
+        <ventasEstab>${num(ventaTotal)}</ventasEstab>
+        <ivaComp>0.00</ivaComp>
+      </establecimientos>
 
     </detalleVentas>
     `;
