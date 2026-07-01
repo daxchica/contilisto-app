@@ -14,10 +14,11 @@ import type { SriRetXmlResult, SriRetTaxLine } from "@/utils/parseSriRetXml";
  *  Accepts both original-case and lowercase input. */
 export function isRetentionPdf(text: string): boolean {
   const lower = text.toLowerCase();
+  // "Agente de Retención" describes the issuer company, not the document type.
+  // Only match on document-level keywords.
   return (
     lower.includes("comprobante de retenci") ||
-    (lower.includes("retencion") && lower.includes("impuesto a la renta")) ||
-    lower.includes("agente de retenci")
+    (lower.includes("retencion") && lower.includes("impuesto a la renta"))
   );
 }
 
