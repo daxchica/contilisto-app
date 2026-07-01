@@ -23,10 +23,18 @@ const formatDate = (date?: string) => {
   return `${d}/${m}/${y}`;
 };
 
-const getTpId = (ruc: string) => {
-  if (ruc?.length === 13) return "01";
-  if (ruc?.length === 10) return "05";
-  return "06";
+// Tabla 2: COMPRAS uses codes 01/02/03; VENTAS uses codes 04/05/06/07
+const getTpIdCompra = (ruc: string) => {
+  if (ruc?.length === 13) return "01"; // RUC
+  if (ruc?.length === 10) return "02"; // Cédula
+  return "03";                          // Pasaporte / id tributaria exterior
+};
+
+const getTpIdVenta = (ruc: string) => {
+  if (ruc === "9999999999999") return "07"; // Consumidor Final
+  if (ruc?.length === 13) return "04";      // RUC
+  if (ruc?.length === 10) return "05";      // Cédula
+  return "06";                               // Pasaporte / id tributaria exterior
 };
 
 /** Map IVA retention amount to the correct SRI field by percentage. */
@@ -103,7 +111,7 @@ export function buildAtsXml({
 
       <codSustento>01</codSustento>
 
-      <tpIdProv>${getTpId(rucProv)}</tpIdProv>
+      <tpIdProv>${getTpIdCompra(rucProv)}</tpIdProv>
       <idProv>${escapeXml(rucProv)}</idProv>
 
       <tipoComprobante>${escapeXml(doc.documentType || "01")}</tipoComprobante>
@@ -180,7 +188,7 @@ export function buildAtsXml({
     xml += `
     <detalleVentas>
 
-      <tpIdCliente>${getTpId(rucCli)}</tpIdCliente>
+      <tpIdCliente>${getTpIdVenta(rucCli)}</tpIdCliente>
       <idCliente>${escapeXml(rucCli)}</idCliente>
 
       <parteRel>NO</parteRel>
@@ -231,7 +239,7 @@ export function buildAtsXml({
       xml += `
       <detalleRetenciones>
 
-        <tpIdProv>${getTpId(rucProv)}</tpIdProv>
+        <tpIdProv>${getTpIdCompra(rucProv)}</tpIdProv>
         <idProv>${escapeXml(rucProv)}</idProv>
 
         <codigo>${escapeXml(r.code)}</codigo>
