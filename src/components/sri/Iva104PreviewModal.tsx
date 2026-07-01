@@ -44,8 +44,11 @@ function fmt2(n: number): string {
 }
 
 function periodToDates(period: string): { fromDate: string; toDate: string } {
-  const [y, m] = period.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
+  const y = period.slice(0, 4);
+  if (period.includes("S1")) return { fromDate: `${y}-01-01`, toDate: `${y}-06-30` };
+  if (period.includes("S2")) return { fromDate: `${y}-07-01`, toDate: `${y}-12-31` };
+  const [yr, m] = period.split("-").map(Number);
+  const lastDay = new Date(yr, m, 0).getDate();
   return {
     fromDate: `${period}-01`,
     toDate: `${period}-${String(lastDay).padStart(2, "0")}`,

@@ -32,7 +32,7 @@ type DeclarationStatus = {
   status: "pending" | "ready" | "generated";
 };
 
-type ActionKey = "iva" | "ret103" | "atsPreview" | "atsDownload" | null;
+type ActionKey = "iva" | "ret103" | "atsPreview" | "atsDownload" | "ivaS1" | "ivaS2" | null;
 
 // ============================================================================
 // UI CARD
@@ -140,6 +140,10 @@ export default function Declaraciones() {
 
   const [retSummary, setRetSummary] = useState<any | null>(null);
   const [showRetPreview, setShowRetPreview] = useState(false);
+
+  const [semestralSummary, setSemestralSummary] = useState<any | null>(null);
+  const [semestralPeriod, setSemestralPeriod] = useState<string>("");
+  const [showSemestralPreview, setShowSemestralPreview] = useState(false);
 
   const [activeAction, setActiveAction] = useState<ActionKey>(null);
 
@@ -388,6 +392,47 @@ export default function Declaraciones() {
     alert("Primero genere el formulario 103.");
   }
 
+  async function handleGenerateSemestralIva(semester: 1 | 2) {
+    if (!entityId) { alert("Seleccione una empresa."); return; }
+
+    const months = semester === 1
+      ? ["01","02","03","04","05","06"]
+      : ["07","08","09","10","11","12"];
+    const periods = months.map(m => `${year}-${m}`);
+    const semEntries = entries.filter(
+      e => e.entityId === entityId && periods.some(p => e.date?.slice(0, 7) === p)
+    );
+
+    if (!semEntries.length) {
+      alert(`No existen transacciones en el ${semester === 1 ? "1er" : "2do"} semestre de ${year}.`);
+      return;
+    }
+
+    const periodKey = `${year}-S${semester}`;
+    setActiveAction(semester === 1 ? "ivaS1" : "ivaS2");
+    try {
+      const summary = await generateIva104(semEntries, entityId, periodKey);
+      setSemestralSummary({
+        ventas12:    summary.ventas12,
+        ventas15:    summary.ventas15,
+        compras12:   summary.compras12,
+        compras15:   summary.compras15,
+        ivaVentas:   summary.ivaVentas,
+        ivaCompras:  summary.ivaCompras,
+        retenciones: summary.retenciones,
+        ivaPagar:    summary.ivaPagar,
+        documents:   [],
+      });
+      setSemestralPeriod(periodKey);
+      setShowSemestralPreview(true);
+    } catch (err) {
+      console.error("Error generating semestral IVA 104:", err);
+      alert("No se pudo generar el formulario 104 semestral.");
+    } finally {
+      setActiveAction(null);
+    }
+  }
+
   async function handleGenerateAtsPreview() {
     if (!entityId || !selectedEntity) {
       alert("Seleccione una empresa.");
@@ -550,7 +595,7 @@ export default function Declaraciones() {
         )}
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-3 xl:grid-cols-4 gap-4">
         <DeclarationCard
           title="IVA - Formulario 104"
           description="Declaración mensual del IVA."
@@ -589,6 +634,52 @@ export default function Declaraciones() {
           primaryDisabled={loadingEntries || activeAction !== null}
           secondaryDisabled={loadingEntries || activeAction !== null || !hasPeriodEntries}
         />
+
+        {/* ── IVA 104 SEMESTRAL ─────────────────────────────────────────── */}
+        <div className="bg-white p-5 rounded-xl shadow border">
+          <h3 className="font-bold text-lg text-[#0A3558]">IVA - Formulario 104 Semestral</h3>
+          <p className="text-sm text-gray-600 mt-2">
+            Declaración semestral del IVA. Acumula enero–junio y julio–diciembre del año seleccionado.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {/* S1 */}
+            <div className="border rounded-lg p-3 bg-gray-50">
+              <div className="text-sm font-semibold text-gray-700 mb-2">
+                1er Semestre · Ene – Jun {year}
+              </div>
+              <button
+                onClick={() => handleGenerateSemestralIva(1)}
+                disabled={loadingEntries || activeAction !== null}
+                className={`w-full px-3 py-1.5 rounded text-sm text-white transition ${
+                  loadingEntries || activeAction !== null
+                    ? "bg-blue-300 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+              >
+                {activeAction === "ivaS1" ? "Generando..." : "Generar S1"}
+              </button>
+            </div>
+
+            {/* S2 */}
+            <div className="border rounded-lg p-3 bg-gray-50">
+              <div className="text-sm font-semibold text-gray-700 mb-2">
+                2do Semestre · Jul – Dic {year}
+              </div>
+              <button
+                onClick={() => handleGenerateSemestralIva(2)}
+                disabled={loadingEntries || activeAction !== null}
+                className={`w-full px-3 py-1.5 rounded text-sm text-white transition ${
+                  loadingEntries || activeAction !== null
+                    ? "bg-blue-300 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+              >
+                {activeAction === "ivaS2" ? "Generando..." : "Generar S2"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Ret103PreviewModal
@@ -621,6 +712,16 @@ export default function Declaraciones() {
         period={period}
         entityName={selectedEntity?.name ?? ""}
         entityRuc={selectedEntity?.ruc ?? ""}
+      />
+
+      <Iva104PreviewModal
+        open={showSemestralPreview}
+        onClose={() => setShowSemestralPreview(false)}
+        summary={semestralSummary}
+        entityName={selectedEntity?.name ?? ""}
+        entityRuc={selectedEntity?.ruc ?? ""}
+        period={semestralPeriod}
+        ivaDetailLines={[]}
       />
     </div>
   );
